@@ -85,6 +85,27 @@ jobs:
       # the smoke run mutates flags and moves messages.
       - name: Smoke and query correctness
         run: |
+          api_log="$RUNNER_TEMP/mainly-api.log"
+          node --experimental-strip-types src/server.ts >"$api_log" 2>&1 &
+          api_pid=$!
+          trap 'kill "$api_pid" 2>/dev/null || true' EXIT
+
+          ready=0
+          for i in {1..30}; do
+            if curl -fsS http://127.0.0.1:5274/api/health >/dev/null; then
+              ready=1
+              break
+            fi
+            if ! kill -0 "$api_pid" 2>/dev/null; then
+              break
+            fi
+            sleep 1
+          done
+          if [[ "$ready" != 1 ]]; then
+            cat "$api_log"
+            exit 1
+          fi
+
           node scripts/smoke.mjs
           node scripts/query-check.mjs
           node scripts/index-check.mjs
