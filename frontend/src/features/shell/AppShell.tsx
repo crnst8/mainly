@@ -70,11 +70,24 @@ function Topbar() {
               first paint, so the right mark is correct on frame one — a JS swap
               would show the wrong one until React mounted. `alt` is empty
               because the button already carries the accessible name; announcing
-              "logo" after "All mail" is noise. */}
-          <img className="topbar__logo" src="/logo/logo-128.png" alt="" width={20} height={20} />
+              "logo" after "All mail" is noise.
+
+              BASE_URL, not a bare "/…": Vite rewrites asset paths in index.html
+              and in CSS url(), but a string literal in JSX is opaque to it. A
+              build mounted anywhere other than the site root — the hosted demo
+              lives at /demo/ — then asks the origin for /logo/… and gets a 404,
+              which is a broken mark on every screen. BASE_URL is "/" for a
+              self-hosted install, so this costs that case nothing. */}
+          <img
+            className="topbar__logo"
+            src={`${import.meta.env.BASE_URL}logo/logo-128.png`}
+            alt=""
+            width={20}
+            height={20}
+          />
           <img
             className="topbar__logo topbar__logo--dark"
-            src="/logo/logo-light-128.png"
+            src={`${import.meta.env.BASE_URL}logo/logo-light-128.png`}
             alt=""
             width={20}
             height={20}
