@@ -2,6 +2,15 @@ name: release
 
 # Publishes ghcr.io/crnst8/mainly — :latest on every push to main, plus semver
 # tags on v* releases. ./scripts/release.sh is what pushes those tags.
+#
+# Each architecture is built on a runner of that architecture, and the two are
+# merged into one manifest afterwards. The obvious alternative — a single job
+# with `platforms: linux/amd64,linux/arm64` and QEMU — does not survive this
+# image: `npm ci` compiles argon2 through node-gyp, and Node under emulated
+# aarch64 dies with `qemu: uncaught target signal 4 (Illegal instruction)`.
+# That is a QEMU bug rather than something the Dockerfile can work around, and
+# retrying does not help. Native runners also turn a ~15 minute emulated build
+# into two parallel ones of a couple of minutes each.
 on:
   push:
     branches: [main]
@@ -13,14 +22,80 @@ env:
   IMAGE: ${{ github.repository }}
 
 jobs:
-  image:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: linux/amd64
+            runner: ubuntu-latest
+          - platform: linux/arm64
+            # Free for public repositories.
+            runner: ubuntu-24.04-arm
+
+    runs-on: ${{ matrix.runner }}
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # "linux/amd64" is not a legal artifact name.
+      - id: prep
+        run: echo "arch=${PLATFORM#linux/}" >> "$GITHUB_OUTPUT"
+        env:
+          PLATFORM: ${{ matrix.platform }}
+
+      - uses: docker/setup-buildx-action@v3
+
+      - uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # Pushed by digest only. Tags are applied once, to the merged manifest, so
+      # a half-finished matrix can never leave :latest pointing at one arch.
+      - id: build
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          platforms: ${{ matrix.platform }}
+          outputs: type=image,name=${{ env.REGISTRY }}/${{ env.IMAGE }},push-by-digest=true,name-canonical=true,push=true
+          cache-from: type=gha,scope=${{ steps.prep.outputs.arch }}
+          cache-to: type=gha,mode=max,scope=${{ steps.prep.outputs.arch }}
+
+      - name: Export the digest
+        run: |
+          mkdir -p /tmp/digests
+          touch "/tmp/digests/${DIGEST#sha256:}"
+        env:
+          DIGEST: ${{ steps.build.outputs.digest }}
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: digest-${{ steps.prep.outputs.arch }}
+          path: /tmp/digests/*
+          if-no-files-found: error
+          retention-days: 1
+
+  merge:
+    needs: build
     runs-on: ubuntu-latest
     permissions:
       contents: read
       packages: write
+    outputs:
+      version: ${{ steps.meta.outputs.version }}
+
     steps:
-      - uses: actions/checkout@v4
-      - uses: docker/setup-qemu-action@v3
+      - uses: actions/download-artifact@v4
+        with:
+          path: /tmp/digests
+          pattern: digest-*
+          merge-multiple: true
+
       - uses: docker/setup-buildx-action@v3
 
       - uses: docker/login-action@v3
@@ -38,25 +113,31 @@ jobs:
             type=semver,pattern={{major}}.{{minor}}
             type=raw,value=latest,enable={{is_default_branch}}
 
-      - uses: docker/build-push-action@v6
-        with:
-          context: .
-          platforms: linux/amd64,linux/arm64
-          push: true
-          tags: ${{ steps.meta.outputs.tags }}
-          labels: ${{ steps.meta.outputs.labels }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+      - name: Create the manifest
+        working-directory: /tmp/digests
+        run: |
+          docker buildx imagetools create \
+            $(jq -cr '.tags | map("-t " + .) | join(" ")' <<< "$DOCKER_METADATA_OUTPUT_JSON") \
+            $(printf "${REGISTRY}/${IMAGE}@sha256:%s " *)
+        env:
+          REGISTRY: ${{ env.REGISTRY }}
+          IMAGE: ${{ env.IMAGE }}
+
+      - name: Inspect
+        run: docker buildx imagetools inspect "${REGISTRY}/${IMAGE}:${VERSION}"
+        env:
+          REGISTRY: ${{ env.REGISTRY }}
+          IMAGE: ${{ env.IMAGE }}
+          VERSION: ${{ steps.meta.outputs.version }}
 
   smoke:
-    needs: image
+    needs: merge
     runs-on: ubuntu-latest
     permissions:
       contents: read
       packages: read
-    steps:
-      - uses: actions/checkout@v4
 
+    steps:
       - uses: docker/login-action@v3
         with:
           registry: ${{ env.REGISTRY }}
@@ -71,7 +152,7 @@ jobs:
           docker run -d --name db --network mainly-smoke \
             -e POSTGRES_USER=mainly -e POSTGRES_PASSWORD=smoke -e POSTGRES_DB=mainly \
             postgres:16-alpine
-          for i in $(seq 1 30); do
+          for _ in $(seq 1 30); do
             docker exec db pg_isready -U mainly -d mainly && break
             sleep 2
           done
@@ -80,8 +161,8 @@ jobs:
             -e SECRET_KEY=MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY= \
             -e SESSION_SECRET=smoke \
             -e APP_ORIGIN=http://localhost:5274 \
-            ${{ env.REGISTRY }}/${{ env.IMAGE }}:latest
-          for i in $(seq 1 30); do
+            "${REGISTRY}/${IMAGE}:${VERSION}"
+          for _ in $(seq 1 30); do
             if curl -fsS http://localhost:5274/api/health; then
               echo
               curl -fsS http://localhost:5274/ | grep -q '<div id="root">' \
@@ -93,3 +174,7 @@ jobs:
           done
           docker logs app
           exit 1
+        env:
+          REGISTRY: ${{ env.REGISTRY }}
+          IMAGE: ${{ env.IMAGE }}
+          VERSION: ${{ needs.merge.outputs.version }}
