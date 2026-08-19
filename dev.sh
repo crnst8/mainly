@@ -24,6 +24,9 @@ mkdir -p "$PID_DIR"
 
 WEB_PORT=5273
 API_PORT=5274
+# `check` runs its own API here rather than on API_PORT, so a running dev stack
+# neither blocks a check run nor gets asserted against by mistake.
+CHECK_PORT=${CHECK_PORT:-5284}
 DB_PORT=${DB_PORT:-54329}
 
 say() { printf '%s\n' "$*"; }
@@ -240,6 +243,39 @@ case "${1:-start}" in
     # before them mutates flags and moves messages — running twice without a
     # reset fails on data, not on code.
     (cd backend && node --experimental-strip-types src/cli/seed.ts)
+
+    # The integration suites talk HTTP, so they need an API — and this starts
+    # its own rather than using whatever happens to hold the dev port.
+    #
+    # Reusing a running server is how a check run silently grades the wrong
+    # thing: a dev API left up from another checkout answers on 5274 against
+    # *its* database, so the suite seeds one database and asserts against
+    # another. Every failure it reports is then about data, not code, and every
+    # pass is meaningless. A dedicated port and a server this script owns makes
+    # that impossible.
+    assert_port_free $CHECK_PORT 'check api'
+    (
+      cd backend
+      PORT=$CHECK_PORT HOST=127.0.0.1 \
+        nohup node --experimental-strip-types src/server.ts \
+        < /dev/null > "$ROOT/$PID_DIR/check-api.log" 2>&1 &
+      echo $! > "$ROOT/$PID_DIR/check-api.pid"
+    )
+    # Kill it however this exits — a failing suite must not leave a server behind.
+    trap 'stop_pid check-api' EXIT
+
+    printf 'waiting for the check api'
+    for _ in $(seq 1 45); do
+      curl -fsS "http://127.0.0.1:$CHECK_PORT/api/health" >/dev/null 2>&1 && break
+      printf '.'; sleep 1
+    done
+    echo
+    curl -fsS "http://127.0.0.1:$CHECK_PORT/api/health" >/dev/null 2>&1 || {
+      cat "$PID_DIR/check-api.log" >&2
+      die "the check api never answered on $CHECK_PORT"
+    }
+
+    export SMOKE_BASE="http://127.0.0.1:$CHECK_PORT/api"
     (cd backend && node scripts/smoke.mjs && node scripts/query-check.mjs && node scripts/index-check.mjs)
     ;;
 
