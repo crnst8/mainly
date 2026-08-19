@@ -1,0 +1,695 @@
+/* ── Pane ─────────────────────────────────────────────────────────────────── */
+
+.list-pane {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  border-right: 1px solid var(--line);
+  background: var(--bg);
+}
+
+/* ── Controls bar ─────────────────────────────────────────────────────────── */
+
+.listbar {
+  display: flex;
+  align-items: center;
+  gap: var(--s-2);
+  /* Shared with .sidebar__head and .reader__bar. See the note in shell.css. */
+  height: var(--pane-head-h);
+  padding: 0 var(--s-3) 0 var(--s-4);
+  border-bottom: 1px solid var(--line);
+  background: var(--bg);
+  flex-shrink: 0;
+}
+
+.listbar__scope {
+  display: flex;
+  align-items: center;
+  gap: var(--s-4);
+  min-width: 0;
+  flex: 1;
+}
+
+.listbar__title {
+  font-size: var(--t-sm);
+  font-weight: 500;
+  letter-spacing: var(--tr-snug);
+}
+
+/* ── Breadcrumb ───────────────────────────────────────────────────────────
+   Weight carries the hierarchy: the steps above you are quiet, where you are
+   is not. No separators doing decorative work — the chevron is the only mark
+   and it is the smallest one in the file. */
+
+.crumbs {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  font-size: var(--t-sm);
+  letter-spacing: var(--tr-snug);
+}
+
+/* Home holds its width; the middle gives way first and the leaf last. A search
+   query is a legitimate leaf and can be arbitrarily long, so "last" means
+   "shrinks reluctantly", not "never" — otherwise it pushes the count off. */
+.crumbs__step {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  flex-shrink: 3;
+}
+
+.crumbs__step:first-child {
+  flex-shrink: 0;
+}
+
+.crumbs__step:last-child {
+  flex-shrink: 1;
+}
+
+.crumbs__sep {
+  display: grid;
+  place-items: center;
+  color: var(--text-faint);
+  opacity: 0.65;
+  flex-shrink: 0;
+}
+
+.crumbs__link {
+  padding: 0 var(--s-2);
+  border-radius: var(--radius-sm);
+  color: var(--text-muted);
+  min-width: 0;
+  transition:
+    color var(--dur-fast) var(--ease-out),
+    background var(--dur-fast) var(--ease-out);
+}
+
+.crumbs__link:hover {
+  color: var(--text);
+  background: var(--bg-hover);
+}
+
+.crumbs__here {
+  padding: 0 var(--s-2);
+  font-weight: 500;
+  color: var(--text);
+  min-width: 0;
+}
+
+/* Save-view preview: the view itself, not a description of it. */
+.savepreview {
+  display: flex;
+  align-items: center;
+  gap: var(--s-5);
+  margin-top: var(--s-6);
+  padding: var(--s-5);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--bg-sunken);
+}
+
+.savepreview__meta {
+  margin-left: auto;
+  font-family: var(--font-mono);
+  font-size: var(--t-2xs);
+  color: var(--text-faint);
+}
+
+.listbar__meta {
+  font-family: var(--font-mono);
+  font-size: var(--t-2xs);
+  color: var(--text-faint);
+  font-variant-numeric: tabular-nums;
+  flex-shrink: 0;
+  white-space: nowrap;
+}
+
+.listbar__spacer {
+  flex: 1;
+}
+
+/* Selection swaps the bar's contents rather than stacking a second bar on top —
+   the row of controls stays in one place, only its meaning changes. */
+.listbar--selecting {
+  background: var(--bg-inverse);
+  color: var(--text-inverse);
+  animation: bar-swap var(--dur-base) var(--ease-out);
+}
+
+@keyframes bar-swap {
+  from {
+    opacity: 0;
+    transform: translateY(-2px);
+  }
+}
+
+.listbar--selecting .iconbtn {
+  color: color-mix(in oklab, var(--text-inverse) 78%, transparent);
+}
+
+.listbar--selecting .iconbtn:hover {
+  background: oklch(100% 0 0 / 0.14);
+  color: var(--text-inverse);
+}
+
+.listbar--selecting .listbar__title {
+  color: var(--text-inverse);
+}
+
+.listbar__divider {
+  width: 1px;
+  height: 16px;
+  margin: 0 var(--s-2);
+  background: var(--line);
+}
+
+.listbar--selecting .listbar__divider {
+  background: oklch(100% 0 0 / 0.18);
+}
+
+/* ── Filter chips ─────────────────────────────────────────────────────────── */
+
+.chips {
+  display: flex;
+  align-items: center;
+  gap: var(--s-2);
+  padding: var(--s-3) var(--s-4);
+  border-bottom: 1px solid var(--line-soft);
+  overflow-x: auto;
+  scrollbar-width: none;
+  flex-shrink: 0;
+}
+
+.chips::-webkit-scrollbar {
+  display: none;
+}
+
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--s-3);
+  height: 22px;
+  padding: 0 var(--s-4);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-full);
+  background: var(--bg);
+  font-size: var(--t-xs);
+  color: var(--text-muted);
+  white-space: nowrap;
+  transition:
+    border-color var(--dur-fast) var(--ease-out),
+    background var(--dur-fast) var(--ease-out),
+    color var(--dur-fast) var(--ease-out);
+}
+
+.chip:hover {
+  border-color: var(--line-strong);
+  color: var(--text);
+}
+
+.chip[aria-pressed='true'] {
+  background: var(--text);
+  border-color: var(--text);
+  color: var(--bg);
+}
+
+.chip__count {
+  font-family: var(--font-mono);
+  font-size: var(--t-2xs);
+  opacity: 0.6;
+  font-variant-numeric: tabular-nums;
+}
+
+/* ── Scroller ─────────────────────────────────────────────────────────────── */
+
+.list {
+  flex: 1;
+  min-height: 0;
+  position: relative;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  contain: strict;
+}
+
+.list__sizer {
+  position: relative;
+  width: 100%;
+}
+
+.list__window {
+  position: absolute;
+  inset: 0 0 auto;
+  will-change: transform;
+}
+
+/* ── Group header ─────────────────────────────────────────────────────────── */
+
+.grouphead {
+  position: sticky;
+  top: 0;
+  z-index: var(--z-sticky);
+  display: flex;
+  align-items: center;
+  gap: var(--s-4);
+  height: 26px;
+  padding: 0 var(--s-5);
+  background: color-mix(in oklab, var(--bg) 88%, transparent);
+  backdrop-filter: blur(8px);
+  border-bottom: 1px solid var(--line-soft);
+}
+
+.grouphead__label {
+  font-family: var(--font-ui);
+  font-size: var(--t-2xs);
+  letter-spacing: var(--tr-caps);
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+.grouphead__hint {
+  font-family: var(--font-mono);
+  font-size: var(--t-2xs);
+  color: var(--text-faint);
+}
+
+.grouphead__rule {
+  flex: 1;
+  height: 1px;
+  background: var(--line-soft);
+}
+
+.grouphead__count {
+  font-family: var(--font-mono);
+  font-size: var(--t-2xs);
+  color: var(--text-faint);
+  font-variant-numeric: tabular-nums;
+}
+
+/* ── Row ──────────────────────────────────────────────────────────────────── */
+
+.row-msg {
+  position: relative;
+  display: grid;
+  grid-template-columns: 3px 14px auto 1fr auto;
+  align-items: center;
+  gap: 0 var(--s-4);
+  width: 100%;
+  height: var(--row-h);
+  padding: 0 var(--s-5) 0 0;
+  text-align: left;
+  border-bottom: 1px solid var(--line-soft);
+  transition: background var(--dur-instant) linear;
+  cursor: default;
+}
+
+.row-msg:hover {
+  background: var(--bg-hover);
+}
+
+.row-msg[data-focused='true'] {
+  background: var(--bg-hover);
+}
+
+.row-msg[data-focused='true']::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border: 1px solid var(--accent);
+  border-radius: 0;
+  pointer-events: none;
+}
+
+.row-msg[data-open='true'] {
+  background: var(--bg-selected);
+}
+
+.row-msg[data-selected='true'] {
+  background: var(--accent-soft);
+}
+
+.row-msg[data-selected='true']:hover {
+  background: color-mix(in oklab, var(--accent) 18%, transparent);
+}
+
+/* Account colour stripe. The single most useful signal in a unified list —
+   which of my twelve addresses did this land on. */
+.row-msg__stripe {
+  align-self: stretch;
+  width: 3px;
+  background: var(--tint);
+  opacity: 0.85;
+}
+
+.row-msg[data-stripe='false'] .row-msg__stripe {
+  opacity: 0;
+}
+
+.row-msg__state {
+  display: grid;
+  place-items: center;
+  justify-self: center;
+  color: var(--accent);
+}
+
+.row-msg__state[data-read='true'] {
+  color: transparent;
+}
+
+.row-msg__avatar {
+  display: grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  border-radius: var(--radius-sm);
+  background: color-mix(in oklab, var(--tint) 14%, transparent);
+  color: color-mix(in oklab, var(--tint) 82%, var(--text));
+  font-family: var(--font-mono);
+  font-size: var(--t-2xs);
+  letter-spacing: 0;
+}
+
+.row-msg__main {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  padding: var(--row-pad-y) 0;
+}
+
+.row-msg__line {
+  display: flex;
+  align-items: baseline;
+  gap: var(--s-3);
+  min-width: 0;
+}
+
+.row-msg__sender {
+  font-size: var(--t-sm);
+  color: var(--text-secondary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  /*
+   * Sender and subject shared one flex pool with `min-width: 0` on both, so a
+   * long subject squeezed the sender until it read "te…" — which identifies
+   * nobody, while the subject it stole the space for was still truncated anyway.
+   * The floor is where a name stops being information; the ceiling stops a long
+   * "Firstname Lastname via Some Mailing List" from eating the subject instead.
+   * Below the floor the subject gives way first, because a name you recognise is
+   * what makes a row scannable.
+   */
+  flex: 0 1 auto;
+  min-width: 9ch;
+  max-width: 24ch;
+}
+
+.row-msg[data-read='false'] .row-msg__sender {
+  color: var(--text);
+  font-weight: 500;
+}
+
+.row-msg__subject {
+  font-size: var(--t-sm);
+  color: var(--text-secondary);
+  min-width: 0;
+  flex: 1 1 auto;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.row-msg[data-read='false'] .row-msg__subject {
+  color: var(--text);
+  font-weight: 500;
+}
+
+.row-msg__preview {
+  font-size: var(--t-xs);
+  color: var(--text-faint);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  line-height: var(--lh-snug);
+}
+
+:root[data-density='compact'] .row-msg {
+  grid-template-columns: 3px 14px auto 1fr auto;
+}
+
+:root[data-density='compact'] .row-msg__preview,
+:root[data-density='compact'] .row-msg__avatar {
+  display: none;
+}
+
+/* Compact puts sender and subject on one line — the reason to use it at all. */
+:root[data-density='compact'] .row-msg__main {
+  flex-direction: row;
+  align-items: baseline;
+  gap: var(--s-5);
+}
+
+:root[data-density='compact'] .row-msg__sender {
+  width: 150px;
+  flex-shrink: 0;
+}
+
+:root[data-density='relaxed'] .row-msg__preview {
+  white-space: normal;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+}
+
+.row-msg__aside {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: var(--s-2);
+  flex-shrink: 0;
+}
+
+.row-msg__date {
+  font-family: var(--font-mono);
+  font-size: var(--t-2xs);
+  color: var(--text-faint);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.row-msg[data-read='false'] .row-msg__date {
+  color: var(--text-secondary);
+}
+
+.row-msg__marks {
+  display: flex;
+  align-items: center;
+  gap: var(--s-3);
+  color: var(--text-faint);
+}
+
+.row-msg__flag {
+  color: var(--warning);
+}
+
+.row-msg__thread {
+  display: inline-grid;
+  place-items: center;
+  min-width: 15px;
+  height: 15px;
+  padding: 0 3px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--line);
+  font-family: var(--font-mono);
+  font-size: 9px;
+  color: var(--text-muted);
+}
+
+.row-msg__labels {
+  display: flex;
+  gap: var(--s-2);
+}
+
+.row-msg__label {
+  display: inline-block;
+  height: 5px;
+  width: 5px;
+  border-radius: var(--radius-full);
+  background: var(--tint, var(--n-6));
+}
+
+/* Hover actions. Hidden until the pointer is on the row — Fitts inside the row,
+   silence everywhere else. */
+.row-msg__hover {
+  position: absolute;
+  right: var(--s-4);
+  top: 50%;
+  transform: translateY(-50%);
+  display: flex;
+  gap: var(--s-1);
+  padding: 2px;
+  border-radius: var(--radius);
+  background: var(--bg-raised);
+  box-shadow: var(--shadow-pop);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity var(--dur-fast) var(--ease-out);
+}
+
+.row-msg:hover .row-msg__hover {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.row-msg__hover .iconbtn {
+  width: 24px;
+  height: 24px;
+}
+
+/* ── Loading skeleton ─────────────────────────────────────────────────────── */
+
+.skeleton {
+  display: grid;
+  grid-template-columns: 3px 14px 26px 1fr auto;
+  align-items: center;
+  gap: 0 var(--s-4);
+  height: var(--row-h);
+  padding: 0 var(--s-5) 0 0;
+  border-bottom: 1px solid var(--line-soft);
+}
+
+.skeleton__bar {
+  height: 8px;
+  border-radius: 2px;
+  background: linear-gradient(90deg, var(--n-2), var(--n-3), var(--n-2));
+  background-size: 200% 100%;
+  animation: shimmer 1.4s linear infinite;
+}
+
+@keyframes shimmer {
+  to {
+    background-position: -200% 0;
+  }
+}
+
+/* ── Footer ───────────────────────────────────────────────────────────────── */
+
+.list__foot {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--s-4);
+  padding: var(--s-6);
+  font-size: var(--t-xs);
+  color: var(--text-faint);
+}
+
+/* Where a search looks. Same chip vocabulary as the filters it sits beside,
+   because it is one — a narrowing, not a mode. */
+/* The chips row scrolls, so nothing in it needs to shrink — and a scope chip
+   that shrinks loses the one word that says where it looks. */
+.chip--scope {
+  flex-shrink: 0;
+  max-width: 200px;
+}
+
+.chip--scope[aria-pressed='true'] {
+  background: var(--bg-inverse);
+  border-color: var(--bg-inverse);
+  color: var(--text-inverse);
+}
+
+.chip--scope:disabled {
+  opacity: 0.4;
+}
+
+.chips__sep {
+  width: 1px;
+  height: 14px;
+  margin: 0 var(--s-2);
+  background: var(--line);
+  flex-shrink: 0;
+}
+
+/* ── Selection affordances ───────────────────────────────────────────────────
+   Bulk work is only bulk if picking the set is cheap. Modifier-clicking was the
+   only way in, which is unguessable and unavailable on a touchpad-first machine
+   without a hand on the keyboard — so every row and every group header now has a
+   real checkbox. They cost no layout: the row's box shares the 14px cell the
+   unread dot already occupies, swapping in on hover and staying in once a
+   selection exists. */
+
+.checkbox {
+  display: grid;
+  place-items: center;
+  width: 13px;
+  height: 13px;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-sm);
+  background: var(--bg);
+  color: var(--accent-ink);
+  transition:
+    background var(--dur-fast) var(--ease-out),
+    border-color var(--dur-fast) var(--ease-out);
+}
+.checkbox[data-on] {
+  background: var(--accent);
+  border-color: var(--accent);
+}
+
+.row-msg__lead {
+  position: relative;
+  display: grid;
+  place-items: center;
+  justify-self: center;
+  width: 14px;
+  height: 14px;
+}
+/* Stacked, not swapped in the DOM: a checkbox that mounts on hover cannot be
+   the thing the pointer is already over when it appears. */
+.row-msg__lead > * {
+  grid-area: 1 / 1;
+}
+
+.row-msg__check {
+  display: grid;
+  place-items: center;
+  opacity: 0;
+  pointer-events: none;
+}
+.row-msg:hover .row-msg__check,
+.row-msg[data-selected='true'] .row-msg__check,
+.list[data-selecting] .row-msg__check,
+.row-msg__check:focus-visible {
+  opacity: 1;
+  pointer-events: auto;
+}
+/* The dot yields the cell to the box. Losing it under the cursor is safe: the
+   row's own weight already says unread, the dot is the reminder. */
+.row-msg:hover .row-msg__state,
+.row-msg[data-selected='true'] .row-msg__state,
+.list[data-selecting] .row-msg__state,
+.row-msg__lead:has(.row-msg__check:focus-visible) .row-msg__state {
+  opacity: 0;
+  pointer-events: none;
+}
+
+.grouphead__select {
+  display: flex;
+  align-items: center;
+  gap: var(--s-3);
+  padding: 0 0 0 var(--s-3);
+  color: inherit;
+}
+.grouphead__select .checkbox {
+  opacity: 0;
+  transition: opacity var(--dur-fast) var(--ease-out);
+}
+.grouphead:hover .grouphead__select .checkbox,
+.grouphead__select[aria-checked='true'] .checkbox,
+.list[data-selecting] .grouphead__select .checkbox,
+.grouphead__select:focus-visible .checkbox {
+  opacity: 1;
+}

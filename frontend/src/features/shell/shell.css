@@ -1,0 +1,1031 @@
+/* ── Frame ────────────────────────────────────────────────────────────────── */
+
+.app {
+  display: grid;
+  grid-template-rows: var(--topbar-h) 1fr;
+  height: 100%;
+  background: var(--bg-sunken);
+}
+
+.app__body {
+  position: relative;
+  display: grid;
+  grid-template-columns: var(--rail-w) var(--sidebar-w) var(--list-w) 1fr;
+  min-height: 0;
+}
+
+.app__body[data-preview='off'] {
+  grid-template-columns: var(--rail-w) var(--sidebar-w) 1fr;
+}
+
+.app__body[data-preview='off'] .reader-pane {
+  display: none;
+}
+
+.app__body[data-preview='bottom'] {
+  grid-template-columns: var(--rail-w) var(--sidebar-w) 1fr;
+}
+
+.app__body[data-sidebar='hidden'] {
+  grid-template-columns: var(--rail-w) var(--list-w) 1fr;
+}
+
+/* ── Topbar ───────────────────────────────────────────────────────────────── */
+
+.topbar {
+  display: grid;
+  grid-template-columns: calc(var(--rail-w) + var(--sidebar-w)) 1fr auto;
+  align-items: center;
+  gap: var(--s-5);
+  padding-right: var(--s-5);
+  border-bottom: 1px solid var(--line);
+  background: var(--bg);
+  -webkit-app-region: drag;
+}
+
+.topbar__brand {
+  display: flex;
+  align-items: center;
+  gap: var(--s-4);
+  padding-left: var(--s-6);
+  height: 100%;
+  border-right: 1px solid var(--line);
+}
+
+/* The wordmark is the home control, so it carries a control's affordances —
+   otherwise it reads as decoration and nobody clicks it. */
+.topbar__mark {
+  display: flex;
+  align-items: center;
+  gap: var(--s-3);
+  height: 26px;
+  padding: 0 var(--s-3);
+  margin-left: calc(var(--s-3) * -1);
+  border-radius: var(--radius-sm);
+  /*
+   * The wordmark is set in Paper Mono, lowercase.
+   *
+   * This is the one deliberate exception to the type rule: mono means
+   * machine data everywhere else in the app. A logotype is neither
+   * language nor data, it is a mark, and this one is drawn to sit with the
+   * monospaced glyph beside it rather than with the prose.
+   *
+   * Weight 400, because Paper Mono ships one cut and asking for 700 gets a
+   * synthetic bold: smeared stems and a mark that looks slightly wrong without
+   * anyone being able to say why. Presence comes from tracking instead, which
+   * opens rather than tightens — negative tracking on a monospace fights the
+   * even rhythm that is the whole reason to use one.
+   */
+  font-family: var(--font-mono);
+  font-size: var(--t-sm);
+  font-weight: 400;
+  letter-spacing: 0.02em;
+  color: var(--text);
+  -webkit-app-region: no-drag;
+  transition:
+    background var(--dur-fast) var(--ease-out),
+    opacity var(--dur-fast) var(--ease-out);
+}
+
+.topbar__mark:hover {
+  background: var(--bg-hover);
+}
+
+.topbar__mark:active {
+  opacity: 0.7;
+}
+
+/* Already home: still a target, just not an invitation. */
+.topbar__mark[aria-current='true'] {
+  color: var(--text-secondary);
+}
+
+/*
+ * Two marks, one shown.
+ *
+ * The artwork is black-on-transparent for light surfaces and off-white for dark
+ * ones, and both files share an identical ink bounding box, so the swap does not
+ * shift the wordmark by a pixel. Doing it in CSS rather than by switching `src`
+ * in JS means the correct mark is painted on the first frame — index.html
+ * resolves the theme onto `data-theme` before React exists.
+ */
+.topbar__logo {
+  width: 20px;
+  height: 20px;
+  flex-shrink: 0;
+  /* An image inside a flex control picks up the line box otherwise, which
+     leaves it sitting a pixel low next to the text. */
+  display: block;
+  object-fit: contain;
+}
+
+.topbar__logo--dark {
+  display: none;
+}
+
+:root[data-theme='dark'] .topbar__logo {
+  display: none;
+}
+
+:root[data-theme='dark'] .topbar__logo--dark {
+  display: block;
+}
+
+/* Already home dims the word; the mark keeps its own colour, because a logo
+   that fades is a logo that looks broken. */
+.topbar__mark[aria-current='true'] .topbar__logo {
+  opacity: 0.85;
+}
+
+/* ── Identity switcher ────────────────────────────────────────────────────── */
+
+.identity {
+  display: flex;
+  align-items: center;
+  gap: var(--s-3);
+  max-width: 180px;
+  height: var(--ctl-h);
+  padding: 0 var(--s-3) 0 var(--s-4);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--bg);
+  color: var(--text-secondary);
+  font-size: var(--t-xs);
+  transition:
+    border-color var(--dur-fast) var(--ease-out),
+    color var(--dur-fast) var(--ease-out);
+}
+
+.identity:hover {
+  border-color: var(--line-strong);
+  color: var(--text);
+}
+
+.identity__chip {
+  width: 8px;
+  height: 8px;
+  border-radius: var(--radius-full);
+  background: var(--tint, var(--n-5));
+  flex-shrink: 0;
+}
+
+.identity__label {
+  min-width: 0;
+}
+
+.identity__addr {
+  margin-left: auto;
+  padding-left: var(--s-4);
+  /* The label is what you scan for; the address is confirmation. So the label
+     gets the room and the address gives it up. */
+  max-width: 50%;
+  flex-shrink: 1;
+  font-family: var(--font-mono);
+  font-size: var(--t-2xs);
+  color: var(--text-faint);
+}
+
+/* Row of three targets: pick the identity, go to its mail, write from it. Each
+   is its own button so none of them is a guess about which you meant. */
+.identity__row {
+  display: flex;
+  align-items: center;
+  gap: var(--s-1);
+}
+
+.identity__row .pop__item {
+  min-width: 0;
+  flex: 1;
+  gap: var(--s-3);
+  height: 30px;
+}
+
+/* Quiet, not hidden. A hover-only action is an action that does not exist on a
+   touch screen, and this popover is reachable there too. */
+.identity__row .iconbtn {
+  flex-shrink: 0;
+  color: var(--text-faint);
+}
+
+.identity__row:hover .iconbtn,
+.identity__row:focus-within .iconbtn {
+  color: var(--text-secondary);
+}
+
+.identity__domain {
+  padding: var(--s-4) var(--s-4) var(--s-2);
+  font-family: var(--font-mono);
+  font-size: var(--t-2xs);
+  color: var(--text-faint);
+  letter-spacing: 0.02em;
+}
+
+.topbar__actions {
+  display: flex;
+  align-items: center;
+  gap: var(--s-2);
+  -webkit-app-region: no-drag;
+}
+
+/* ── Search ───────────────────────────────────────────────────────────────── */
+
+.searchwrap {
+  position: relative;
+  width: 100%;
+  max-width: 520px;
+  -webkit-app-region: no-drag;
+}
+
+.search {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: var(--s-4);
+  max-width: 520px;
+  width: 100%;
+  height: 28px;
+  padding: 0 var(--s-4);
+  border: 1px solid transparent;
+  border-radius: var(--radius);
+  background: var(--bg-sunken);
+  color: var(--text-faint);
+  -webkit-app-region: no-drag;
+  transition:
+    border-color var(--dur-fast) var(--ease-out),
+    background var(--dur-fast) var(--ease-out);
+}
+
+.search:hover {
+  border-color: var(--line);
+}
+
+.search:focus-within {
+  background: var(--bg-raised);
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-soft);
+}
+
+.search input {
+  flex: 1;
+  min-width: 0;
+  font-size: var(--t-sm);
+  color: var(--text);
+}
+
+.search input::placeholder {
+  color: var(--text-faint);
+}
+
+/* Open: square off the bottom so the field and its list read as one surface
+   (uniform connectedness) rather than two stacked controls. */
+.search[data-open='true'] {
+  border-color: var(--accent);
+  border-bottom-color: transparent;
+  border-bottom-left-radius: 0;
+  border-bottom-right-radius: 0;
+}
+
+.search .iconbtn {
+  width: 20px;
+  height: 20px;
+  margin-right: -2px;
+}
+
+/* ── Suggestions ──────────────────────────────────────────────────────────── */
+
+.suggest {
+  position: absolute;
+  top: calc(100% - 1px);
+  left: 0;
+  right: 0;
+  z-index: var(--z-pop);
+  max-height: 340px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: var(--s-2);
+  border: 1px solid var(--accent);
+  border-top-color: var(--line-soft);
+  border-radius: 0 0 var(--radius) var(--radius);
+  background: var(--bg-raised);
+  box-shadow: var(--shadow-pop);
+  animation: suggest-in var(--dur-fast) var(--ease-out);
+}
+
+@keyframes suggest-in {
+  from {
+    opacity: 0;
+    transform: translateY(-3px);
+  }
+}
+
+.suggest__group {
+  padding: var(--s-4) var(--s-4) var(--s-2);
+}
+
+.suggest__item {
+  display: flex;
+  align-items: center;
+  gap: var(--s-4);
+  width: 100%;
+  height: 28px;
+  padding: 0 var(--s-4);
+  border-radius: var(--radius-sm);
+  color: var(--text-secondary);
+  font-size: var(--t-sm);
+  text-align: left;
+}
+
+.suggest__item[data-active='true'] {
+  background: var(--bg-hover);
+  color: var(--text);
+}
+
+.suggest__item .truncate:first-of-type {
+  flex-shrink: 0;
+  max-width: 55%;
+}
+
+.suggest__hint {
+  margin-left: auto;
+  padding-left: var(--s-4);
+  min-width: 0;
+  font-family: var(--font-mono);
+  font-size: var(--t-2xs);
+  color: var(--text-faint);
+}
+
+/* ── Rail ─────────────────────────────────────────────────────────────────── */
+
+.rail {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--s-2);
+  padding: var(--s-4) 0;
+  border-right: 1px solid var(--line);
+  background: var(--bg);
+  overflow-y: auto;
+  scrollbar-width: none;
+}
+
+.rail::-webkit-scrollbar {
+  display: none;
+}
+
+.rail__group {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--s-2);
+  width: 100%;
+}
+
+.rail__sep {
+  width: 20px;
+  height: 1px;
+  margin: var(--s-3) 0;
+  background: var(--line);
+  flex-shrink: 0;
+}
+
+.rail__spacer {
+  flex: 1;
+  min-height: var(--s-5);
+}
+
+.rail__item {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  border-radius: var(--radius);
+  color: var(--text-muted);
+  flex-shrink: 0;
+  transition:
+    background var(--dur-fast) var(--ease-out),
+    color var(--dur-fast) var(--ease-out),
+    transform var(--dur-instant) var(--ease-out);
+}
+
+.rail__item:hover {
+  background: var(--bg-hover);
+  color: var(--text);
+}
+
+.rail__item:active {
+  transform: scale(0.94);
+}
+
+.rail__item[aria-current='true'] {
+  background: var(--bg-active);
+  color: var(--text);
+}
+
+/* The active marker rides the left edge — a single element that moves, not one
+   per item, so switching reads as motion rather than a repaint. */
+.rail__item[aria-current='true']::before {
+  content: '';
+  position: absolute;
+  left: -9px;
+  top: 50%;
+  width: 3px;
+  height: 18px;
+  border-radius: 0 2px 2px 0;
+  background: var(--marker, var(--text));
+  transform: translateY(-50%);
+  animation: marker-in var(--dur-base) var(--ease-spring);
+}
+
+@keyframes marker-in {
+  from {
+    height: 4px;
+    opacity: 0;
+  }
+}
+
+/* Domain glyph: two initials in mono over the domain's own colour. */
+.rail__glyph {
+  display: grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  border-radius: var(--radius-sm);
+  background: color-mix(in oklab, var(--tint) 16%, transparent);
+  border: 1px solid color-mix(in oklab, var(--tint) 34%, transparent);
+  color: color-mix(in oklab, var(--tint) 78%, var(--text));
+  font-family: var(--font-mono);
+  font-size: var(--t-2xs);
+  letter-spacing: 0;
+  text-transform: uppercase;
+}
+
+.rail__item[aria-current='true'] .rail__glyph {
+  background: var(--tint);
+  border-color: var(--tint);
+  color: oklch(100% 0 0);
+}
+
+.rail__badge {
+  position: absolute;
+  top: 1px;
+  right: 1px;
+  min-width: 7px;
+  height: 7px;
+  border-radius: var(--radius-full);
+  background: var(--accent);
+  box-shadow: 0 0 0 2px var(--bg);
+}
+
+.rail__badge[data-error='true'] {
+  background: var(--danger);
+}
+
+/* ── Sidebar ──────────────────────────────────────────────────────────────── */
+
+.sidebar {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  border-right: 1px solid var(--line);
+  background: var(--bg);
+}
+
+/*
+ * The shared datum.
+ *
+ * Sidebar, list and reader each open with a band of exactly `--pane-head-h`,
+ * closed by one hairline. Before this the sidebar carried a 67px two-line title
+ * block against 38px toolbars either side, so the rule that should run straight
+ * across the window broke twice, and the first line of content in each pane
+ * started at three different heights. Uniform connectedness: one line, one
+ * height, or the panes read as three unrelated windows.
+ *
+ * It also stopped repeating itself. The scope name and its counts already live
+ * in the list bar's breadcrumb, which is the authoritative navigation for where
+ * you are — saying it twice, 200px apart, in two different type sizes, was
+ * duplication rather than reinforcement.
+ */
+.sidebar__head {
+  display: flex;
+  align-items: center;
+  gap: var(--s-4);
+  height: var(--pane-head-h);
+  flex-shrink: 0;
+  padding: 0 var(--s-5);
+  border-bottom: 1px solid var(--line);
+}
+
+.sidebar__title {
+  font-size: var(--t-sm);
+  font-weight: 500;
+  letter-spacing: var(--tr-snug);
+  min-width: 0;
+}
+
+.sidebar__sub {
+  font-family: var(--font-mono);
+  font-size: var(--t-2xs);
+  color: var(--text-faint);
+  letter-spacing: 0.02em;
+  /* Pushed to the far edge so the two never collide on a long domain name, and
+     so the counts sit on the same right margin as the list's own counts. */
+  margin-left: auto;
+  flex-shrink: 0;
+}
+
+.sidebar__scroll {
+  flex: 1;
+  min-height: 0;
+  padding: var(--s-5) var(--s-3) var(--s-6);
+}
+
+.sidebar__section {
+  margin-top: var(--s-5);
+}
+
+.sidebar__section:first-child {
+  margin-top: 0;
+}
+
+.sidebar__sectionhead {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: var(--s-4) var(--s-3) var(--s-3);
+}
+
+.nav {
+  display: flex;
+  align-items: center;
+  gap: var(--s-4);
+  width: 100%;
+  height: 27px;
+  padding: 0 var(--s-3);
+  border-radius: var(--radius);
+  color: var(--text-secondary);
+  font-size: var(--t-sm);
+  text-align: left;
+  transition:
+    background var(--dur-fast) var(--ease-out),
+    color var(--dur-fast) var(--ease-out);
+}
+
+.nav:hover {
+  background: var(--bg-hover);
+  color: var(--text);
+}
+
+.nav[aria-current='true'] {
+  background: var(--bg-selected);
+  color: var(--text);
+  font-weight: 500;
+}
+
+.nav__icon {
+  display: grid;
+  place-items: center;
+  width: 16px;
+  color: var(--nav-tint, currentColor);
+  opacity: 0.85;
+  flex-shrink: 0;
+}
+
+.nav[aria-current='true'] .nav__icon {
+  opacity: 1;
+}
+
+.nav__label {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.nav__count {
+  font-family: var(--font-mono);
+  font-size: var(--t-2xs);
+  font-variant-numeric: tabular-nums;
+  color: var(--text-faint);
+  flex-shrink: 0;
+}
+
+.nav[data-unread='true'] .nav__label {
+  font-weight: 500;
+  color: var(--text);
+}
+
+.nav[data-unread='true'] .nav__count {
+  color: var(--accent);
+  font-weight: 500;
+}
+
+.nav__twisty {
+  display: grid;
+  place-items: center;
+  width: 14px;
+  height: 14px;
+  margin-left: -2px;
+  color: var(--text-faint);
+  border-radius: 3px;
+  flex-shrink: 0;
+  transition: transform var(--dur-fast) var(--ease-out);
+}
+
+.nav__twisty[data-open='false'] {
+  transform: rotate(-90deg);
+}
+
+.nav__twisty:hover {
+  background: var(--bg-active);
+  color: var(--text);
+}
+
+/* Account line carries its colour as a left hairline, not a dot — it survives
+   truncation and stays legible at compact density. */
+.nav--account {
+  position: relative;
+  padding-left: var(--s-5);
+}
+
+.nav--account::before {
+  content: '';
+  position: absolute;
+  left: 3px;
+  top: 5px;
+  bottom: 5px;
+  width: 2px;
+  border-radius: 1px;
+  background: var(--tint, var(--line-strong));
+}
+
+.nav__addr {
+  font-family: var(--font-mono);
+  font-size: var(--t-2xs);
+  color: var(--text-faint);
+}
+
+.subtree {
+  overflow: hidden;
+  animation: subtree-in var(--dur-base) var(--ease-out);
+}
+
+@keyframes subtree-in {
+  from {
+    opacity: 0;
+    transform: translateY(-3px);
+  }
+}
+
+.nav--child {
+  padding-left: calc(var(--s-5) + var(--depth, 0) * 12px);
+  font-size: var(--t-xs);
+  color: var(--text-muted);
+  height: 24px;
+}
+
+.sidebar__foot {
+  padding: var(--s-4) var(--s-5);
+  border-top: 1px solid var(--line-soft);
+}
+
+/* Account error strip — states must be legible without explanatory copy. */
+.problem {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--s-3);
+  margin: var(--s-3) 0 var(--s-2);
+  padding: var(--s-4);
+  border: 1px solid color-mix(in oklab, var(--danger) 32%, transparent);
+  border-radius: var(--radius);
+  background: var(--danger-soft);
+  color: var(--danger);
+  font-size: var(--t-xs);
+  line-height: var(--lh-snug);
+  text-align: left;
+  width: 100%;
+}
+
+/* ── Command palette ──────────────────────────────────────────────────────── */
+
+.palette {
+  width: 100%;
+  max-width: 600px;
+  max-height: 64vh;
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-lg);
+  background: var(--bg-raised);
+  box-shadow: var(--shadow-modal);
+  overflow: hidden;
+  animation: modal-in var(--dur-slow) var(--ease-out);
+}
+
+.palette__input {
+  display: flex;
+  align-items: center;
+  gap: var(--s-5);
+  padding: 0 var(--s-6);
+  height: 46px;
+  border-bottom: 1px solid var(--line-soft);
+  color: var(--text-faint);
+}
+
+.palette__input input {
+  flex: 1;
+  font-size: var(--t-lg);
+  letter-spacing: var(--tr-snug);
+  color: var(--text);
+  /* The dialog itself is the focus indicator here — a ring around the input
+     inside an already-focused modal is noise. */
+  outline: none;
+}
+
+.palette__list {
+  overflow-y: auto;
+  padding: var(--s-3);
+}
+
+.palette__group {
+  padding: var(--s-4) var(--s-4) var(--s-2);
+}
+
+.palette__item {
+  display: flex;
+  align-items: center;
+  gap: var(--s-5);
+  width: 100%;
+  height: 34px;
+  padding: 0 var(--s-4);
+  border-radius: var(--radius);
+  color: var(--text-secondary);
+  font-size: var(--t-sm);
+  text-align: left;
+}
+
+.palette__item[data-active='true'] {
+  background: var(--bg-hover);
+  color: var(--text);
+}
+
+.palette__item__hint {
+  margin-left: auto;
+  display: flex;
+  gap: var(--s-2);
+  color: var(--text-faint);
+  font-family: var(--font-mono);
+  font-size: var(--t-2xs);
+}
+
+.palette__foot {
+  display: flex;
+  align-items: center;
+  gap: var(--s-5);
+  padding: var(--s-3) var(--s-6);
+  border-top: 1px solid var(--line-soft);
+  background: var(--bg-sunken);
+  font-size: var(--t-2xs);
+  color: var(--text-faint);
+}
+
+/* ── Toasts ───────────────────────────────────────────────────────────────── */
+
+.toasts {
+  position: fixed;
+  left: 50%;
+  bottom: var(--s-8);
+  z-index: var(--z-toast);
+  display: flex;
+  flex-direction: column-reverse;
+  gap: var(--s-3);
+  transform: translateX(-50%);
+  pointer-events: none;
+}
+
+.toast {
+  display: flex;
+  align-items: center;
+  gap: var(--s-6);
+  padding: 0 var(--s-4) 0 var(--s-6);
+  height: 36px;
+  border-radius: var(--radius);
+  background: var(--bg-inverse);
+  color: var(--text-inverse);
+  font-size: var(--t-sm);
+  box-shadow: var(--shadow-pop);
+  pointer-events: auto;
+  animation: toast-in var(--dur-slow) var(--ease-spring);
+}
+
+@keyframes toast-in {
+  from {
+    opacity: 0;
+    transform: translateY(10px) scale(0.97);
+  }
+}
+
+.toast__undo {
+  display: flex;
+  align-items: center;
+  gap: var(--s-3);
+  height: 24px;
+  padding: 0 var(--s-4);
+  border-radius: var(--radius-sm);
+  color: var(--text-inverse);
+  font-weight: 500;
+  font-size: var(--t-xs);
+  opacity: 0.75;
+  transition: opacity var(--dur-fast), background var(--dur-fast);
+}
+
+.toast__undo:hover {
+  opacity: 1;
+  background: oklch(100% 0 0 / 0.12);
+}
+
+/* ── Responsive ───────────────────────────────────────────────────────────
+   Composition adapts; the same work still happens. Panes collapse into a
+   stack and the rail becomes the only persistent navigation. */
+
+@media (max-width: 1280px) {
+  :root {
+    /* `--list-w` needs no override: the clamp already tracks the viewport.
+       The sidebar is fixed-content, so it gets one. */
+    --sidebar-w: 200px;
+  }
+}
+
+@media (max-width: 1080px) {
+  .app__body,
+  .app__body[data-preview='off'],
+  .app__body[data-preview='bottom'],
+  .app__body[data-sidebar='hidden'] {
+    grid-template-columns: var(--rail-w) 1fr;
+  }
+
+  .sidebar {
+    display: none;
+  }
+
+  .list-pane {
+    grid-column: 2;
+  }
+
+  .reader-pane {
+    display: none;
+  }
+
+  .app__body[data-reader='open'] .reader-pane {
+    position: absolute;
+    inset: 0 0 0 var(--rail-w);
+    z-index: var(--z-sticky);
+    display: flex;
+    border-left: 1px solid var(--line);
+    box-shadow: var(--shadow-pop);
+    animation: reader-drill-in var(--dur-slow) var(--ease-out);
+  }
+
+  @keyframes reader-drill-in {
+    from {
+      opacity: 0;
+      transform: translateX(var(--s-6));
+    }
+  }
+
+  .topbar {
+    grid-template-columns: auto 1fr auto;
+  }
+}
+
+@media (max-width: 780px) {
+  .app__body,
+  .app__body[data-preview='off'],
+  .app__body[data-preview='bottom'] {
+    grid-template-columns: var(--rail-w) 1fr;
+  }
+  .sidebar {
+    display: none;
+  }
+  .topbar__brand {
+    display: none;
+  }
+}
+
+/* ── Account groups ──────────────────────────────────────────────────────────
+   A second axis over the same mailboxes. The domain is a fact about the
+   address; the group is what the mailbox is for, and at forty-five mailboxes
+   across eight domains the second question is the one being asked. Presentation
+   only — nothing here reaches the mail server. */
+
+.sidebar__addgroup {
+  display: flex;
+  align-items: center;
+  gap: var(--s-2);
+  padding: 0 var(--s-2);
+  height: 18px;
+  border-radius: var(--radius-sm);
+  color: var(--text-faint);
+  font-size: var(--t-2xs);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  transition: color var(--dur-fast) var(--ease-out), background var(--dur-fast) var(--ease-out);
+}
+.sidebar__addgroup:hover {
+  color: var(--text);
+  background: var(--bg-hover);
+}
+
+.nav--group {
+  font-weight: 500;
+  color: var(--text);
+}
+
+.group__empty {
+  padding: var(--s-3) var(--s-3) var(--s-3) var(--s-8);
+  font-size: var(--t-2xs);
+  color: var(--text-faint);
+}
+
+/* The zone is invisible until something is being dragged. A dashed outline
+   sitting there permanently would be a permanent instruction, and the sidebar
+   is read hundreds of times a day and dragged into about twice.
+
+   Every property here is layout-neutral: the transparent border and the
+   min-height are always present, and the hint is out of flow. A drop target
+   that resizes when a drag begins slides out from under the pointer aiming at
+   it — which is how the first version of this dropped mailboxes into the wrong
+   group every time. */
+.dropzone {
+  position: relative;
+  border: 1px dashed transparent;
+  border-radius: var(--radius);
+  transition:
+    border-color var(--dur-fast) var(--ease-out),
+    background var(--dur-fast) var(--ease-out);
+}
+/* The ungrouped region is the way back out of a group, so it has to stay
+   hittable even when every mailbox is inside one. */
+.dropzone[data-group-id=''] {
+  min-height: var(--s-7);
+}
+.dropzone[data-active] {
+  border-color: var(--line);
+}
+.dropzone[data-over] {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+.dropzone__hint {
+  position: absolute;
+  right: var(--s-3);
+  bottom: 2px;
+  padding: 0 var(--s-2);
+  border-radius: var(--radius-sm);
+  background: var(--bg-raised);
+  font-size: var(--t-2xs);
+  color: var(--accent-text);
+  white-space: nowrap;
+  pointer-events: none;
+}
+
+/* The row being dragged fades rather than disappearing: it is still where it
+   was until the drop lands, and pretending otherwise makes a cancelled drag
+   look like a move that undid itself. */
+[data-dragging] .nav--account {
+  opacity: 0.45;
+}
+
+/* The mailbox under the pointer. `pointer-events: none` is load-bearing, not
+   tidiness: the drop target is found with `elementFromPoint`, and a ghost that
+   answers that question about itself means every drop lands on nothing. */
+.dragghost {
+  position: fixed;
+  top: 0;
+  left: 0;
+  z-index: var(--z-toast);
+  display: flex;
+  align-items: center;
+  gap: var(--s-3);
+  max-width: 220px;
+  padding: var(--s-2) var(--s-4);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--bg-raised);
+  box-shadow: var(--shadow-pop);
+  color: var(--text);
+  font-size: var(--t-xs);
+  white-space: nowrap;
+  pointer-events: none;
+}
+
+/* While a mailbox is in the air, nothing else should look grabbable and no
+   text should select under the pointer. */
+body[data-dragging='account'] {
+  cursor: grabbing;
+  user-select: none;
+}
+body[data-dragging='account'] * {
+  cursor: grabbing !important;
+}

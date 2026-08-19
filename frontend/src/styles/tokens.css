@@ -1,0 +1,214 @@
+/*
+ * Design tokens.
+ *
+ * Everything visual resolves through this file. Two rules:
+ *   1. Components never hardcode a colour, size, or duration.
+ *   2. Anything the user can customise is a bare custom property on :root,
+ *      so the settings panel can set it with style.setProperty and nothing else.
+ *
+ * The base palette is achromatic on purpose. Colour enters only where the user
+ * puts it: --accent, and per-domain / per-folder hues assigned at runtime.
+ */
+
+:root {
+  /* ── Neutral ramp ─────────────────────────────────────────────────────────
+     Light mode reads 0 → 12 as white → black. Dark mode flips the ramp, so
+     every semantic token below stays correct without being redeclared. */
+  --n-0: oklch(100% 0 0);
+  --n-1: oklch(98.4% 0 0);
+  --n-2: oklch(96.2% 0 0);
+  --n-3: oklch(93.2% 0 0);
+  --n-4: oklch(88.5% 0 0);
+  --n-5: oklch(80.5% 0 0);
+  --n-6: oklch(70.5% 0 0);
+  --n-7: oklch(60.5% 0 0);
+  --n-8: oklch(50.5% 0 0);
+  --n-9: oklch(40.5% 0 0);
+  --n-10: oklch(30.5% 0 0);
+  --n-11: oklch(20.5% 0 0);
+  --n-12: oklch(12.5% 0 0);
+
+  /* ── Semantic surfaces ─────────────────────────────────────────────────── */
+  --bg: var(--n-0);
+  --bg-sunken: var(--n-1);
+  --bg-raised: var(--n-0);
+  --bg-hover: var(--n-2);
+  --bg-active: var(--n-3);
+  --bg-selected: var(--n-2);
+  --bg-inverse: var(--n-12);
+
+  /* ── Semantic text ─────────────────────────────────────────────────────── */
+  --text: var(--n-12);
+  --text-secondary: var(--n-9);
+  --text-muted: var(--n-8);
+  --text-faint: var(--n-6);
+  --text-inverse: var(--n-0);
+
+  /* ── Lines ─────────────────────────────────────────────────────────────── */
+  --line: var(--n-3);
+  --line-soft: var(--n-2);
+  --line-strong: var(--n-5);
+  --line-inverse: var(--n-10);
+
+  /* ── Accent — user owned ───────────────────────────────────────────────── */
+  --accent: oklch(62% 0.19 258); /* default: a plain, unfussy blue */
+  --accent-text: var(--accent);
+  --accent-ink: oklch(100% 0 0);
+  --accent-soft: color-mix(in oklab, var(--accent) 12%, transparent);
+  --accent-line: color-mix(in oklab, var(--accent) 42%, transparent);
+  --accent-hover: color-mix(in oklab, var(--accent) 88%, var(--n-12));
+
+  /* ── Status ────────────────────────────────────────────────────────────── */
+  --danger: oklch(58% 0.21 25);
+  --danger-soft: color-mix(in oklab, var(--danger) 12%, transparent);
+  --warning: oklch(72% 0.16 76);
+  --success: oklch(62% 0.15 152);
+
+  /* ── Typography ────────────────────────────────────────────────────────── */
+  --font-ui: 'Neue Haas', ui-sans-serif, system-ui, -apple-system, sans-serif;
+  --font-mono: 'Paper Mono', ui-monospace, 'SF Mono', Menlo, monospace;
+
+  --t-2xs: 0.6875rem; /* 11 — keycaps, counters */
+  --t-xs: 0.75rem; /* 12 — metadata, labels */
+  --t-sm: 0.8125rem; /* 13 — list body, controls */
+  --t-md: 0.875rem; /* 14 — reading default */
+  --t-lg: 1rem; /* 16 — subjects, section heads */
+  --t-xl: 1.375rem; /* 22 — message subject */
+  --t-2xl: 2rem; /* 32 — page titles */
+  --t-3xl: 3.25rem; /* 52 — empty states, oversized editorial */
+
+  --lh-tight: 1.15;
+  --lh-snug: 1.35;
+  --lh-normal: 1.55;
+  --lh-loose: 1.7;
+
+  --tr-tight: -0.014em;
+  --tr-snug: -0.008em;
+  --tr-wide: 0.06em;
+  --tr-caps: 0.09em;
+
+  /* ── Space — 4px base, no half steps ───────────────────────────────────── */
+  --s-1: 2px;
+  --s-2: 4px;
+  --s-3: 6px;
+  --s-4: 8px;
+  --s-5: 12px;
+  --s-6: 16px;
+  --s-7: 20px;
+  --s-8: 24px;
+  --s-9: 32px;
+  --s-10: 40px;
+  --s-11: 56px;
+  --s-12: 80px;
+
+  /* ── Shape — flat by default. 0 is a legitimate user choice. ───────────── */
+  --radius: 4px;
+  --radius-sm: max(0px, calc(var(--radius) - 2px));
+  --radius-lg: calc(var(--radius) * 2);
+  --radius-full: 999px;
+
+  /* ── Elevation — borders do the work; shadow only for true overlays ────── */
+  --shadow-pop: 0 1px 2px oklch(0% 0 0 / 0.04), 0 8px 24px oklch(0% 0 0 / 0.08),
+    0 2px 6px oklch(0% 0 0 / 0.04);
+  --shadow-modal: 0 24px 64px oklch(0% 0 0 / 0.16), 0 2px 8px oklch(0% 0 0 / 0.08);
+
+  /* ── Motion — quiet by default, firm on intent ─────────────────────────── */
+  --dur-instant: 60ms;
+  --dur-fast: 110ms;
+  --dur-base: 170ms;
+  --dur-slow: 260ms;
+  --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
+  --ease-in-out: cubic-bezier(0.65, 0, 0.35, 1);
+  --ease-spring: cubic-bezier(0.34, 1.4, 0.64, 1);
+
+  /* ── Layout ────────────────────────────────────────────────────────────── */
+  --rail-w: 52px;
+  --sidebar-w: 232px;
+  /*
+   * The list scales with the window instead of sitting at a fixed width.
+   *
+   * A fixed 396px column truncates "Invoice #9470 — payment received" on a
+   * 1600px display while nine hundred pixels of reader pane sit empty beside it,
+   * and gets worse on anything larger. The upper bound exists because the reader
+   * still needs `--reader-measure` plus its margins; the lower bound is where a
+   * sender, a subject and a date stop fitting on one line.
+   *
+   * The rule: composition adapts, it never just shrinks.
+   */
+  --list-w: clamp(360px, 27vw, 560px);
+  --topbar-h: 44px;
+  --reader-measure: 68ch;
+  /* The datum every pane's first band shares. Declared once because three files
+     depend on it agreeing — see the note in shell.css. */
+  --pane-head-h: 38px;
+
+  /* ── Density — set by [data-density], read by rows and controls ────────── */
+  --row-h: 62px;
+  --row-pad-y: var(--s-4);
+  --row-gap: var(--s-1);
+  --ctl-h: 28px;
+
+  --z-sticky: 10;
+  --z-rail: 20;
+  --z-pop: 100;
+  --z-modal: 200;
+  --z-toast: 300;
+}
+
+/* ── Density modes ───────────────────────────────────────────────────────── */
+:root[data-density='compact'] {
+  --row-h: 32px;
+  --row-pad-y: var(--s-2);
+  --row-gap: 0px;
+  --ctl-h: 24px;
+}
+
+:root[data-density='cosy'] {
+  --row-h: 62px;
+  --row-pad-y: var(--s-4);
+  --row-gap: var(--s-1);
+  --ctl-h: 28px;
+}
+
+:root[data-density='relaxed'] {
+  --row-h: 84px;
+  --row-pad-y: var(--s-5);
+  --row-gap: var(--s-2);
+  --ctl-h: 32px;
+}
+
+/* ── Dark ────────────────────────────────────────────────────────────────
+   The ramp inverts; semantics stay put. Dark surfaces are lifted off pure
+   black so borders remain visible without raising contrast noise. */
+:root[data-theme='dark'] {
+  --n-0: oklch(14.5% 0 0);
+  --n-1: oklch(17.5% 0 0);
+  --n-2: oklch(21.5% 0 0);
+  --n-3: oklch(26% 0 0);
+  --n-4: oklch(32% 0 0);
+  --n-5: oklch(40% 0 0);
+  --n-6: oklch(50% 0 0);
+  --n-7: oklch(60% 0 0);
+  --n-8: oklch(69% 0 0);
+  --n-9: oklch(78% 0 0);
+  --n-10: oklch(87% 0 0);
+  --n-11: oklch(94% 0 0);
+  --n-12: oklch(98% 0 0);
+
+  --bg-raised: var(--n-1);
+  --accent-ink: oklch(14.5% 0 0);
+  --accent-soft: color-mix(in oklab, var(--accent) 20%, transparent);
+  --accent-hover: color-mix(in oklab, var(--accent) 88%, var(--n-12));
+
+  --shadow-pop: 0 1px 2px oklch(0% 0 0 / 0.3), 0 8px 28px oklch(0% 0 0 / 0.45);
+  --shadow-modal: 0 24px 72px oklch(0% 0 0 / 0.6), 0 2px 8px oklch(0% 0 0 / 0.4);
+}
+
+/* Pure-contrast variant for people who mean *black and white*. */
+:root[data-contrast='high'] {
+  --line: var(--n-6);
+  --line-soft: var(--n-4);
+  --text-secondary: var(--n-11);
+  --text-muted: var(--n-10);
+  --text-faint: var(--n-8);
+}

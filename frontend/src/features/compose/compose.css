@@ -1,0 +1,228 @@
+/* Docked bottom-right, resizable, never modal — you can keep reading while you
+   write. Modal compose is the single most disruptive pattern in webmail. */
+
+.composer {
+  position: fixed;
+  right: var(--s-7);
+  bottom: 0;
+  z-index: var(--z-modal);
+  display: flex;
+  flex-direction: column;
+  width: min(620px, calc(100vw - var(--s-9)));
+  height: min(560px, calc(100vh - var(--topbar-h) - var(--s-7)));
+  border: 1px solid var(--line);
+  border-bottom: none;
+  border-radius: var(--radius-lg) var(--radius-lg) 0 0;
+  background: var(--bg-raised);
+  box-shadow: var(--shadow-modal);
+  animation: composer-in var(--dur-slow) var(--ease-out);
+  overflow: hidden;
+}
+
+@keyframes composer-in {
+  from {
+    opacity: 0;
+    transform: translateY(24px);
+  }
+}
+
+.composer[data-minimised='true'] {
+  height: 38px;
+}
+
+.composer__head {
+  display: flex;
+  align-items: center;
+  gap: var(--s-3);
+  height: 38px;
+  padding: 0 var(--s-3) 0 var(--s-6);
+  background: var(--bg-inverse);
+  color: var(--text-inverse);
+  flex-shrink: 0;
+  cursor: default;
+}
+
+.composer__title {
+  flex: 1;
+  min-width: 0;
+  font-size: var(--t-sm);
+  font-weight: 500;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.composer__head .iconbtn {
+  color: color-mix(in oklab, var(--text-inverse) 72%, transparent);
+  width: 26px;
+  height: 26px;
+}
+
+.composer__head .iconbtn:hover {
+  background: oklch(100% 0 0 / 0.14);
+  color: var(--text-inverse);
+}
+
+.composer__fields {
+  flex-shrink: 0;
+}
+
+.composer__field {
+  display: flex;
+  align-items: center;
+  gap: var(--s-4);
+  padding: 0 var(--s-6);
+  height: 34px;
+  border-bottom: 1px solid var(--line-soft);
+}
+
+.composer__field__label {
+  width: 42px;
+  flex-shrink: 0;
+  font-family: var(--font-ui);
+  font-size: var(--t-2xs);
+  letter-spacing: var(--tr-caps);
+  text-transform: uppercase;
+  color: var(--text-faint);
+}
+
+.composer__field input {
+  flex: 1;
+  min-width: 0;
+  font-size: var(--t-sm);
+}
+
+.composer__field input::placeholder {
+  color: var(--text-faint);
+}
+
+.composer__field__extra {
+  display: flex;
+  gap: var(--s-3);
+  flex-shrink: 0;
+}
+
+.composer__field__extra button {
+  font-family: var(--font-mono);
+  font-size: var(--t-2xs);
+  letter-spacing: var(--tr-caps);
+  text-transform: uppercase;
+  color: var(--text-faint);
+}
+
+.composer__field__extra button:hover {
+  color: var(--text);
+}
+
+/* The from-picker is a real control, not a label — with a dozen addresses,
+   picking the wrong sender is the most expensive mistake available. */
+.composer__from {
+  display: flex;
+  align-items: center;
+  gap: var(--s-4);
+  height: 26px;
+  padding: 0 var(--s-4);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--bg);
+  font-size: var(--t-xs);
+}
+
+.composer__from__dot {
+  width: 7px;
+  height: 7px;
+  border-radius: var(--radius-full);
+  background: var(--tint);
+  flex-shrink: 0;
+}
+
+.composer__from__addr {
+  font-family: var(--font-mono);
+  font-size: var(--t-2xs);
+  color: var(--text-muted);
+}
+
+.composer__body {
+  flex: 1;
+  min-height: 0;
+  padding: var(--s-6);
+  font-size: var(--t-md);
+  line-height: var(--lh-loose);
+  color: var(--text);
+  resize: none;
+  overflow-y: auto;
+  font-family: var(--font-ui);
+}
+
+.composer__body::placeholder {
+  color: var(--text-faint);
+}
+
+.composer__foot {
+  display: flex;
+  align-items: center;
+  gap: var(--s-3);
+  padding: var(--s-4) var(--s-5);
+  border-top: 1px solid var(--line-soft);
+  background: var(--bg-sunken);
+  flex-shrink: 0;
+}
+
+.composer__foot__spacer {
+  flex: 1;
+}
+
+.composer__status {
+  font-family: var(--font-mono);
+  font-size: var(--t-2xs);
+  color: var(--text-faint);
+}
+
+/* ── Recipient chips ──────────────────────────────────────────────────────── */
+
+.recips {
+  display: flex;
+  align-items: center;
+  gap: var(--s-2);
+  flex: 1;
+  min-width: 0;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.recips::-webkit-scrollbar {
+  display: none;
+}
+
+.recip {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--s-2);
+  height: 20px;
+  padding: 0 var(--s-2) 0 var(--s-4);
+  border-radius: var(--radius-full);
+  background: var(--bg-sunken);
+  border: 1px solid var(--line);
+  font-size: var(--t-xs);
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.recip--invalid {
+  border-color: var(--danger);
+  color: var(--danger);
+}
+
+.recip button {
+  display: grid;
+  place-items: center;
+  width: 14px;
+  height: 14px;
+  border-radius: var(--radius-full);
+  color: var(--text-faint);
+}
+
+.recip button:hover {
+  background: var(--bg-active);
+  color: var(--text);
+}

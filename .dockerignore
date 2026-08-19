@@ -1,0 +1,14 @@
+**/node_modules
+**/dist
+.dev
+.env
+.env.*
+backups
+site/dist
+.git
+.github
+docs
+*.md
+*.sh
+scripts
+.DS_Store

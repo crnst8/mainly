@@ -1,0 +1,95 @@
+name: release
+
+# Publishes ghcr.io/crnst8/mainly — :latest on every push to main, plus semver
+# tags on v* releases. ./scripts/release.sh is what pushes those tags.
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+  workflow_dispatch:
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE: ${{ github.repository }}
+
+jobs:
+  image:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-qemu-action@v3
+      - uses: docker/setup-buildx-action@v3
+
+      - uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE }}
+          tags: |
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=raw,value=latest,enable={{is_default_branch}}
+
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  smoke:
+    needs: image
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: read
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # Runs the published image exactly the way a self-hoster would, and checks
+      # that it migrates, answers, and serves the web UI rather than only JSON.
+      - name: Start the published image and check it answers
+        run: |
+          docker network create mainly-smoke
+          docker run -d --name db --network mainly-smoke \
+            -e POSTGRES_USER=mainly -e POSTGRES_PASSWORD=smoke -e POSTGRES_DB=mainly \
+            postgres:16-alpine
+          for i in $(seq 1 30); do
+            docker exec db pg_isready -U mainly -d mainly && break
+            sleep 2
+          done
+          docker run -d --name app --network mainly-smoke -p 5274:5274 \
+            -e DATABASE_URL=postgres://mainly:smoke@db:5432/mainly \
+            -e SECRET_KEY=MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY= \
+            -e SESSION_SECRET=smoke \
+            -e APP_ORIGIN=http://localhost:5274 \
+            ${{ env.REGISTRY }}/${{ env.IMAGE }}:latest
+          for i in $(seq 1 30); do
+            if curl -fsS http://localhost:5274/api/health; then
+              echo
+              curl -fsS http://localhost:5274/ | grep -q '<div id="root">' \
+                && { echo "web UI served"; exit 0; }
+              echo "health passed but the web UI was not served" >&2
+              exit 1
+            fi
+            sleep 2
+          done
+          docker logs app
+          exit 1

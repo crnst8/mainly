@@ -1,0 +1,265 @@
+.onb {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-7);
+}
+
+/* Progress is explicit: three named stages, current one marked. Goal-gradient —
+   people finish what they can see the end of. */
+.onb__steps {
+  display: flex;
+  align-items: center;
+  gap: var(--s-3);
+}
+
+.onb__step {
+  display: flex;
+  align-items: center;
+  gap: var(--s-3);
+  font-family: var(--font-mono);
+  font-size: var(--t-2xs);
+  letter-spacing: var(--tr-caps);
+  text-transform: uppercase;
+  color: var(--text-faint);
+}
+
+.onb__step[data-state='current'] {
+  color: var(--text);
+}
+
+.onb__step[data-state='done'] {
+  color: var(--text-muted);
+}
+
+.onb__dot {
+  display: grid;
+  place-items: center;
+  width: 16px;
+  height: 16px;
+  border-radius: var(--radius-full);
+  border: 1px solid var(--line-strong);
+  font-size: 9px;
+}
+
+.onb__step[data-state='current'] .onb__dot {
+  border-color: var(--text);
+  background: var(--text);
+  color: var(--bg);
+}
+
+.onb__step[data-state='done'] .onb__dot {
+  border-color: var(--success);
+  color: var(--success);
+}
+
+.onb__rule {
+  flex: 1;
+  height: 1px;
+  background: var(--line);
+}
+
+.onb__grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--s-6);
+}
+
+.onb__full {
+  grid-column: 1 / -1;
+}
+
+/* ── Detected server card ─────────────────────────────────────────────────── */
+
+.detected {
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  overflow: hidden;
+}
+
+.detected__head {
+  display: flex;
+  align-items: center;
+  gap: var(--s-4);
+  padding: var(--s-4) var(--s-5);
+  background: var(--bg-sunken);
+  border-bottom: 1px solid var(--line-soft);
+}
+
+.detected__source {
+  margin-left: auto;
+  font-family: var(--font-mono);
+  font-size: var(--t-2xs);
+  color: var(--text-faint);
+}
+
+.detected__row {
+  display: grid;
+  grid-template-columns: 54px 1fr auto;
+  align-items: center;
+  gap: var(--s-4);
+  padding: var(--s-4) var(--s-5);
+  border-bottom: 1px solid var(--line-soft);
+  font-family: var(--font-mono);
+  font-size: var(--t-xs);
+}
+
+.detected__row:last-child {
+  border-bottom: none;
+}
+
+.detected__proto {
+  color: var(--text-faint);
+  letter-spacing: var(--tr-caps);
+  text-transform: uppercase;
+  font-size: var(--t-2xs);
+}
+
+.detected__host {
+  color: var(--text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.detected__state {
+  display: flex;
+  align-items: center;
+  gap: var(--s-3);
+  font-size: var(--t-2xs);
+  color: var(--text-faint);
+}
+
+.detected__state[data-ok='true'] {
+  color: var(--success);
+}
+
+.detected__state[data-ok='false'] {
+  color: var(--danger);
+}
+
+/* ── Priority picker ──────────────────────────────────────────────────────── */
+
+.prio {
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  gap: var(--s-2);
+}
+
+.prio__opt {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--s-2);
+  padding: var(--s-4);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--bg);
+  text-align: left;
+  transition:
+    border-color var(--dur-fast) var(--ease-out),
+    background var(--dur-fast) var(--ease-out);
+}
+
+.prio__opt:hover {
+  border-color: var(--line-strong);
+}
+
+.prio__opt[aria-pressed='true'] {
+  border-color: var(--text);
+  background: var(--bg-selected);
+}
+
+.prio__bars {
+  display: flex;
+  gap: 2px;
+  align-items: flex-end;
+  height: 12px;
+}
+
+.prio__bar {
+  width: 3px;
+  background: var(--line-strong);
+  border-radius: 1px;
+}
+
+.prio__opt[aria-pressed='true'] .prio__bar[data-on='true'] {
+  background: var(--text);
+}
+
+.prio__bar[data-on='true'] {
+  background: var(--text-muted);
+}
+
+.prio__name {
+  font-size: var(--t-2xs);
+  font-family: var(--font-mono);
+  text-transform: uppercase;
+  letter-spacing: var(--tr-caps);
+  color: var(--text-muted);
+}
+
+.prio__opt[aria-pressed='true'] .prio__name {
+  color: var(--text);
+}
+
+/* ── Colour picker ────────────────────────────────────────────────────────── */
+
+.swatches {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--s-3);
+}
+
+/* ── Result ───────────────────────────────────────────────────────────────── */
+
+.onb__done {
+  display: grid;
+  place-items: center;
+  gap: var(--s-6);
+  padding: var(--s-9) 0;
+  text-align: center;
+}
+
+.onb__done__mark {
+  display: grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  border-radius: var(--radius-full);
+  border: 1px solid var(--success);
+  color: var(--success);
+  animation: pop-check var(--dur-slow) var(--ease-spring);
+}
+
+@keyframes pop-check {
+  from {
+    transform: scale(0.6);
+    opacity: 0;
+  }
+}
+
+.onb__done__title {
+  font-size: var(--t-xl);
+  font-weight: 500;
+  letter-spacing: var(--tr-tight);
+}
+
+.onb__done__sub {
+  font-family: var(--font-mono);
+  font-size: var(--t-2xs);
+  color: var(--text-faint);
+}
+
+.onb__syncline {
+  width: 100%;
+  height: 2px;
+  border-radius: 1px;
+  background: var(--line);
+  overflow: hidden;
+}
+
+.onb__syncline > span {
+  display: block;
+  height: 100%;
+  background: var(--accent);
+  transition: width var(--dur-slow) var(--ease-out);
+}

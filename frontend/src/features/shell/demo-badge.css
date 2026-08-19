@@ -1,0 +1,82 @@
+/* Bottom-left, above the list but below every popover and modal. The reader
+   pane is on the right at every breakpoint, so this corner is the one place a
+   fixed element does not cover something worth reading. */
+.demo-badge {
+  position: fixed;
+  left: 12px;
+  bottom: 12px;
+  z-index: 40;
+  max-width: 264px;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-lg);
+  background: var(--bg-raised);
+  box-shadow: var(--shadow-pop);
+  font-family: var(--font-ui);
+}
+
+.demo-badge__title {
+  margin: 0 0 4px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--accent-text);
+}
+
+.demo-badge__body {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.45;
+  color: var(--text-secondary);
+}
+
+.demo-badge__links {
+  display: flex;
+  gap: 12px;
+  margin: 8px 0 0;
+}
+
+.demo-badge__links a,
+.demo-badge__links button {
+  padding: 0;
+  border: 0;
+  background: none;
+  font: inherit;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--text-muted);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  cursor: pointer;
+}
+
+.demo-badge__links a:hover,
+.demo-badge__links button:hover {
+  color: var(--text);
+}
+
+/* Collapsed: a single word, so dismissing it is never permanent. */
+.demo-badge--dot {
+  padding: 5px 10px;
+  border-radius: var(--radius-full);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--text-muted);
+  cursor: pointer;
+}
+
+.demo-badge--dot:hover {
+  color: var(--text);
+}
+
+/* On a phone the badge would sit on top of the list. Park it at the top,
+   where the toolbar already is, and let it be narrow. */
+@media (max-width: 720px) {
+  .demo-badge {
+    left: 8px;
+    right: 8px;
+    bottom: 8px;
+    max-width: none;
+  }
+}

@@ -1,0 +1,544 @@
+.settings {
+  position: fixed;
+  inset: 0;
+  z-index: var(--z-modal);
+  display: grid;
+  grid-template-columns: 208px 1fr;
+  background: var(--bg);
+  animation: settings-in var(--dur-slow) var(--ease-out);
+}
+
+@keyframes settings-in {
+  from {
+    opacity: 0;
+    transform: scale(0.99);
+  }
+}
+
+.settings__nav {
+  display: flex;
+  flex-direction: column;
+  border-right: 1px solid var(--line);
+  background: var(--bg-sunken);
+  padding: var(--s-6) var(--s-4);
+}
+
+/* The exit. Reads as a control rather than a heading, because it is one — and
+   because a full-screen view whose only way out is an unlabelled icon in the far
+   corner is a screen people get stuck on. */
+.settings__back {
+  display: flex;
+  align-items: center;
+  gap: var(--s-2);
+  margin-bottom: var(--s-5);
+  padding: 0 var(--s-3);
+  height: 26px;
+  border-radius: var(--radius-sm);
+  font-family: var(--font-mono);
+  font-size: var(--t-2xs);
+  letter-spacing: var(--tr-caps);
+  text-transform: uppercase;
+  color: var(--text-faint);
+  align-self: flex-start;
+  transition: color var(--dur-fast) var(--ease-out), background var(--dur-fast) var(--ease-out);
+}
+
+.settings__back:hover {
+  background: var(--bg-hover);
+  color: var(--text);
+}
+
+/* The header copy exists only where the sidebar is hidden. Two back controls on
+   screen at once would be one too many. */
+.settings__back--inline {
+  display: none;
+  margin-bottom: 0;
+}
+
+.settings__brand {
+  padding: 0 var(--s-3) var(--s-6);
+  font-size: var(--t-lg);
+  font-weight: 500;
+  letter-spacing: var(--tr-tight);
+}
+
+.settings__navitem {
+  display: flex;
+  align-items: center;
+  gap: var(--s-4);
+  height: 30px;
+  padding: 0 var(--s-4);
+  border-radius: var(--radius);
+  color: var(--text-secondary);
+  font-size: var(--t-sm);
+  text-align: left;
+  transition: background var(--dur-fast) var(--ease-out), color var(--dur-fast) var(--ease-out);
+}
+
+.settings__navitem:hover {
+  background: var(--bg-hover);
+  color: var(--text);
+}
+
+.settings__navitem[aria-current='true'] {
+  background: var(--bg-active);
+  color: var(--text);
+  font-weight: 500;
+}
+
+.settings__main {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+}
+
+.settings__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--s-5);
+  padding: var(--s-6) var(--s-8);
+  border-bottom: 1px solid var(--line);
+}
+
+.settings__title {
+  font-size: var(--t-2xl);
+  font-weight: 400;
+  letter-spacing: -0.028em;
+  font-style: italic;
+}
+
+.settings__scroll {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: var(--s-8) var(--s-8) var(--s-12);
+}
+
+.settings__pane {
+  max-width: 720px;
+}
+
+.settings__section {
+  margin-bottom: var(--s-10);
+}
+
+.settings__sectionhead {
+  padding-bottom: var(--s-4);
+  margin-bottom: var(--s-3);
+  border-bottom: 1px solid var(--line);
+}
+
+/* A section head that carries a control on its right — currently the search
+   panel's Reset. Kept as a modifier so the plain heads stay plain. */
+.settings__sectionhead--split {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--s-4);
+}
+
+.settings__note {
+  font-size: var(--t-sm);
+  line-height: 1.55;
+  color: var(--text-muted);
+}
+
+/* ── Search intents ───────────────────────────────────────────────────────── */
+
+/* Three columns on a wide pane, stacked below it. The name has to stay beside
+   its trigger — "Person / from: or to: leads the query" is one statement, and
+   splitting it across a wrap makes the table unreadable. */
+.intents {
+  margin-top: var(--s-5);
+}
+
+.intents__row {
+  display: grid;
+  grid-template-columns: 5.5rem minmax(0, 1fr) minmax(0, 1.2fr);
+  gap: var(--s-3) var(--s-5);
+  align-items: baseline;
+  padding: var(--s-3) 0;
+  border-bottom: 1px solid var(--line-soft);
+}
+
+.intents__row:last-child {
+  border-bottom: none;
+}
+
+.intents__name {
+  font-size: var(--t-sm);
+  font-weight: 550;
+  color: var(--text);
+}
+
+.intents__when {
+  font-size: var(--t-sm);
+  font-family: var(--font-mono);
+  color: var(--text-muted);
+}
+
+.intents__does {
+  font-size: var(--t-sm);
+  color: var(--text-muted);
+}
+
+@media (max-width: 620px) {
+  .intents__row {
+    grid-template-columns: 1fr;
+    gap: var(--s-1);
+  }
+}
+
+/* ── Theme preview ────────────────────────────────────────────────────────── */
+
+.preview {
+  border: 1px solid var(--line);
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+  margin-bottom: var(--s-7);
+  background: var(--bg);
+}
+
+.preview__bar {
+  display: flex;
+  align-items: center;
+  gap: var(--s-4);
+  height: 30px;
+  padding: 0 var(--s-5);
+  border-bottom: 1px solid var(--line);
+  background: var(--bg-sunken);
+}
+
+.preview__row {
+  display: grid;
+  grid-template-columns: 3px 8px 1fr auto;
+  align-items: center;
+  gap: var(--s-4);
+  height: 44px;
+  padding-right: var(--s-5);
+  border-bottom: 1px solid var(--line-soft);
+}
+
+.preview__stripe {
+  align-self: stretch;
+  background: var(--tint);
+}
+
+.preview__dot {
+  width: 7px;
+  height: 7px;
+  border-radius: var(--radius-full);
+  background: var(--accent);
+}
+
+.preview__bars {
+  display: grid;
+  gap: 4px;
+}
+
+.preview__bar {
+  height: 7px;
+  border-radius: 2px;
+  background: var(--n-3);
+}
+
+.preview__bar--strong {
+  background: var(--n-5);
+}
+
+/* ── Colour rows ──────────────────────────────────────────────────────────── */
+
+.colorrow {
+  display: flex;
+  align-items: center;
+  gap: var(--s-5);
+  padding: var(--s-4) 0;
+  border-bottom: 1px solid var(--line-soft);
+}
+
+.colorrow__name {
+  flex: 1;
+  min-width: 0;
+  font-size: var(--t-sm);
+}
+
+.colorrow__addr {
+  font-family: var(--font-mono);
+  font-size: var(--t-2xs);
+  color: var(--text-faint);
+}
+
+.colorrow__swatches {
+  display: flex;
+  gap: var(--s-2);
+  flex-shrink: 0;
+}
+
+/* Native colour input, restyled to a flat square. */
+.colorinput {
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: none;
+  cursor: pointer;
+  overflow: hidden;
+}
+
+.colorinput::-webkit-color-swatch-wrapper {
+  padding: 0;
+}
+
+.colorinput::-webkit-color-swatch {
+  border: none;
+  border-radius: 0;
+}
+
+/* ── Slider ───────────────────────────────────────────────────────────────── */
+
+.slider {
+  --fill: 50%;
+  appearance: none;
+  width: 160px;
+  height: 18px;
+  background: none;
+  cursor: pointer;
+}
+
+.slider::-webkit-slider-runnable-track {
+  height: 2px;
+  border-radius: 1px;
+  background: linear-gradient(
+    to right,
+    var(--text) 0 var(--fill),
+    var(--line-strong) var(--fill) 100%
+  );
+}
+
+.slider::-webkit-slider-thumb {
+  appearance: none;
+  width: 12px;
+  height: 12px;
+  margin-top: -5px;
+  border-radius: var(--radius-full);
+  background: var(--bg-raised);
+  border: 1.5px solid var(--text);
+  transition: transform var(--dur-fast) var(--ease-spring);
+}
+
+.slider::-webkit-slider-thumb:active {
+  transform: scale(1.2);
+}
+
+.slider::-moz-range-track {
+  height: 2px;
+  background: var(--line-strong);
+}
+
+.slider::-moz-range-thumb {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: var(--bg-raised);
+  border: 1.5px solid var(--text);
+}
+
+.sliderwrap {
+  display: flex;
+  align-items: center;
+  gap: var(--s-5);
+}
+
+.slidervalue {
+  font-family: var(--font-mono);
+  font-size: var(--t-2xs);
+  color: var(--text-faint);
+  min-width: 34px;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+/* ── Account list ─────────────────────────────────────────────────────────── */
+
+.acctrow {
+  display: grid;
+  /* stripe · identity · priority · status · visibility · actions.
+     The repair form and the remove confirmation span the full width on their
+     own rows below, which is why this is a grid rather than a flex row. */
+  grid-template-columns: 3px minmax(0, 1fr) auto auto auto auto;
+  align-items: center;
+  gap: var(--s-5);
+  padding: var(--s-5) var(--s-5) var(--s-5) 0;
+  border: 1px solid var(--line-soft);
+  border-radius: var(--radius);
+  margin-bottom: var(--s-3);
+  overflow: hidden;
+  transition: border-color var(--dur-fast) var(--ease-out);
+}
+
+/* A broken account is the reason someone opened this page. It should be findable
+   without reading every row. */
+.acctrow[data-broken] {
+  border-color: color-mix(in oklch, var(--danger) 40%, var(--line));
+  background: color-mix(in oklch, var(--danger) 4%, transparent);
+}
+
+.acctrow__id {
+  min-width: 0;
+  padding-left: var(--s-5);
+}
+
+.acctrow__err {
+  font-family: var(--font-mono);
+  font-size: var(--t-2xs);
+  color: var(--danger);
+  margin-top: 2px;
+  overflow-wrap: anywhere;
+}
+
+.acctrow__acts {
+  display: flex;
+  align-items: center;
+  gap: var(--s-3);
+}
+
+/* Full-width rows under the account line. `1 / -1` rather than a fixed span, so
+   adding a column to the row above can never leave these misaligned. */
+.acctrow__repair,
+.acctrow__confirm {
+  grid-column: 1 / -1;
+  display: flex;
+  align-items: flex-end;
+  gap: var(--s-5);
+  margin: 0 var(--s-5) 0 var(--s-5);
+  padding: var(--s-5) 0 var(--s-2);
+  border-top: 1px solid var(--line-soft);
+}
+
+.acctrow__repair > *:first-child {
+  flex: 1;
+  max-width: 320px;
+}
+
+.acctrow__confirm {
+  align-items: center;
+  font-size: var(--t-xs);
+  color: var(--text-secondary);
+  line-height: var(--lh-normal);
+}
+
+.acctrow__confirm__acts {
+  display: flex;
+  gap: var(--s-3);
+  margin-left: auto;
+  flex-shrink: 0;
+}
+
+.acctrow:hover {
+  border-color: var(--line);
+}
+
+.acctrow__stripe {
+  align-self: stretch;
+  background: var(--tint);
+}
+
+.acctrow__label {
+  font-size: var(--t-sm);
+  font-weight: 500;
+}
+
+.acctrow__addr {
+  font-family: var(--font-mono);
+  font-size: var(--t-2xs);
+  color: var(--text-faint);
+}
+
+.acctrow__status {
+  display: flex;
+  align-items: center;
+  gap: var(--s-3);
+  font-family: var(--font-mono);
+  font-size: var(--t-2xs);
+  color: var(--text-faint);
+}
+
+.acctrow__status[data-error='true'] {
+  color: var(--danger);
+}
+
+/* ── Keyboard reference ───────────────────────────────────────────────────── */
+
+.keys {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: var(--s-8);
+}
+
+.keys__row {
+  display: flex;
+  align-items: center;
+  gap: var(--s-4);
+  padding: var(--s-3) 0;
+  border-bottom: 1px solid var(--line-soft);
+  font-size: var(--t-sm);
+  color: var(--text-secondary);
+}
+
+.keys__combo {
+  margin-left: auto;
+  display: flex;
+  gap: var(--s-2);
+  flex-shrink: 0;
+}
+
+/* ── Column ordering ──────────────────────────────────────────────────────── */
+
+.columns {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--s-3);
+}
+
+.column-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--s-3);
+  height: 26px;
+  padding: 0 var(--s-4);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--bg);
+  font-size: var(--t-xs);
+  color: var(--text-muted);
+}
+
+.column-chip[aria-pressed='true'] {
+  border-color: var(--text);
+  background: var(--bg-selected);
+  color: var(--text);
+}
+
+@media (max-width: 860px) {
+  .settings {
+    grid-template-columns: 1fr;
+  }
+  .settings__nav {
+    display: none;
+  }
+  /* With the sidebar gone this is the only visible way back, so it appears. */
+  .settings__back--inline {
+    display: flex;
+  }
+  .settings__head {
+    /* Back, then the title, then close — reading order matches the shortcut. */
+    justify-content: flex-start;
+    gap: var(--s-6);
+  }
+  .settings__head .iconbtn {
+    margin-left: auto;
+  }
+}

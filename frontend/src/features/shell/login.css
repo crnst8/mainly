@@ -1,0 +1,37 @@
+.login {
+  display: grid;
+  place-items: center;
+  height: 100%;
+  padding: var(--s-7);
+  background: var(--bg-sunken);
+}
+
+.login__panel {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-6);
+  width: 100%;
+  max-width: 340px;
+  padding: var(--s-9);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-lg);
+  background: var(--bg-raised);
+  animation: modal-in var(--dur-slow) var(--ease-out);
+}
+
+/* The same mark as the topbar, larger. One logotype, not two — see the note
+   on `.topbar__mark` for why it is monospaced and why it is not bold. */
+.login__mark {
+  font-family: var(--font-mono);
+  font-size: var(--t-xl);
+  font-weight: 400;
+  letter-spacing: 0.02em;
+  line-height: 1;
+}
+
+.login__sub {
+  font-size: var(--t-xs);
+  color: var(--text-faint);
+  margin-top: calc(var(--s-4) * -1);
+  margin-bottom: var(--s-3);
+}

@@ -1,0 +1,21 @@
+node_modules/
+dist/
+.dev/
+*.log
+*.tsbuildinfo
+
+# Secrets and local overrides. .env.example is committed; these never are.
+.env
+.env.*
+!.env.example
+frontend/.env.local
+
+# Database dumps from ./mainly.sh backup
+backups/
+
+# Built site — ./scripts/build-site.sh regenerates it
+site/dist/
+
+.DS_Store
+.vscode/
+.idea/

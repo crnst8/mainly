@@ -1,0 +1,96 @@
+name: ci
+
+# The same gate ./dev.sh check runs locally: typecheck across three workspaces,
+# the contract hash, the two executable-spec suites, unit tests, then smoke and
+# query correctness against a real Postgres.
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: mainly
+          POSTGRES_PASSWORD: ci
+          POSTGRES_DB: mainly
+        ports: ['54329:5432']
+        options: >-
+          --health-cmd "pg_isready -U mainly -d mainly"
+          --health-interval 5s --health-timeout 3s --health-retries 20
+
+    env:
+      DATABASE_URL: postgres://mainly:ci@localhost:54329/mainly
+      SECRET_KEY: MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY=
+      SESSION_SECRET: ci-session-secret
+      APP_ORIGIN: http://localhost:5273
+      HOST: 127.0.0.1
+      PORT: '5274'
+      ROLE: all
+      LOG_LEVEL: warn
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: |
+            frontend/package-lock.json
+            backend/package-lock.json
+            mcp/package-lock.json
+
+      - run: npm ci --no-audit --no-fund
+        working-directory: frontend
+      - run: npm ci --no-audit --no-fund
+        working-directory: backend
+      - run: npm ci --no-audit --no-fund
+        working-directory: mcp
+
+      - name: Typecheck
+        run: |
+          (cd frontend && npx tsc -b --noEmit)
+          (cd backend  && npx tsc -b --noEmit)
+          (cd mcp      && npx tsc -b --noEmit)
+
+      # The one thing that makes the duplicated contract safe.
+      - name: Contract
+        run: node scripts/check-contract.mjs
+        working-directory: backend
+
+      - name: Executable specs
+        run: |
+          node scripts/url-check.mjs
+          node scripts/search-check.mjs
+        working-directory: frontend
+
+      - name: Unit tests
+        run: npm test
+        working-directory: backend
+
+      - name: Migrate and seed
+        run: |
+          npm run migrate
+          node --experimental-strip-types src/cli/seed.ts
+        working-directory: backend
+
+      # Reseeded above on purpose: the query checks assert absolute counts and
+      # the smoke run mutates flags and moves messages.
+      - name: Smoke and query correctness
+        run: |
+          node scripts/smoke.mjs
+          node scripts/query-check.mjs
+          node scripts/index-check.mjs
+        working-directory: backend
+
+      - name: Build
+        run: |
+          (cd frontend && npm run build)
+          (cd backend  && npm run build)

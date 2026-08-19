@@ -1,0 +1,365 @@
+.reader-pane {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  background: var(--bg);
+}
+
+/* ── Action bar ───────────────────────────────────────────────────────────── */
+
+.reader__bar {
+  display: flex;
+  align-items: center;
+  gap: var(--s-2);
+  /* Shared with .sidebar__head and .listbar. See the note in shell.css. */
+  height: var(--pane-head-h);
+  padding: 0 var(--s-4);
+  border-bottom: 1px solid var(--line);
+  flex-shrink: 0;
+}
+
+.reader__bar__spacer {
+  flex: 1;
+}
+
+.reader__back,
+.reader__back-divider {
+  display: none;
+}
+
+.reader__back {
+  align-items: center;
+  gap: var(--s-2);
+  height: var(--ctl-h);
+  padding: 0 var(--s-3);
+  border-radius: var(--radius-sm);
+  color: var(--text-secondary);
+  font-size: var(--t-xs);
+  font-weight: 500;
+  transition:
+    background var(--dur-fast) var(--ease-out),
+    color var(--dur-fast) var(--ease-out);
+}
+
+.reader__back:hover {
+  background: var(--bg-hover);
+  color: var(--text);
+}
+
+.reader__back-divider {
+  width: 1px;
+  height: 16px;
+  margin: 0 var(--s-2);
+  background: var(--line);
+}
+
+@media (max-width: 1080px) {
+  .reader__back,
+  .reader__back-divider {
+    display: flex;
+  }
+}
+
+.reader__nav {
+  display: flex;
+  align-items: center;
+  gap: var(--s-1);
+  font-family: var(--font-mono);
+  font-size: var(--t-2xs);
+  color: var(--text-faint);
+}
+
+/* ── Scroll body ──────────────────────────────────────────────────────────── */
+
+.reader__scroll {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+.reader__inner {
+  max-width: calc(var(--reader-measure) + var(--s-9) * 2);
+  margin: 0 auto;
+  padding: var(--s-8) var(--s-9) var(--s-12);
+}
+
+/* ── Header ───────────────────────────────────────────────────────────────── */
+
+.reader__subject {
+  font-size: var(--t-xl);
+  font-weight: 500;
+  line-height: var(--lh-tight);
+  letter-spacing: -0.018em;
+  margin-bottom: var(--s-6);
+  text-wrap: balance;
+}
+
+.reader__from {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--s-5);
+  padding-bottom: var(--s-6);
+  border-bottom: 1px solid var(--line-soft);
+}
+
+.reader__avatar {
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  flex-shrink: 0;
+  border-radius: var(--radius);
+  background: color-mix(in oklab, var(--tint) 14%, transparent);
+  color: color-mix(in oklab, var(--tint) 82%, var(--text));
+  font-family: var(--font-mono);
+  font-size: var(--t-xs);
+}
+
+.reader__who {
+  flex: 1;
+  min-width: 0;
+}
+
+.reader__name {
+  font-size: var(--t-md);
+  font-weight: 500;
+  letter-spacing: var(--tr-snug);
+}
+
+.reader__addr {
+  font-family: var(--font-mono);
+  font-size: var(--t-2xs);
+  color: var(--text-faint);
+  margin-top: 1px;
+}
+
+.reader__to {
+  font-size: var(--t-xs);
+  color: var(--text-muted);
+  margin-top: var(--s-3);
+}
+
+.reader__when {
+  font-family: var(--font-mono);
+  font-size: var(--t-2xs);
+  color: var(--text-faint);
+  white-space: nowrap;
+  text-align: right;
+  flex-shrink: 0;
+}
+
+.reader__badges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--s-3);
+  margin-top: var(--s-4);
+}
+
+/* ── Notice strip (blocked images, drafts, spam) ──────────────────────────── */
+
+.notice {
+  display: flex;
+  align-items: center;
+  gap: var(--s-4);
+  margin: var(--s-6) 0 0;
+  padding: var(--s-4) var(--s-5);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--bg-sunken);
+  font-size: var(--t-xs);
+  color: var(--text-muted);
+}
+
+/* A failed body is not the same kind of news as a blocked image: one is us
+   protecting the reader, the other is something being wrong. */
+.notice[data-tone='danger'] {
+  border-color: color-mix(in oklch, var(--danger) 45%, var(--line));
+  background: color-mix(in oklch, var(--danger) 8%, var(--bg-sunken));
+  color: var(--text);
+}
+
+.notice__actions {
+  margin-left: auto;
+  display: flex;
+  gap: var(--s-3);
+  flex-shrink: 0;
+}
+
+/* ── Body ─────────────────────────────────────────────────────────────────── */
+
+.reader__body {
+  margin-top: var(--s-7);
+  font-size: var(--t-md);
+  line-height: var(--lh-loose);
+  color: var(--text-secondary);
+  user-select: text;
+  overflow-wrap: break-word;
+}
+
+/* Wide content inside a mail body scrolls itself; the pane never scrolls
+   sideways. Table-based marketing mail is the whole reason this exists. */
+.reader__body__scroll {
+  overflow-x: auto;
+  max-width: 100%;
+}
+
+.reader__text {
+  white-space: pre-wrap;
+  font-family: var(--font-ui);
+  font-size: var(--t-md);
+  line-height: var(--lh-loose);
+}
+
+/* ── Attachments ──────────────────────────────────────────────────────────── */
+
+.attachments {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+  gap: var(--s-4);
+  margin-top: var(--s-8);
+  padding-top: var(--s-6);
+  border-top: 1px solid var(--line-soft);
+}
+
+.attachment {
+  display: flex;
+  align-items: center;
+  gap: var(--s-4);
+  padding: var(--s-4) var(--s-5);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--bg-raised);
+  text-align: left;
+  transition:
+    border-color var(--dur-fast) var(--ease-out),
+    background var(--dur-fast) var(--ease-out);
+}
+
+.attachment:hover {
+  border-color: var(--line-strong);
+  background: var(--bg-hover);
+}
+
+.attachment__name {
+  font-size: var(--t-xs);
+  color: var(--text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.attachment__size {
+  font-family: var(--font-mono);
+  font-size: var(--t-2xs);
+  color: var(--text-faint);
+}
+
+/* ── Thread ───────────────────────────────────────────────────────────────── */
+
+.thread {
+  margin-top: var(--s-9);
+  border-top: 1px solid var(--line);
+  padding-top: var(--s-6);
+}
+
+.thread__item {
+  border: 1px solid var(--line-soft);
+  border-radius: var(--radius);
+  margin-bottom: var(--s-3);
+  overflow: hidden;
+  transition: border-color var(--dur-fast) var(--ease-out);
+}
+
+.thread__item[data-open='true'] {
+  border-color: var(--line);
+}
+
+.thread__head {
+  display: flex;
+  align-items: center;
+  gap: var(--s-4);
+  width: 100%;
+  padding: var(--s-4) var(--s-5);
+  text-align: left;
+  background: var(--bg-sunken);
+}
+
+.thread__head:hover {
+  background: var(--bg-hover);
+}
+
+.thread__head__name {
+  font-size: var(--t-sm);
+  font-weight: 500;
+  flex-shrink: 0;
+}
+
+.thread__head__preview {
+  flex: 1;
+  min-width: 0;
+  font-size: var(--t-xs);
+  color: var(--text-faint);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.thread__head__date {
+  font-family: var(--font-mono);
+  font-size: var(--t-2xs);
+  color: var(--text-faint);
+  flex-shrink: 0;
+}
+
+.thread__body {
+  padding: var(--s-6);
+  border-top: 1px solid var(--line-soft);
+  background: var(--bg-raised);
+  animation: subtree-in var(--dur-base) var(--ease-out);
+}
+
+/* ── Quick reply ──────────────────────────────────────────────────────────── */
+
+.quickreply {
+  display: flex;
+  gap: var(--s-3);
+  margin-top: var(--s-8);
+  padding-top: var(--s-6);
+  border-top: 1px solid var(--line-soft);
+}
+
+/* ── Headers panel ────────────────────────────────────────────────────────── */
+
+.headers {
+  margin-top: var(--s-6);
+  border: 1px solid var(--line-soft);
+  border-radius: var(--radius);
+  overflow: hidden;
+}
+
+.headers__row {
+  display: grid;
+  grid-template-columns: 150px 1fr;
+  gap: var(--s-5);
+  padding: var(--s-3) var(--s-5);
+  border-bottom: 1px solid var(--line-soft);
+  font-family: var(--font-mono);
+  font-size: var(--t-2xs);
+  user-select: text;
+}
+
+.headers__row:last-child {
+  border-bottom: none;
+}
+
+.headers__key {
+  color: var(--text-faint);
+}
+
+.headers__val {
+  color: var(--text-secondary);
+  overflow-wrap: anywhere;
+}

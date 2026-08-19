@@ -1,0 +1,465 @@
+/*
+ * Bulk import.
+ *
+ * The grid is the whole screen, so it gets the vertical rhythm and everything
+ * else defers to it. Rows are 32px on a 4px scale, which keeps forty-five of them
+ * scannable without the table turning into a spreadsheet — the difference being
+ * that a spreadsheet has cell borders and this has one hairline per row.
+ */
+
+.bulk {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-7);
+  /* Steps and footer are fixed; only the middle scrolls. Without this a
+     forty-five row grid pushes the primary action off the bottom of the modal,
+     which is the single easiest way to make a wizard feel like a dead end. */
+  min-height: 0;
+}
+
+.bulk__step {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-6);
+  min-height: 0;
+}
+
+.bulk__lede {
+  margin: 0;
+  max-width: 62ch;
+  font-size: var(--t-sm);
+  line-height: var(--lh-normal);
+  color: var(--text-secondary);
+}
+
+.bulk__hint {
+  margin: 0;
+  font-size: var(--t-xs);
+  color: var(--text-faint);
+}
+
+.bulk__hint code {
+  font-family: var(--font-mono);
+  font-size: var(--t-2xs);
+  padding: 1px var(--s-2);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  color: var(--text-muted);
+}
+
+/* ── Ports ────────────────────────────────────────────────────────────────── */
+
+.bulk__ports {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-4);
+  padding: var(--s-5);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--bg-sunken);
+}
+
+.bulk__port {
+  display: grid;
+  /* Protocol label, port, security. The label column is fixed so `imap` and
+     `smtp` put their inputs on the same vertical line. */
+  grid-template-columns: 44px 84px 1fr;
+  align-items: center;
+  gap: var(--s-5);
+}
+
+.bulk__port__proto {
+  font-family: var(--font-mono);
+  font-size: var(--t-2xs);
+  letter-spacing: var(--tr-caps);
+  text-transform: uppercase;
+  color: var(--text-faint);
+}
+
+/* ── Shared password ──────────────────────────────────────────────────────── */
+
+.bulk__sharedpw {
+  display: flex;
+  align-items: center;
+  gap: var(--s-4);
+}
+
+.bulk__sharedpw__label {
+  font-size: var(--t-sm);
+  color: var(--text-secondary);
+}
+
+.bulk__sharedpw .input {
+  margin-left: auto;
+  max-width: 220px;
+}
+
+/* ── The grid ─────────────────────────────────────────────────────────────── */
+
+.grid {
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  overflow: auto;
+  /* Bounded so the footer stays reachable. Roughly eleven rows before it
+     scrolls, which is enough to see the shape of what you pasted. */
+  max-height: min(46vh, 380px);
+}
+
+/* One column template, declared once, so the header can never drift out of
+   alignment with the rows beneath it. */
+.grid__head,
+.grid__row {
+  display: grid;
+  /* Address gets the most room because addresses are the longest thing here
+     (`partnerships@chungusglobal.com` is 30 characters); password is narrower because
+     its content is dots. Priority is fixed and wide enough for its longest
+     option, `critical (domain)` — sizing it to the *shortest* is how a select
+     ends up rendering "normal (domair". */
+  grid-template-columns: minmax(0, 1.5fr) minmax(0, 1fr) 176px 32px;
+  align-items: center;
+}
+
+.grid__head {
+  position: sticky;
+  top: 0;
+  z-index: var(--z-sticky);
+  padding: var(--s-3) 0 var(--s-3) var(--s-5);
+  background: var(--bg-sunken);
+  border-bottom: 1px solid var(--line);
+  font-family: var(--font-mono);
+  font-size: var(--t-2xs);
+  letter-spacing: var(--tr-caps);
+  text-transform: uppercase;
+  color: var(--text-faint);
+}
+
+.grid__row {
+  border-bottom: 1px solid var(--line-soft);
+  /* A 4px inset stripe carries the row's outcome. Colour is never the only
+     signal — the results list carries an icon and a sentence too. */
+  border-left: 2px solid transparent;
+  transition: background var(--dur-fast) var(--ease-out);
+}
+
+.grid__row:last-child {
+  border-bottom: none;
+}
+
+.grid__row:focus-within {
+  background: var(--bg-sunken);
+}
+
+.grid__row[data-status='ok'] {
+  border-left-color: var(--success);
+}
+
+.grid__row[data-status='warn'] {
+  border-left-color: var(--warning);
+}
+
+.grid__row[data-status='error'] {
+  border-left-color: var(--danger);
+}
+
+.grid__muted {
+  padding-left: var(--s-4);
+  font-family: var(--font-mono);
+  font-size: var(--t-2xs);
+  color: var(--text-faint);
+}
+
+.grid__drop {
+  display: grid;
+  place-items: center;
+  height: 100%;
+  color: var(--text-faint);
+  opacity: 0;
+  transition: opacity var(--dur-fast) var(--ease-out), color var(--dur-fast) var(--ease-out);
+}
+
+/* Revealed on hover *or* focus-within — a keyboard user must be able to reach
+   the remove button, and opacity alone would hide it from them entirely. */
+.grid__row:hover .grid__drop,
+.grid__row:focus-within .grid__drop,
+.grid__drop:focus-visible {
+  opacity: 1;
+}
+
+.grid__drop:hover,
+.grid__drop:focus-visible {
+  color: var(--danger);
+}
+
+/* Flush inputs: the row's hairline is the only border. A bordered input in every
+   cell turns 45 rows into 180 rectangles. */
+.input--flush {
+  border-color: transparent;
+  border-radius: 0;
+  background: transparent;
+  height: 32px;
+}
+
+.input--flush:hover {
+  border-color: var(--line);
+}
+
+.input--flush:focus-visible {
+  border-color: var(--accent);
+  background: var(--bg);
+}
+
+.input--flush[data-invalid] {
+  color: var(--danger);
+  border-color: var(--danger-soft);
+}
+
+/* A password field whose placeholder is dots looks identical whether or not it
+   has been filled in, which makes "which of these forty rows is missing one?"
+   unanswerable. Empty-but-required says so in words. */
+.input--flush[data-missing]::placeholder {
+  color: var(--danger);
+  opacity: 0.75;
+}
+
+.bulk__gridfoot {
+  display: flex;
+  align-items: center;
+  gap: var(--s-5);
+}
+
+.bulk__tally {
+  margin-left: auto;
+  font-family: var(--font-mono);
+  font-size: var(--t-2xs);
+  color: var(--text-faint);
+}
+
+.bulk__tally__bad {
+  color: var(--danger);
+}
+
+/* ── Domain presets ───────────────────────────────────────────────────────── */
+
+.dom {
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  overflow: auto;
+  max-height: min(46vh, 380px);
+}
+
+.dom__row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 118px auto;
+  align-items: center;
+  gap: var(--s-6);
+  padding: var(--s-4) var(--s-5);
+  border-bottom: 1px solid var(--line-soft);
+}
+
+.dom__row:last-child {
+  border-bottom: none;
+}
+
+.dom__id {
+  display: flex;
+  align-items: center;
+  gap: var(--s-4);
+  min-width: 0;
+}
+
+.dom__chip {
+  width: 10px;
+  height: 10px;
+  border-radius: var(--radius-sm);
+  flex-shrink: 0;
+  /* An inner hairline so a pale swatch is still a defined shape on white. */
+  box-shadow: inset 0 0 0 1px oklch(0% 0 0 / 0.12);
+}
+
+.dom__name {
+  font-family: var(--font-mono);
+  font-size: var(--t-xs);
+  color: var(--text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.dom__count {
+  font-family: var(--font-mono);
+  font-size: var(--t-2xs);
+  color: var(--text-faint);
+  flex-shrink: 0;
+}
+
+/* ── Import results ───────────────────────────────────────────────────────── */
+
+.bulk__summary {
+  display: flex;
+  align-items: center;
+  gap: var(--s-7);
+  padding: var(--s-5) var(--s-6);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--bg-sunken);
+}
+
+.bulk__summary__nums {
+  display: flex;
+  gap: var(--s-7);
+}
+
+.tally {
+  display: flex;
+  align-items: baseline;
+  gap: var(--s-3);
+}
+
+.tally__n {
+  font-size: var(--t-xl);
+  font-weight: 500;
+  letter-spacing: var(--tr-tight);
+  line-height: 1;
+}
+
+.tally[data-tone='ok'] .tally__n {
+  color: var(--success);
+}
+
+.tally[data-tone='warn'] .tally__n {
+  color: var(--warning);
+}
+
+.tally[data-tone='error'] .tally__n {
+  color: var(--danger);
+}
+
+.tally__label {
+  font-family: var(--font-mono);
+  font-size: var(--t-2xs);
+  letter-spacing: var(--tr-caps);
+  text-transform: uppercase;
+  color: var(--text-faint);
+}
+
+.bulk__summary__state {
+  display: flex;
+  align-items: center;
+  gap: var(--s-4);
+  margin-left: auto;
+  text-align: right;
+  font-size: var(--t-xs);
+  color: var(--text-muted);
+}
+
+.results {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  overflow: auto;
+  max-height: min(40vh, 340px);
+}
+
+.results__row {
+  display: grid;
+  grid-template-columns: 20px minmax(0, 220px) minmax(0, 1fr);
+  align-items: center;
+  gap: var(--s-4);
+  padding: var(--s-4) var(--s-5);
+  border-bottom: 1px solid var(--line-soft);
+  font-size: var(--t-xs);
+}
+
+.results__row:last-child {
+  border-bottom: none;
+}
+
+.results__row[data-status='error'] {
+  grid-template-columns: 20px minmax(0, 220px) minmax(0, 1fr) 150px;
+}
+
+.results__mark {
+  display: grid;
+  place-items: center;
+  color: var(--text-faint);
+}
+
+.results__row[data-status='ok'] .results__mark {
+  color: var(--success);
+}
+
+.results__row[data-status='warn'] .results__mark {
+  color: var(--warning);
+}
+
+.results__row[data-status='error'] .results__mark {
+  color: var(--danger);
+}
+
+.results__addr {
+  font-family: var(--font-mono);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text);
+}
+
+/* The server's own words. Allowed to wrap: truncating "Authentication failed."
+   to "Authenticat…" removes the only useful thing on the row. */
+.results__msg {
+  color: var(--text-muted);
+  overflow-wrap: anywhere;
+}
+
+.results__row[data-status='error'] .results__msg {
+  color: var(--danger);
+}
+
+.results__retry {
+  height: 26px;
+  border-color: var(--line);
+  background: var(--bg);
+}
+
+/* ── Footer ───────────────────────────────────────────────────────────────── */
+
+.bulk__foot {
+  display: flex;
+  align-items: center;
+  gap: var(--s-4);
+  padding-top: var(--s-6);
+  border-top: 1px solid var(--line);
+}
+
+.bulk__foot__spacer {
+  flex: 1;
+}
+
+/* ── Mode switch, shared with the single-account wizard ───────────────────── */
+
+.onb__mode {
+  display: flex;
+  align-items: center;
+  gap: var(--s-5);
+}
+
+.onb__mode__hint {
+  font-size: var(--t-xs);
+  color: var(--text-faint);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .grid__row,
+  .grid__drop,
+  .input--flush {
+    transition: none;
+  }
+}

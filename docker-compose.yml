@@ -1,0 +1,78 @@
+# mainly — the whole application, in two containers.
+#
+#   ./mainly.sh start
+#
+# Or by hand, once a .env exists (copy .env.example and fill in the secrets):
+#
+#   docker compose up -d
+#
+# The published image is used by default; `docker compose up -d --build` builds
+# from this checkout instead.
+#
+# Ports bind to 127.0.0.1. Nothing here is reachable from the network until you
+# deliberately put a reverse proxy in front of it — see docs/self-hosting.md.
+
+name: mainly
+
+services:
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: mainly
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env — run ./mainly.sh start to generate one}
+      POSTGRES_DB: mainly
+    volumes:
+      - db-data:/var/lib/postgresql/data
+    # Exposed for pg_dump and manual inspection only. Comment it out if you do
+    # not need either; the app reaches the database over the compose network.
+    ports:
+      - '127.0.0.1:${DB_PORT:-54329}:5432'
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U mainly -d mainly']
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  app:
+    image: ghcr.io/crnst8/mainly:${MAINLY_VERSION:-latest}
+    build:
+      context: .
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      NODE_ENV: production
+      # api | sync | all. Leave it at "all" unless you are running replicas.
+      ROLE: ${ROLE:-all}
+      HOST: 0.0.0.0
+      PORT: 5274
+      DATABASE_URL: postgres://mainly:${POSTGRES_PASSWORD:?}@db:5432/mainly
+      # The address you open in a browser. Used for cookie and CORS decisions,
+      # so it has to match exactly, scheme and port included.
+      APP_ORIGIN: ${APP_ORIGIN:-http://localhost:5274}
+      SECRET_KEY: ${SECRET_KEY:?set SECRET_KEY in .env — run ./mainly.sh start to generate one}
+      SESSION_SECRET: ${SESSION_SECRET:?set SESSION_SECRET in .env}
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+      # Off by default: /onboarding/verify opens a connection to a hostname you
+      # supply, so allowing private ranges is an SSRF surface. Turn it on only
+      # when your mail server is on a LAN, a VPN or Tailscale.
+      ALLOW_PRIVATE_IMAP_HOSTS: ${ALLOW_PRIVATE_IMAP_HOSTS:-false}
+      # Keep TLS hostname validation working while routing over a private
+      # network:  MAIL_HOST_OVERRIDE=mail.example.com=100.64.0.1
+      MAIL_HOST_OVERRIDE: ${MAIL_HOST_OVERRIDE:-}
+      IMAP_POOL_MAX: ${IMAP_POOL_MAX:-8}
+      IMAP_PER_ACCOUNT_MAX: ${IMAP_PER_ACCOUNT_MAX:-2}
+      SYNC_INTERVAL_MS: ${SYNC_INTERVAL_MS:-120000}
+      APP_VERSION: ${MAINLY_VERSION:-latest}
+    ports:
+      - '${BIND_ADDRESS:-127.0.0.1}:${PORT:-5274}:5274'
+    logging:
+      driver: json-file
+      options:
+        max-size: '10m'
+        max-file: '3'
+
+volumes:
+  db-data:
