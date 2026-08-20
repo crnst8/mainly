@@ -1,7 +1,9 @@
 import { useCallback, useEffect, useState } from 'react';
 import { AppShell } from '@/features/shell/AppShell';
-import { DemoBadge } from '@/features/shell/DemoBadge';
 import { Login } from '@/features/shell/Login';
+import { DemoBadge } from '@/features/shell/DemoBadge';
+import { MobileShell } from '@/features/mobile/MobileShell';
+import { useIsMobile } from '@/lib/media';
 import { useStore } from '@/lib/store';
 import { Empty, Spinner } from '@/components/ui';
 
@@ -10,6 +12,7 @@ import { Empty, Spinner } from '@/components/ui';
 const IS_DEMO = import.meta.env.VITE_DEMO === '1';
 
 export default function App() {
+  const isMobile = useIsMobile();
   const ready = useStore((s) => s.ready);
   const error = useStore((s) => s.error);
   const accounts = useStore((s) => s.accounts);
@@ -54,7 +57,7 @@ export default function App() {
 
   return (
     <>
-      <AppShell />
+      {isMobile ? <MobileShell /> : <AppShell />}
       {IS_DEMO && <DemoBadge />}
     </>
   );

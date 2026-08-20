@@ -807,7 +807,13 @@ export const useStore = create<State & Actions>((set, get) => ({
     const target = ids ?? targetIds(get());
     const first = (get().result?.messages ?? []).find((m) => m.id === target[0]);
     const archive = get().folders.find((f) => f.role === 'archive' && f.accountId === first?.accountId);
-    if (!archive) return;
+    if (!archive) {
+      // Returning silently trains people to distrust the control — the keyboard
+      // shortcut and the mobile swipe both looked like they had worked. Say why
+      // nothing happened instead.
+      get().toast(`No Archive folder on ${first ? 'that account' : 'this account'}`);
+      return;
+    }
     await get().act(target, { type: 'move', folderId: archive.id }, 'Archived');
   },
 

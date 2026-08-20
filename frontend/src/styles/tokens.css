@@ -153,6 +153,10 @@
   --z-pop: 100;
   --z-modal: 200;
   --z-toast: 300;
+
+  /* ── Safe area — the notch and the home indicator on standalone PWAs ────── */
+  --safe-top: env(safe-area-inset-top, 0px);
+  --safe-bottom: env(safe-area-inset-bottom, 0px);
 }
 
 /* ── Density modes ───────────────────────────────────────────────────────── */

@@ -14,6 +14,7 @@ import {
   Globe,
   Layout,
   Palette as PaletteIcon,
+  Phone,
   Search as SearchIcon,
   Trash,
   User,
@@ -23,7 +24,7 @@ import { SHORTCUTS } from '@/lib/keyboard';
 import { relative } from '@/lib/format';
 import { DEFAULT_SEARCH_WEIGHTS, type SearchWeights } from '@/lib/search';
 import { useDomains, useStore } from '@/lib/store';
-import type { Account, Density, ListColumn, Priority, ThemeMode } from '@/lib/types';
+import type { Account, Density, ListColumn, Priority, SwipeAction, ThemeMode } from '@/lib/types';
 import './settings.css';
 
 const TABS = [
@@ -32,6 +33,7 @@ const TABS = [
   { id: 'list', label: 'Message list', icon: <Layout size={15} /> },
   { id: 'search', label: 'Search', icon: <SearchIcon size={15} /> },
   { id: 'accounts', label: 'Accounts', icon: <User size={15} /> },
+  { id: 'mobile', label: 'Mobile', icon: <Phone size={15} /> },
   { id: 'keyboard', label: 'Keyboard', icon: <Command size={15} /> },
 ];
 
@@ -89,10 +91,10 @@ export function Settings() {
           <button
             type="button"
             className="settings__back settings__back--inline"
+            aria-label="Back"
             onClick={() => setSettings(null)}
           >
-            <Chevron size={13} dir="left" />
-            <span>Mainly</span>
+            <Chevron size={16} dir="left" />
           </button>
           <h1 className="settings__title">{TABS.find((t) => t.id === tab)?.label}</h1>
           <IconButton label="Close settings" hint="Esc" onClick={() => setSettings(null)}>
@@ -107,6 +109,7 @@ export function Settings() {
             {tab === 'list' && <ListSettings />}
             {tab === 'search' && <SearchSettings />}
             {tab === 'accounts' && <Accounts focus={raw.startsWith('account:') ? raw.slice(8) : null} />}
+            {tab === 'mobile' && <MobileSettings />}
             {tab === 'keyboard' && <Keyboard />}
           </div>
         </div>
@@ -800,6 +803,106 @@ function AccountRow({ account: a, focused }: { account: Account; focused: boolea
         </div>
       )}
     </div>
+  );
+}
+
+/* ── Mobile ───────────────────────────────────────────────────────────────── */
+
+const SWIPE_OPTIONS: { value: SwipeAction; label: string }[] = [
+  { value: 'none', label: 'None' },
+  { value: 'archive', label: 'Archive' },
+  { value: 'trash', label: 'Trash' },
+  { value: 'read', label: 'Read / unread' },
+  { value: 'pin', label: 'Pin' },
+  { value: 'move', label: 'Move to folder' },
+  { value: 'label', label: 'Label' },
+];
+
+/** A live row preview so the two selects mean something before you touch a
+ *  phone. The stripe is a neutral tint, not a real account colour. */
+function MobileRowPreview() {
+  const mobile = useStore((s) => s.prefs!.mobile);
+  return (
+    <div className="preview">
+      <div className="preview__bar">
+        <span className="label">Mobile rows</span>
+      </div>
+      {[0, 1].map((i) => (
+        <div className="mprev__row" key={i}>
+          <span className="mprev__stripe" />
+          <div className="mprev__main">
+            <div className="mprev__line">
+              <span className="mprev__sender">{['Anna', 'Marcus'][i]}</span>
+              <span className="mprev__subject">Re: The quarterly numbers</span>
+            </div>
+            <div className="mprev__preview">
+              <span className="mprev__text">Here is the draft for review…</span>
+              <span className="mprev__date tnum">14:22</span>
+            </div>
+          </div>
+        </div>
+      ))}
+      <div className="mprev__hint">
+        Swipe <strong>{mobile.swipeLeft === 'none' ? '—' : mobile.swipeLeft}</strong> left ·
+        swipe <strong>{mobile.swipeRight === 'none' ? '—' : mobile.swipeRight}</strong> right
+      </div>
+    </div>
+  );
+}
+
+function MobileSettings() {
+  const mobile = useStore((s) => s.prefs!.mobile);
+  const savePrefs = useStore((s) => s.savePrefs);
+
+  const set = (patch: Partial<typeof mobile>) => void savePrefs({ mobile: { ...mobile, ...patch } });
+
+  return (
+    <>
+      <MobileRowPreview />
+
+      <section className="settings__section">
+        <Row title="Swipe left" desc="Revealed when you swipe a row to the left.">
+          <select
+            className="input mselect"
+            aria-label="Swipe left action"
+            value={mobile.swipeLeft}
+            onChange={(e) => set({ swipeLeft: e.target.value as SwipeAction })}
+          >
+            {SWIPE_OPTIONS.map((o) => (
+              <option key={o.value} value={o.value}>
+                {o.label}
+              </option>
+            ))}
+          </select>
+        </Row>
+
+        <Row title="Swipe right" desc="Revealed when you swipe a row to the right.">
+          <select
+            className="input mselect"
+            aria-label="Swipe right action"
+            value={mobile.swipeRight}
+            onChange={(e) => set({ swipeRight: e.target.value as SwipeAction })}
+          >
+            {SWIPE_OPTIONS.map((o) => (
+              <option key={o.value} value={o.value}>
+                {o.label}
+              </option>
+            ))}
+          </select>
+        </Row>
+
+        <Row
+          title="Long swipe commits"
+          desc="A swipe past the threshold fires the action without lifting into the button."
+        >
+          <Toggle
+            label="Long swipe commits"
+            checked={mobile.longSwipeCommits}
+            onChange={(longSwipeCommits) => set({ longSwipeCommits })}
+          />
+        </Row>
+      </section>
+    </>
   );
 }
 

@@ -15,6 +15,7 @@ import { initials, listDate, displayName } from '@/lib/format';
 import { parseSearch, searchTerms } from '@/lib/search';
 import { homeScope, searchNarrowing } from '@/lib/scope';
 import { useAccountColor, useGroups, useStore } from '@/lib/store';
+import { firstItemAt } from '@/lib/virtual';
 import type { Id, MessageSummary } from '@/lib/types';
 import { useContextMenu } from '@/components/context-menu';
 import { ListBar } from './ListBar';
@@ -40,24 +41,6 @@ type Item =
       h: number;
     }
   | { kind: 'row'; key: string; message: MessageSummary; top: number; h: number };
-
-/** Index of the last item starting at or before `y`. Items are ordered by
- *  `top`, so this is a plain lower-bound search. */
-function firstItemAt(items: Item[], y: number): number {
-  let lo = 0;
-  let hi = items.length - 1;
-  let found = 0;
-  while (lo <= hi) {
-    const mid = (lo + hi) >> 1;
-    if (items[mid]!.top <= y) {
-      found = mid;
-      lo = mid + 1;
-    } else {
-      hi = mid - 1;
-    }
-  }
-  return found;
-}
 
 export function MailList() {
   const groups = useGroups();

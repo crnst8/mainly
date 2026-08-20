@@ -457,6 +457,19 @@ export type Density = 'compact' | 'cosy' | 'relaxed';
 export type LayoutMode = 'columns' | 'stacked' | 'list';
 export type PreviewPosition = 'right' | 'bottom' | 'off';
 
+/** What a mobile swipe reveals on a row. `pin` is the \Flagged bit — the same
+ *  one the desktop calls Flag. `move` and `label` need a target picker and are
+ *  offered for forward-compatibility; the swipe itself only commits the four
+ *  actions that have a single existing store function. */
+export type SwipeAction = 'none' | 'archive' | 'trash' | 'read' | 'pin' | 'move' | 'label';
+
+export interface MobilePreferences {
+  swipeLeft: SwipeAction;
+  swipeRight: SwipeAction;
+  /** A swipe past the commit threshold fires without lifting into a button. */
+  longSwipeCommits: boolean;
+}
+
 export interface Theme {
   mode: ThemeMode;
   accent: string;
@@ -499,7 +512,16 @@ export interface Preferences {
   search: SearchPreferences;
   /** User-made sidebar folders holding mailboxes. Empty = group by domain only. */
   accountGroups: AccountGroup[];
+  /** Touch-shell behaviour. */
+  mobile: MobilePreferences;
 }
+
+/** Touch-shell defaults: swipe left to archive, right to mark read. */
+export const DEFAULT_MOBILE_PREFERENCES: MobilePreferences = {
+  swipeLeft: 'archive',
+  swipeRight: 'read',
+  longSwipeCommits: true,
+};
 
 /**
  * The complete default preference set.
@@ -545,6 +567,7 @@ export const DEFAULT_PREFERENCES: Preferences = {
   sendGuards: true,
   search: DEFAULT_SEARCH_PREFERENCES,
   accountGroups: [],
+  mobile: DEFAULT_MOBILE_PREFERENCES,
 };
 
 /** Merge stored preferences over the defaults. Nested objects are merged one
@@ -557,6 +580,7 @@ export function withPreferenceDefaults(stored: Partial<Preferences> | null | und
     theme: { ...DEFAULT_PREFERENCES.theme, ...stored?.theme },
     defaultQuery: { ...DEFAULT_PREFERENCES.defaultQuery, ...stored?.defaultQuery },
     search: withSearchDefaults(stored?.search),
+    mobile: { ...DEFAULT_MOBILE_PREFERENCES, ...stored?.mobile },
     // Arrays replace rather than merge, but a stored `null` must not become
     // `null` on a field every caller maps over.
     accountGroups: stored?.accountGroups ?? [],

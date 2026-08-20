@@ -238,3 +238,10 @@ export const Clock = (p: P) => (
     <path d="M8 4.6V8l2.4 1.6" />
   </Svg>
 );
+
+export const Phone = (p: P) => (
+  <Svg {...p}>
+    <rect x="5.2" y="2.6" width="5.6" height="10.8" rx="1.6" />
+    <path d="M7.2 12.3h1.6" />
+  </Svg>
+);

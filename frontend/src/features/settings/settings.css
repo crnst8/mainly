@@ -103,10 +103,9 @@
 }
 
 .settings__title {
-  font-size: var(--t-2xl);
-  font-weight: 400;
-  letter-spacing: -0.028em;
-  font-style: italic;
+  font-size: var(--t-lg);
+  font-weight: 600;
+  letter-spacing: var(--tr-tight);
 }
 
 .settings__scroll {
@@ -525,11 +524,72 @@
 @media (max-width: 860px) {
   .settings {
     grid-template-columns: 1fr;
+    /* The panel takes the room; the tabs take what they need at the bottom. */
+    grid-template-rows: 1fr auto;
   }
+
+  /*
+   * The tab column becomes a scrolling strip at the thumb end rather than
+   * disappearing.
+   *
+   * It used to be `display: none` here, which was survivable while a phone was
+   * an afterthought and is not now: the mobile shell's gear opens settings on
+   * one named tab, and with the nav hidden that tab was the only one reachable.
+   * Theme, accounts and search — the settings someone actually opens on a
+   * phone, and the only way to repair a mailbox that has stopped syncing — had
+   * no route at all.
+   *
+   * Bottom rather than top because it is the one edge a thumb owns, which is
+   * the same argument the rail makes on the desktop.
+   */
   .settings__nav {
+    grid-row: 2;
+    flex-direction: row;
+    align-items: center;
+    gap: var(--s-2);
+    overflow-x: auto;
+    overflow-y: hidden;
+    scrollbar-width: none;
+    border-right: none;
+    border-top: 1px solid var(--line);
+    padding: var(--s-3) var(--s-4);
+    padding-bottom: calc(var(--s-3) + var(--safe-bottom));
+  }
+
+  .settings__nav::-webkit-scrollbar {
     display: none;
   }
-  /* With the sidebar gone this is the only visible way back, so it appears. */
+
+  /* Both are duplicated by the head on this layout. */
+  .settings__nav .settings__back,
+  .settings__brand {
+    display: none;
+  }
+
+  .settings__navitem {
+    flex-shrink: 0;
+    /* A thumb target, not a pointer one. */
+    height: 44px;
+    padding: 0 var(--s-5);
+    gap: var(--s-3);
+    border: 1px solid var(--line);
+    border-radius: var(--radius-lg);
+    font-size: var(--t-sm);
+    white-space: nowrap;
+  }
+
+  .settings__navitem[aria-current='true'] {
+    background: var(--bg-inverse);
+    border-color: var(--bg-inverse);
+    color: var(--text-inverse);
+  }
+
+  .settings__main {
+    grid-row: 1;
+    min-height: 0;
+  }
+
+  /* With the nav's copy hidden, this is the only visible way back, so it appears. */
   .settings__back--inline {
     display: flex;
   }
@@ -541,4 +601,82 @@
   .settings__head .iconbtn {
     margin-left: auto;
   }
+}
+
+/* ── Mobile preferences ───────────────────────────────────────────────────── */
+
+.mselect {
+  width: 180px;
+}
+
+.mprev__row {
+  display: flex;
+  height: 56px;
+  border-bottom: 1px solid var(--line-soft);
+  background: var(--bg-sunken);
+}
+
+.mprev__row:first-child {
+  background: var(--bg);
+}
+
+.mprev__stripe {
+  flex-shrink: 0;
+  width: 10px;
+  align-self: stretch;
+  background: var(--n-5);
+}
+
+.mprev__main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 3px;
+  padding: 0 var(--s-4);
+}
+
+.mprev__line {
+  display: flex;
+  gap: var(--s-2);
+  min-width: 0;
+}
+
+.mprev__sender {
+  font-weight: 700;
+  color: var(--text-secondary);
+  flex-shrink: 0;
+}
+
+.mprev__subject {
+  font-weight: 700;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.mprev__preview {
+  display: flex;
+  gap: var(--s-3);
+  color: var(--text-faint);
+  font-size: var(--t-xs);
+}
+
+.mprev__text {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.mprev__date {
+  font-family: var(--font-mono);
+  font-size: var(--t-2xs);
+}
+
+.mprev__hint {
+  padding: var(--s-4) var(--s-5);
+  font-size: var(--t-xs);
+  color: var(--text-muted);
+  background: var(--bg-sunken);
 }

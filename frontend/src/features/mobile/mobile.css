@@ -1,0 +1,828 @@
+/* The touch shell. Everything here mounts only below the 720px breakpoint
+   (see `lib/media.ts`), so it never affects the desktop layout. Heights use
+   `100dvh`, never `100vh`, so the address bar collapsing does not jump the
+   shell, and the safe-area tokens keep content clear of the notch and the
+   home indicator. */
+
+.mobile {
+  height: 100dvh;
+  display: flex;
+  flex-direction: column;
+  padding-top: var(--safe-top);
+  padding-bottom: var(--safe-bottom);
+  background: var(--bg);
+  overflow: hidden;
+}
+
+/* ── Topbar ──────────────────────────────────────────────────────────────── */
+
+.mobile__topbar {
+  height: 44px;
+  flex-shrink: 0;
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  align-items: center;
+  gap: var(--s-3);
+  padding: 0 var(--s-4);
+}
+
+.mobile__mark {
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  border-radius: var(--radius);
+  background: transparent;
+  transition: background var(--dur-fast) var(--ease-out);
+}
+
+.mobile__mark:hover {
+  background: var(--bg-hover);
+}
+
+.mobile__logo--dark {
+  display: none;
+}
+
+:root[data-theme='dark'] .mobile__logo--dark {
+  display: block;
+}
+
+:root[data-theme='dark'] .mobile__logo:not(.mobile__logo--dark) {
+  display: none;
+}
+
+.mobile__gear {
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  border-radius: var(--radius);
+  color: var(--text-secondary);
+  background: transparent;
+  transition: background var(--dur-fast) var(--ease-out), color var(--dur-fast) var(--ease-out);
+}
+
+.mobile__gear:hover {
+  background: var(--bg-hover);
+  color: var(--text);
+}
+
+/* ── Chips ───────────────────────────────────────────────────────────────── */
+
+.mobile__chips {
+  display: flex;
+  align-items: center;
+  gap: var(--s-2);
+  min-width: 0;
+  overflow-x: auto;
+  scrollbar-width: none;
+  -webkit-overflow-scrolling: touch;
+}
+
+.mobile__chips::-webkit-scrollbar {
+  display: none;
+}
+
+.mobile__chip {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--s-2);
+  height: 28px;
+  padding: 0 var(--s-4);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-full);
+  background: var(--bg);
+  color: var(--text-secondary);
+  font-size: var(--t-xs);
+  white-space: nowrap;
+  transition: border-color var(--dur-fast) var(--ease-out), background var(--dur-fast) var(--ease-out),
+    color var(--dur-fast) var(--ease-out);
+}
+
+.mobile__chip[data-active] {
+  border-color: var(--text);
+  background: var(--bg-selected);
+  color: var(--text);
+  font-weight: 500;
+}
+
+.mobile__chipcount {
+  font-family: var(--font-mono);
+  font-size: var(--t-2xs);
+  color: var(--text-faint);
+}
+
+.mobile__chip[data-active] .mobile__chipcount {
+  color: var(--text-muted);
+}
+
+/* ── Search + compose row ────────────────────────────────────────────────── */
+
+.mobile__searchrow {
+  display: flex;
+  align-items: center;
+  gap: var(--s-2);
+  padding: 0 var(--s-4) var(--s-2);
+}
+
+.mobile__search {
+  flex: 1;
+  min-width: 0;
+}
+
+.mobile__search .searchwrap {
+  width: 100%;
+}
+
+.mobile__search .search {
+  height: 44px;
+}
+
+.mobile__compose {
+  flex-shrink: 0;
+  width: 15%;
+  height: 44px;
+  display: grid;
+  place-items: center;
+  border: none;
+  border-radius: var(--radius-lg);
+  background: var(--bg-inverse);
+  color: var(--text-inverse);
+  transition: opacity var(--dur-fast) var(--ease-out);
+}
+
+.mobile__compose:hover {
+  opacity: 0.9;
+}
+
+/* ── List ────────────────────────────────────────────────────────────────── */
+
+.mobile__list {
+  flex: 1;
+  min-height: 0;
+  position: relative;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior-y: contain;
+}
+
+.mobile__sizer {
+  position: relative;
+}
+
+.mobile__loading {
+  height: 200px;
+}
+
+.mobile__group {
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 26px;
+  display: flex;
+  align-items: center;
+  padding: 0 var(--s-5);
+  background: var(--bg-sunken);
+  font-size: var(--t-2xs);
+  font-family: var(--font-mono);
+  letter-spacing: var(--tr-caps);
+  text-transform: uppercase;
+  color: var(--text-faint);
+}
+
+/* ── Row ─────────────────────────────────────────────────────────────────── */
+
+.mrow {
+  position: relative;
+  display: flex;
+  height: 66px;
+  background: var(--bg);
+  border-bottom: 1px solid color-mix(in oklab, var(--tint) 35%, var(--line));
+}
+
+/* Read sits on the sunken surface, unread on the flat — inverted from the
+   desktop, so unread is the thing that pops on a small screen. */
+.mrow[data-read] {
+  background: var(--bg-sunken);
+}
+
+/* Pinned rows get a warm tint and a red marker at the right edge. */
+.mrow[data-flagged] {
+  background: color-mix(in oklab, var(--warning) 8%, var(--bg));
+}
+
+.mrow__stripe {
+  flex-shrink: 0;
+  width: 12px;
+  align-self: stretch;
+  background: var(--tint);
+}
+
+.mrow__main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 3px;
+  padding: 0 var(--s-4);
+}
+
+.mrow__line {
+  display: flex;
+  align-items: baseline;
+  gap: var(--s-2);
+  min-width: 0;
+}
+
+.mrow__answered {
+  flex-shrink: 0;
+  color: var(--text-faint);
+}
+
+/*
+ * Sender and subject were both 700 and a half-step apart in colour, which at
+ * arm's length read as one run of bold text with a colour change in the middle.
+ * They now differ on three axes at once — size, weight and colour — so the eye
+ * lands on the subject and picks the sender up as the label it is.
+ */
+.mrow__sender {
+  flex-shrink: 0;
+  max-width: 42%;
+  font-size: var(--t-xs);
+  font-weight: 500;
+  color: var(--text-faint);
+  letter-spacing: 0;
+}
+
+.mrow__subject {
+  flex-shrink: 1;
+  font-size: var(--t-sm);
+  font-weight: 700;
+  color: var(--text);
+  letter-spacing: var(--tr-snug);
+}
+
+/* Unread lifts the sender too, or the row's one strong signal is competing
+   with a label that has gone quiet. */
+.mrow:not([data-read]) .mrow__sender {
+  color: var(--text-secondary);
+  font-weight: 600;
+}
+
+.mrow__preview {
+  display: flex;
+  align-items: baseline;
+  gap: var(--s-3);
+  min-width: 0;
+  color: var(--text-faint);
+  font-size: var(--t-xs);
+}
+
+.mrow__previewtext {
+  flex: 1;
+  min-width: 0;
+}
+
+.mrow__date {
+  flex-shrink: 0;
+  font-family: var(--font-mono);
+  font-size: var(--t-2xs);
+  color: var(--text-faint);
+}
+
+.mrow__flag {
+  position: absolute;
+  right: var(--s-2);
+  top: var(--s-2);
+  color: var(--danger);
+  font-family: var(--font-mono);
+  font-size: var(--t-xs);
+  font-weight: 700;
+}
+
+/* ── Pull to refresh ─────────────────────────────────────────────────────── */
+
+/*
+ * Sits behind the list at the top of the scroller and is dragged into view by
+ * the sizer moving down, so the indicator and the content move as one surface
+ * rather than one sliding over the other.
+ */
+.mobile__pull {
+  position: absolute;
+  top: calc(-1 * var(--s-10));
+  left: 0;
+  right: 0;
+  height: var(--s-10);
+  display: grid;
+  place-items: center;
+  color: var(--text-faint);
+  pointer-events: none;
+  z-index: 1;
+}
+
+.mobile__pull[data-armed] {
+  color: var(--accent);
+}
+
+/* Armed is a state change, so it gets a shape change, not just a colour: the
+   glyph completes a half turn as it crosses the threshold. */
+.mobile__pull svg {
+  transition: transform var(--dur-base) var(--ease-out);
+}
+
+.mobile__pull[data-armed] svg {
+  transform: rotate(180deg);
+}
+
+.mobile__pull[data-syncing] {
+  color: var(--accent);
+}
+
+.mobile__pull[data-syncing] svg {
+  animation: spin 900ms linear infinite;
+  transform: none;
+}
+
+/* Follows the finger while pulling, springs back when it lifts. */
+.mobile__sizer {
+  transition: transform var(--dur-base) var(--ease-out);
+}
+
+.mobile__sizer[data-pulling] {
+  transition: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .mobile__pull svg,
+  .mobile__sizer {
+    transition: none;
+  }
+  .mobile__pull[data-armed] svg {
+    transform: none;
+  }
+}
+
+/* ── Swipe ───────────────────────────────────────────────────────────────── */
+
+.swiperow {
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 66px;
+  /* Vertical scrolling stays the browser's; horizontal is ours. */
+  touch-action: pan-y;
+  overflow: hidden;
+}
+
+.swiperow__content {
+  position: absolute;
+  inset: 0;
+  will-change: transform;
+  transition: transform var(--dur-base) var(--ease-out);
+}
+
+/* The drag is pointer-captured on `.swiperow`, so `:active` never lands on the
+   content and the transition stayed on mid-gesture — 170ms of easing between
+   the finger and the row. The state comes from the gesture instead. */
+.swiperow__content[data-dragging] {
+  transition: none;
+}
+
+/*
+ * The pane is the feedback, not just the target. It widens as the row moves so
+ * it always fills the gap, and once the swipe passes the point where letting go
+ * would commit it says so — saturating, growing its icon and showing its label.
+ * A swipe that acts on release with no warning is a swipe people stop trusting.
+ */
+.swiperow__pane {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: var(--s-3);
+  padding: 0 var(--s-5);
+  border: none;
+  font-size: var(--t-xs);
+  font-weight: 600;
+  letter-spacing: var(--tr-caps);
+  text-transform: uppercase;
+  color: var(--text-inverse);
+  opacity: 0.55;
+  transition:
+    opacity var(--dur-fast) var(--ease-out),
+    filter var(--dur-fast) var(--ease-out);
+}
+
+.swiperow__pane[data-armed] {
+  opacity: 1;
+}
+
+.swiperow__icon {
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+  transition: transform var(--dur-fast) var(--ease-out);
+}
+
+.swiperow__pane[data-armed] .swiperow__icon {
+  transform: scale(1.35);
+}
+
+/* The label is the confirmation of intent; it costs nothing until it is true. */
+.swiperow__label {
+  opacity: 0;
+  transform: translateX(-4px);
+  transition:
+    opacity var(--dur-fast) var(--ease-out),
+    transform var(--dur-fast) var(--ease-out);
+}
+
+.swiperow__pane[data-armed] .swiperow__label {
+  opacity: 1;
+  transform: none;
+}
+
+/* Held for one beat after commit, before the row is actually acted on. */
+.swiperow[data-committing] .swiperow__pane[data-armed] {
+  opacity: 1;
+}
+
+.swiperow[data-committing] .swiperow__icon {
+  transform: scale(1.5);
+}
+
+.swiperow__pane--left {
+  left: 0;
+  justify-content: flex-start;
+}
+
+.swiperow__pane--right {
+  right: 0;
+  flex-direction: row-reverse;
+  justify-content: flex-start;
+}
+
+.swiperow__pane[data-tone='neutral'] {
+  background: var(--n-6);
+}
+
+.swiperow__pane[data-tone='danger'] {
+  background: var(--danger);
+}
+
+.swiperow__pane[data-tone='warning'] {
+  background: var(--warning);
+  color: var(--n-12);
+}
+
+/* ── Sheet ───────────────────────────────────────────────────────────────── */
+
+.sheet-scrim {
+  position: fixed;
+  inset: 0;
+  z-index: var(--z-modal);
+  background: oklch(0% 0 0 / 0.4);
+  display: flex;
+  align-items: flex-end;
+}
+
+.sheet {
+  width: 100%;
+  max-height: 80%;
+  display: flex;
+  flex-direction: column;
+  padding-bottom: var(--safe-bottom);
+  background: var(--bg);
+  border-radius: var(--radius-lg) var(--radius-lg) 0 0;
+  box-shadow: var(--shadow-modal);
+  outline: none;
+  transition: transform var(--dur-base) var(--ease-out);
+}
+
+.sheet__handle {
+  flex-shrink: 0;
+  width: 44px;
+  height: 20px;
+  margin: var(--s-3) auto var(--s-2);
+  border: none;
+  border-radius: var(--radius-full);
+  background: var(--n-4);
+  touch-action: none;
+}
+
+.sheet__title {
+  flex-shrink: 0;
+  padding: 0 var(--s-6) var(--s-3);
+}
+
+.sheet__body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 0 var(--s-4) var(--s-6);
+}
+
+.sheet__list {
+  display: flex;
+  flex-direction: column;
+}
+
+.sheet__row {
+  display: flex;
+  align-items: center;
+  gap: var(--s-3);
+  height: 48px;
+  padding: 0 var(--s-4);
+  border: none;
+  border-bottom: 1px solid var(--line-soft);
+  background: transparent;
+  color: var(--text);
+  font-size: var(--t-md);
+  text-align: left;
+}
+
+.sheet__row[data-on] {
+  color: var(--accent);
+  font-weight: 600;
+}
+
+.sheet__rowlabel {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.sheet__rowhint {
+  font-family: var(--font-mono);
+  font-size: var(--t-2xs);
+  color: var(--text-faint);
+  font-weight: 400;
+}
+
+.sheet__rowcheck {
+  margin-left: auto;
+  flex-shrink: 0;
+  color: var(--accent);
+}
+
+.sheet__sectionhead {
+  margin: var(--s-6) var(--s-4) var(--s-2);
+}
+
+.sheet__seg {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--s-2);
+  padding: 0 var(--s-4);
+}
+
+.sheet__segitem {
+  height: 36px;
+  padding: 0 var(--s-5);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-full);
+  background: var(--bg);
+  color: var(--text-secondary);
+  font-size: var(--t-sm);
+}
+
+.sheet__segitem[data-on] {
+  border-color: var(--text);
+  background: var(--bg-selected);
+  color: var(--text);
+  font-weight: 500;
+}
+
+/* ── Reader ──────────────────────────────────────────────────────────────── */
+
+.mreader {
+  position: fixed;
+  inset: 0;
+  z-index: var(--z-sticky);
+  display: flex;
+  flex-direction: column;
+  padding-top: var(--safe-top);
+  padding-bottom: var(--safe-bottom);
+  background: var(--bg);
+  animation: mreader-in var(--dur-slow) var(--ease-out);
+}
+
+@keyframes mreader-in {
+  from {
+    transform: translateX(8%);
+    opacity: 0;
+  }
+}
+
+.mreader__bar {
+  flex-shrink: 0;
+  height: 48px;
+  display: flex;
+  align-items: center;
+  gap: var(--s-2);
+  padding: 0 var(--s-3);
+  border-bottom: 1px solid var(--line);
+}
+
+.mreader__barname {
+  flex: 1;
+  min-width: 0;
+  font-weight: 600;
+  font-size: var(--t-sm);
+}
+
+.mreader__baracts {
+  display: flex;
+  align-items: center;
+  gap: var(--s-1);
+}
+
+.mreader__scroll {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+.mreader__inner {
+  max-width: var(--reader-measure);
+  margin: 0 auto;
+  padding: var(--s-6) var(--s-5) var(--s-12);
+}
+
+.mreader__subject {
+  font-size: var(--t-xl);
+  font-weight: 600;
+  letter-spacing: var(--tr-tight);
+  line-height: var(--lh-snug);
+  margin-bottom: var(--s-5);
+}
+
+.mreader__from {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--s-3);
+  margin-bottom: var(--s-6);
+}
+
+.mreader__avatar {
+  flex-shrink: 0;
+  width: 34px;
+  height: 34px;
+  display: grid;
+  place-items: center;
+  border-radius: var(--radius-full);
+  background: color-mix(in oklab, var(--tint) 14%, transparent);
+  color: var(--tint);
+  font-size: var(--t-xs);
+  font-weight: 600;
+}
+
+.mreader__who {
+  flex: 1;
+  min-width: 0;
+}
+
+/* Who and when, on one line, both holding their own space. */
+.mreader__topline {
+  display: flex;
+  align-items: baseline;
+  gap: var(--s-3);
+  min-width: 0;
+}
+
+.mreader__name {
+  flex: 1;
+  min-width: 0;
+  font-weight: 600;
+}
+
+.mreader__when {
+  flex-shrink: 0;
+  font-family: var(--font-mono);
+  font-size: var(--t-2xs);
+  color: var(--text-faint);
+}
+
+.mreader__addr {
+  font-family: var(--font-mono);
+  font-size: var(--t-xs);
+  color: var(--text-faint);
+}
+
+/* One line, always. The full envelope is a tap away and not before. */
+.mreader__recipients {
+  display: flex;
+  align-items: center;
+  gap: var(--s-2);
+  width: 100%;
+  min-width: 0;
+  margin-top: var(--s-2);
+  padding: var(--s-2) 0;
+  font-size: var(--t-xs);
+  color: var(--text-muted);
+  text-align: left;
+}
+
+.mreader__recipients svg {
+  flex-shrink: 0;
+  color: var(--text-faint);
+}
+
+.mreader__envelope {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: var(--s-2) var(--s-4);
+  margin-top: var(--s-2);
+  padding: var(--s-4);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--bg-sunken);
+  font-size: var(--t-xs);
+}
+
+.mreader__envelope dt {
+  color: var(--text-faint);
+  white-space: nowrap;
+}
+
+.mreader__envelope dd {
+  min-width: 0;
+  color: var(--text-secondary);
+  overflow-wrap: anywhere;
+}
+
+.mreader__badges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--s-2);
+  margin-top: var(--s-3);
+}
+
+.mreader__body {
+  margin-bottom: var(--s-7);
+}
+
+.mthread {
+  margin-top: var(--s-8);
+}
+
+.mthread__item {
+  border-bottom: 1px solid var(--line-soft);
+}
+
+.mthread__head {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: var(--s-2);
+  padding: var(--s-4) 0;
+  border: none;
+  background: transparent;
+  text-align: left;
+}
+
+.mthread__head__name {
+  font-weight: 600;
+  font-size: var(--t-sm);
+}
+
+.mthread__head__date {
+  margin-left: auto;
+  font-family: var(--font-mono);
+  font-size: var(--t-2xs);
+  color: var(--text-faint);
+}
+
+.mthread__body {
+  padding: 0 0 var(--s-5);
+}
+
+.mquick {
+  display: flex;
+  gap: var(--s-2);
+  margin-top: var(--s-8);
+  flex-wrap: wrap;
+}
+
+/* ── Reduced motion ──────────────────────────────────────────────────────── */
+
+@media (prefers-reduced-motion: reduce) {
+  .swiperow__content,
+  .swiperow__pane,
+  .swiperow__icon,
+  .swiperow__label {
+    transition: none;
+  }
+  .swiperow__pane[data-armed] .swiperow__icon,
+  .swiperow[data-committing] .swiperow__icon {
+    transform: none;
+  }
+  .mreader {
+    animation: none;
+  }
+}
