@@ -42,6 +42,15 @@
   color: var(--text);
 }
 
+/* The destructive confirm. Rare by design — most destructive actions here get
+   an undo window instead of a question. This is for the ones that genuinely
+   cannot be undone, like discarding a draft that was never saved. */
+.btn--danger {
+  background: var(--danger);
+  color: var(--n-0);
+  border-color: var(--danger);
+}
+
 .btn--outline:hover:not(:disabled) {
   border-color: var(--line-strong);
   background: var(--bg-hover);

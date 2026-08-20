@@ -8,7 +8,7 @@
 
 import { useState } from 'react';
 import { Chevron, Plus } from '@/components/icons';
-import { Composer } from '@/features/compose/Composer';
+import { MobileComposer } from './MobileComposer';
 import { Onboarding } from '@/features/accounts/Onboarding';
 import { Settings } from '@/features/settings/Settings';
 import { SearchBox } from '@/features/shell/SearchBox';
@@ -56,7 +56,7 @@ export function MobileShell() {
       <ScopeSheet open={scopeOpen} onClose={() => setScopeOpen(false)} />
       <FilterSheet open={filterOpen} onClose={() => setFilterOpen(false)} />
 
-      <Composer />
+      <MobileComposer />
       <Toasts />
       {settings && <Settings />}
       {onboarding && <Onboarding />}

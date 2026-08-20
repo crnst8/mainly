@@ -479,6 +479,271 @@
   color: var(--n-12);
 }
 
+/* ── Composer ────────────────────────────────────────────────────────────── */
+
+/*
+ * A screen, not a floating card. The docked composer's fixed 620x560 box, its
+ * minimise control and its drop shadow are all answers to "where does this sit
+ * relative to the mail behind it" — a question a phone does not ask.
+ *
+ * `--kb` is how much of the viewport the on-screen keyboard is covering, set
+ * from visualViewport by the component. The layout viewport does not shrink on
+ * iOS when the keyboard opens, so without it the composer keeps its full height
+ * and the last line being typed sits underneath the keys.
+ */
+.mcompose {
+  position: fixed;
+  inset: 0;
+  z-index: var(--z-modal);
+  display: flex;
+  flex-direction: column;
+  /* Not 100dvh: dvh follows the keyboard on some browsers and not others, and
+     "some" is the worst possible amount of layout to leave to chance. */
+  height: 100%;
+  padding-top: var(--safe-top);
+  background: var(--bg);
+  animation: mcompose-in var(--dur-slow) var(--ease-out);
+}
+
+@keyframes mcompose-in {
+  from {
+    transform: translateY(2%);
+    opacity: 0;
+  }
+}
+
+.mcompose__bar {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  gap: var(--s-3);
+  height: 52px;
+  padding: 0 var(--s-3);
+  border-bottom: 1px solid var(--line);
+}
+
+.mcompose__back {
+  display: grid;
+  place-items: center;
+  width: 40px;
+  height: 40px;
+  flex-shrink: 0;
+  border-radius: var(--radius);
+  color: var(--text);
+}
+
+.mcompose__title {
+  flex: 1;
+  min-width: 0;
+  font-size: var(--t-sm);
+  font-weight: 600;
+  letter-spacing: var(--tr-tight);
+}
+
+/* Top right, where every mail client on this platform puts it (Jakob), and big
+   enough to hit without aiming. */
+.mcompose__send {
+  display: flex;
+  align-items: center;
+  gap: var(--s-2);
+  height: 38px;
+  padding: 0 var(--s-5);
+  flex-shrink: 0;
+  border-radius: var(--radius-full);
+  background: var(--accent);
+  color: var(--accent-ink);
+  font-size: var(--t-sm);
+  font-weight: 600;
+}
+
+.mcompose__send:disabled {
+  background: var(--n-4);
+  color: var(--text-faint);
+}
+
+/* The scroll region ends where the keyboard begins. */
+.mcompose__scroll {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior-y: contain;
+  padding-bottom: calc(var(--kb, 0px) + var(--safe-bottom));
+  transition: padding-bottom var(--dur-fast) var(--ease-out);
+}
+
+.mcompose__row,
+.mcompose__from {
+  display: flex;
+  align-items: center;
+  gap: var(--s-3);
+  flex-shrink: 0;
+  min-height: 48px;
+  padding: var(--s-2) var(--s-5);
+  border-bottom: 1px solid var(--line-soft);
+  text-align: left;
+  width: 100%;
+}
+
+.mcompose__row--recip {
+  align-items: flex-start;
+  padding-top: var(--s-3);
+}
+
+.mcompose__label {
+  flex-shrink: 0;
+  width: 52px;
+  padding-top: 2px;
+  font-size: var(--t-xs);
+  color: var(--text-faint);
+}
+
+.mcompose__dot {
+  flex-shrink: 0;
+  width: 9px;
+  height: 9px;
+  border-radius: var(--radius-full);
+  background: var(--tint);
+}
+
+.mcompose__fromaddr {
+  flex: 1;
+  min-width: 0;
+  font-family: var(--font-mono);
+  font-size: var(--t-xs);
+  color: var(--text-secondary);
+}
+
+/*
+ * 16px, without exception.
+ *
+ * Mobile Safari zooms the page when a focused input's text is smaller than
+ * 16px, and does not zoom back out when it blurs. Every "why did the whole app
+ * suddenly get bigger and stay that way" bug on a mobile web form is this.
+ */
+.mcompose__input,
+.mcompose__body {
+  font-size: 16px;
+  font-family: inherit;
+  color: var(--text);
+  background: transparent;
+  border: none;
+  width: 100%;
+  min-width: 0;
+}
+
+.mcompose__input {
+  flex: 1;
+  height: 40px;
+}
+
+.mcompose__input::placeholder,
+.mcompose__body::placeholder {
+  color: var(--text-faint);
+}
+
+.mcompose__input--chip {
+  flex: 1 1 8ch;
+  min-width: 8ch;
+  height: 32px;
+  width: auto;
+}
+
+.mcompose__chips {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--s-2);
+}
+
+.mchip {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--s-2);
+  max-width: 100%;
+  height: 30px;
+  padding: 0 var(--s-2) 0 var(--s-3);
+  border-radius: var(--radius-full);
+  background: var(--bg-hover);
+  font-size: var(--t-xs);
+  white-space: nowrap;
+  overflow: hidden;
+}
+
+.mchip[data-invalid] {
+  background: color-mix(in oklab, var(--danger) 14%, transparent);
+  color: var(--danger);
+}
+
+/* 28px of tappable inside a 30px chip — the remove control is the one thing
+   here that must never be hit by accident, so it gets its own bounds. */
+.mchip button {
+  display: grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  flex-shrink: 0;
+  border-radius: var(--radius-full);
+  color: var(--text-faint);
+}
+
+.mcompose__cctoggle {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  flex-shrink: 0;
+  height: 30px;
+  padding: 0 var(--s-3);
+  align-self: flex-start;
+  border-radius: var(--radius-full);
+  border: 1px solid var(--line);
+  color: var(--text-muted);
+  font-size: var(--t-xs);
+}
+
+/* The body takes whatever is left, so tapping anywhere below the fields lands
+   in the message rather than on dead background. */
+.mcompose__body {
+  flex: 1;
+  min-height: 40vh;
+  padding: var(--s-5);
+  line-height: var(--lh-normal);
+  resize: none;
+}
+
+.mcompose__confirm {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-3);
+  padding: 0 var(--s-4) var(--s-4);
+}
+
+.mcompose__confirm p {
+  color: var(--text-muted);
+  font-size: var(--t-sm);
+  margin-bottom: var(--s-2);
+}
+
+.mcompose__confirmbtn {
+  width: 100%;
+  height: 46px;
+  justify-content: center;
+  font-size: var(--t-sm);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .mcompose {
+    animation: none;
+  }
+  .mcompose__scroll {
+    transition: none;
+  }
+}
+
 /* ── Sheet ───────────────────────────────────────────────────────────────── */
 
 .sheet-scrim {

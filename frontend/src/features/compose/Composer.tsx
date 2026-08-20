@@ -10,11 +10,10 @@
 import { useEffect, useRef, useState } from 'react';
 import { Chevron, Close, Send } from '@/components/icons';
 import { Button, IconButton, Kbd, PopItem, PopLabel, Popover } from '@/components/ui';
+import { EMAIL_RE, parseAddrs } from '@/lib/format';
 import { useStore } from '@/lib/store';
 import type { Addr } from '@/lib/types';
 import './compose.css';
-
-const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 export function Composer() {
   const draft = useStore((s) => s.composer);
@@ -201,19 +200,8 @@ function RecipientField({
 }) {
   const [text, setText] = useState('');
 
-  /** Accepts anything a human might paste: bare addresses, "Name <addr>",
-   *  comma-, semicolon-, or space-separated. Postel's law, applied literally. */
   const commit = (raw: string) => {
-    const parts = raw
-      .split(/[,;]+/)
-      .map((s) => s.trim())
-      .filter(Boolean);
-    const parsed: Addr[] = [];
-    for (const p of parts) {
-      const angle = /^(.*?)\s*<([^>]+)>$/.exec(p);
-      if (angle) parsed.push({ name: angle[1]!.replace(/^["']|["']$/g, '') || null, address: angle[2]! });
-      else parsed.push({ name: null, address: p });
-    }
+    const parsed = parseAddrs(raw);
     if (parsed.length) onChange([...value, ...parsed]);
     setText('');
   };

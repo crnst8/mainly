@@ -89,3 +89,27 @@ export function addrList(addrs: Addr[], max = 2): string {
 }
 
 export const domainOf = (address: string): string => address.split('@')[1] ?? '';
+
+/**
+ * Parse whatever a person might type or paste into a recipient field.
+ *
+ * Bare addresses, `Name <addr>`, comma-, semicolon- or newline-separated, with
+ * or without surrounding quotes. Postel's law applied literally: accept the
+ * variation, emit one consistent shape. Validation is a separate question and
+ * belongs to whoever is rendering the chip.
+ *
+ * Shared by the docked composer and the mobile one, which is why it is here
+ * rather than inside either.
+ */
+export function parseAddrs(raw: string): Addr[] {
+  const out: Addr[] = [];
+  for (const part of raw.split(/[,;\n]+/).map((s) => s.trim()).filter(Boolean)) {
+    const angle = /^(.*?)\s*<([^>]+)>$/.exec(part);
+    if (angle) out.push({ name: angle[1]!.replace(/^["']|["']$/g, '').trim() || null, address: angle[2]!.trim() });
+    else out.push({ name: null, address: part });
+  }
+  return out;
+}
+
+/** The shape a recipient has to have before it is worth sending to. */
+export const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;

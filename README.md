@@ -117,6 +117,11 @@ arms it — the pane fills and names what it is about to do — and letting go t
 commits without a second tap. Destructive actions keep the same undo window as
 the desktop.
 
+Composing is a full screen of its own rather than the desktop's docked card:
+recipient chips, a From row that is never collapsed, and a send bar that tracks
+the on-screen keyboard so nothing is ever typed underneath it. Backing out of a
+draft with anything in it asks before discarding.
+
 ### Install as an app
 The frontend is a PWA, so it can be installed to a home screen or a dock and run
 without browser chrome. Nothing needs enabling; it is served with the app.
