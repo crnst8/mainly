@@ -11,7 +11,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Archive, Attachment, Check, Dot, Star, Trash } from '@/components/icons';
 import { Empty, IconButton, Mark } from '@/components/ui';
-import { initials, listDate, displayName } from '@/lib/format';
+import { SenderAvatar } from '@/components/SenderAvatar';
+import { listDate, displayName } from '@/lib/format';
 import { parseSearch, searchTerms } from '@/lib/search';
 import { homeScope, searchNarrowing } from '@/lib/scope';
 import { useAccountColor, useGroups, useStore } from '@/lib/store';
@@ -346,9 +347,12 @@ function Row({
       </span>
 
       {showAvatar ? (
-        <span className="row-msg__avatar" style={{ '--tint': tint } as React.CSSProperties}>
-          {initials(m.from)}
-        </span>
+        <SenderAvatar
+          className="row-msg__avatar"
+          sender={m.from}
+          profiles={prefs?.senderProfiles ?? []}
+          tint={tint}
+        />
       ) : (
         <span />
       )}

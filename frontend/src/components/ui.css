@@ -179,6 +179,19 @@
   white-space: nowrap;
 }
 
+/* Sender logos live inside the same bounded avatar surfaces as monograms.
+   `object-fit` prevents one wide wordmark from reflowing a virtualised row. */
+.sender-avatar {
+  overflow: hidden;
+}
+
+.sender-avatar__image {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+
 .pill--tinted {
   border-color: color-mix(in oklab, var(--tint) 34%, transparent);
   background: color-mix(in oklab, var(--tint) 10%, transparent);
@@ -643,12 +656,11 @@ textarea.input {
 }
 
 .empty__title {
-  font-size: var(--t-3xl);
-  font-weight: 400;
+  font-size: var(--t-2xl);
+  font-weight: 500;
   line-height: 0.94;
   letter-spacing: -0.03em;
   color: var(--text);
-  font-style: italic;
 }
 
 .empty__body {

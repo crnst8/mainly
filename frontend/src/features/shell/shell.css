@@ -41,6 +41,8 @@
   border-bottom: 1px solid var(--line);
   background: var(--bg);
   -webkit-app-region: drag;
+
+
 }
 
 .topbar__brand {

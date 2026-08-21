@@ -18,8 +18,10 @@ import {
   Warning,
 } from '@/components/icons';
 import { Button, Empty, IconButton, Pill, Progress } from '@/components/ui';
-import { addrList, bytes, displayName, fullDate, initials, listDate, relative } from '@/lib/format';
+import { SenderAvatar } from '@/components/SenderAvatar';
+import { addrList, bytes, displayName, fullDate, listDate, relative } from '@/lib/format';
 import { parseSearch, searchTerms } from '@/lib/search';
+import { allowImagesFromSender, remoteImagesAllowed } from '@/lib/sender';
 import { getApi } from '@/lib/api';
 import { useAccountColor, useStore } from '@/lib/store';
 import type { Attachment as AttachmentInfo, Message } from '@/lib/types';
@@ -31,6 +33,8 @@ export function MobileReader() {
   const loading = useStore((s) => s.readerLoading);
   const colorOf = useAccountColor();
   const accounts = useStore((s) => s.accounts);
+  const prefs = useStore((s) => s.prefs);
+  const savePrefs = useStore((s) => s.savePrefs);
   const close = useStore((s) => s.open);
 
   const scope = useStore((s) => s.query.scope);
@@ -41,6 +45,10 @@ export function MobileReader() {
 
   const [loadRemote, setLoadRemote] = useState(false);
   const [showDetail, setShowDetail] = useState(false);
+
+  useEffect(() => {
+    setLoadRemote(remoteImagesAllowed(prefs, message?.from));
+  }, [message?.id, prefs, message?.from]);
 
   if (!message) {
     return (
@@ -76,9 +84,12 @@ export function MobileReader() {
             full envelope on demand.
           */}
           <div className="mreader__from">
-            <span className="mreader__avatar" style={{ '--tint': tint } as React.CSSProperties}>
-              {initials(message.from)}
-            </span>
+            <SenderAvatar
+              className="mreader__avatar"
+              sender={message.from}
+              profiles={prefs?.senderProfiles ?? []}
+              tint={tint}
+            />
             <div className="mreader__who">
               <div className="mreader__topline">
                 <span className="mreader__name truncate" data-selectable>
@@ -149,6 +160,20 @@ export function MobileReader() {
               <div className="notice__actions">
                 <Button size="sm" variant="outline" onClick={() => setLoadRemote(true)}>
                   Show images
+                </Button>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => {
+                    setLoadRemote(true);
+                    if (!prefs) return;
+                    void savePrefs({
+                      remoteImages: prefs.remoteImages === 'never' ? 'trusted' : prefs.remoteImages,
+                      senderProfiles: allowImagesFromSender(message.from, prefs.senderProfiles),
+                    });
+                  }}
+                >
+                  Always allow
                 </Button>
               </div>
             </div>

@@ -256,7 +256,7 @@ function FilterSheet({ open, onClose }: { open: boolean; onClose: () => void }) 
   const patchFilters = useStore((s) => s.patchFilters);
   const patchQuery = useStore((s) => s.patchQuery);
   // Select the raw result and derive here. `Object.keys` in the selector builds
-  // a new array every call, which re-renders forever.
+  // a new array every call, which re-renders forever (PATTERNS.md section 3).
   const result = useStore((s) => s.result);
   const labels = Object.keys(result?.facets.labels ?? {});
 

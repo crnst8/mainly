@@ -144,6 +144,65 @@
   color: var(--text-muted);
 }
 
+/* ── Sender identities ───────────────────────────────────────────────────── */
+
+.sender-form {
+  display: grid;
+  gap: var(--s-5);
+  max-width: 440px;
+}
+
+.sender-form__error {
+  font-size: var(--t-xs);
+  color: var(--danger);
+}
+
+.sender-profiles {
+  display: grid;
+  gap: var(--s-3);
+}
+
+.sender-profile {
+  display: flex;
+  align-items: center;
+  gap: var(--s-4);
+  padding: var(--s-4);
+  border: 1px solid var(--line-soft);
+  border-radius: var(--radius);
+}
+
+.sender-profile__avatar {
+  display: grid;
+  place-items: center;
+  width: var(--ctl-h);
+  height: var(--ctl-h);
+  flex-shrink: 0;
+  border-radius: var(--radius);
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-family: var(--font-mono);
+  font-size: var(--t-2xs);
+}
+
+.sender-profile__main {
+  flex: 1;
+  min-width: 0;
+}
+
+.sender-profile__name {
+  font-size: var(--t-sm);
+  font-weight: 500;
+}
+
+.sender-profile__domains {
+  overflow: hidden;
+  font-family: var(--font-mono);
+  font-size: var(--t-2xs);
+  color: var(--text-faint);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 /* ── Search intents ───────────────────────────────────────────────────────── */
 
 /* Three columns on a wide pane, stacked below it. The name has to stay beside

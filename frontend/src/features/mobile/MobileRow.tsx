@@ -22,14 +22,16 @@ export function MobileRow({ message: m }: { message: MessageSummary }) {
     >
       <span className="mrow__stripe" />
       <div className="mrow__main">
-        <div className="mrow__line">
+        <div className="mrow__senderline">
           {m.answered && <Reply className="mrow__answered" size={11} />}
           <span className="mrow__sender truncate">{displayName(m.from)}</span>
+        </div>
+        <div className="mrow__subjectline">
           <span className="mrow__subject truncate">{m.subject || '(no subject)'}</span>
+          <span className="mrow__date tnum">{listDate(m.date)}</span>
         </div>
         <div className="mrow__preview">
           <span className="mrow__previewtext truncate">{m.preview}</span>
-          <span className="mrow__date tnum">{listDate(m.date)}</span>
         </div>
       </div>
       {m.flagged && <span className="mrow__flag">!</span>}

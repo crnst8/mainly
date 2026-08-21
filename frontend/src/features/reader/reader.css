@@ -81,9 +81,9 @@
 }
 
 .reader__inner {
-  max-width: calc(var(--reader-measure) + var(--s-9) * 2);
+  max-width: calc(var(--reader-measure) + var(--s-6) * 2);
   margin: 0 auto;
-  padding: var(--s-8) var(--s-9) var(--s-12);
+  padding: var(--s-8) var(--s-6) var(--s-12);
 }
 
 /* ── Header ───────────────────────────────────────────────────────────────── */

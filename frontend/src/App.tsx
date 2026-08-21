@@ -1,15 +1,10 @@
 import { useCallback, useEffect, useState } from 'react';
 import { AppShell } from '@/features/shell/AppShell';
 import { Login } from '@/features/shell/Login';
-import { DemoBadge } from '@/features/shell/DemoBadge';
 import { MobileShell } from '@/features/mobile/MobileShell';
 import { useIsMobile } from '@/lib/media';
 import { useStore } from '@/lib/store';
 import { Empty, Spinner } from '@/components/ui';
-
-/* Constant-folded: in every build that is not the hosted demo this is `false`,
-   and the bundler drops DemoBadge and its stylesheet entirely. */
-const IS_DEMO = import.meta.env.VITE_DEMO === '1';
 
 export default function App() {
   const isMobile = useIsMobile();
@@ -55,10 +50,5 @@ export default function App() {
     );
   }
 
-  return (
-    <>
-      {isMobile ? <MobileShell /> : <AppShell />}
-      {IS_DEMO && <DemoBadge />}
-    </>
-  );
+  return isMobile ? <MobileShell /> : <AppShell />;
 }

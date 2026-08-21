@@ -55,7 +55,7 @@ export type AccountStatus =
 
 export interface Account {
   id: Id;
-  /** Full address, e.g. dale@bigchungus.holdings */
+  /** Full address, e.g. colby@cmr.my */
   address: string;
   /** Cached from address for grouping without parsing on every render. */
   domain: string;
@@ -470,6 +470,17 @@ export interface MobilePreferences {
   longSwipeCommits: boolean;
 }
 
+/** A user-defined sender identity. Every authorised domain also covers its
+ * subdomains, but no other domain is inferred to belong to the same sender. */
+export interface SenderProfile {
+  id: string;
+  name: string | null;
+  domains: string[];
+  /** A user-supplied HTTPS logo URL. Null keeps the generated monogram. */
+  imageUrl: string | null;
+  allowRemoteImages: boolean;
+}
+
 export interface Theme {
   mode: ThemeMode;
   accent: string;
@@ -506,6 +517,8 @@ export interface Preferences {
   undoWindowMs: number;
   /** Load remote images without asking, per sender trust. */
   remoteImages: 'always' | 'never' | 'trusted';
+  /** Explicit sender identities used for image permission and branding. */
+  senderProfiles: SenderProfile[];
   /** Confirm before sending with an empty subject etc. */
   sendGuards: boolean;
   /** How search results are ranked. See `search.ts`. */
@@ -564,6 +577,7 @@ export const DEFAULT_PREFERENCES: Preferences = {
   markReadDelayMs: 900,
   undoWindowMs: 6000,
   remoteImages: 'trusted',
+  senderProfiles: [],
   sendGuards: true,
   search: DEFAULT_SEARCH_PREFERENCES,
   accountGroups: [],
@@ -584,6 +598,7 @@ export function withPreferenceDefaults(stored: Partial<Preferences> | null | und
     // Arrays replace rather than merge, but a stored `null` must not become
     // `null` on a field every caller maps over.
     accountGroups: stored?.accountGroups ?? [],
+    senderProfiles: stored?.senderProfiles ?? [],
   };
 }
 

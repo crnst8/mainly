@@ -1,6 +1,6 @@
 /**
- * Swipe actions on a mobile row. Pointer events, never HTML5 drag-and-drop:
- * `touch-action: pan-y` on the row is what stops the swipe
+ * Swipe actions on a mobile row. Pointer events, never HTML5 drag-and-drop
+ * (PATTERNS.md §3). `touch-action: pan-y` on the row is what stops the swipe
  * fighting the list — vertical scrolling stays the browser's, horizontal is
  * ours. One action per side, both configurable in settings.
  *

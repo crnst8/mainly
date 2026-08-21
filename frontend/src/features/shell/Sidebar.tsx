@@ -61,7 +61,6 @@ const UNIFIED_ROLES: { role: FolderRole; label: string }[] = [
 export function Sidebar() {
   const scope = useStore((s) => s.query.scope);
   const domains = useDomains();
-  const accounts = useStore((s) => s.accounts);
   const setOnboarding = useStore((s) => s.setOnboarding);
   const createAccountGroup = useStore((s) => s.createAccountGroup);
   const moveAccountToGroup = useStore((s) => s.moveAccountToGroup);
@@ -78,14 +77,7 @@ export function Sidebar() {
 
   return (
     <aside className="sidebar" aria-label="Folders">
-      <div className="sidebar__head">
-        <div className="sidebar__title truncate">{domain ?? 'All mail'}</div>
-        <div className="sidebar__sub">
-          {domain
-            ? `${inDomain.length} account${inDomain.length === 1 ? '' : 's'}`
-            : `${accounts.length} account${accounts.length === 1 ? '' : 's'} · ${domains.length} domain${domains.length === 1 ? '' : 's'}`}
-        </div>
-      </div>
+
 
       <div className="sidebar__scroll scroll-y">
         {domain ? (
@@ -417,13 +409,12 @@ function GroupNode({
             type="button"
             className="nav nav--group"
             data-unread={unread > 0 || undefined}
-            style={group.color ? ({ '--nav-tint': group.color } as React.CSSProperties) : undefined}
             onClick={() => void toggleAccountGroup(group.id)}
             onContextMenu={(e) => onMenu(e, { kind: 'group', group })}
             title={`${group.name} — right-click to rename, colour or remove`}
           >
-            <span className="nav__icon">
-              <FolderIcon size={13} />
+            <span className="nav__icon" style={group.color ? { color: group.color } : undefined}>
+              <FolderIcon size={13} fill={group.color ?? 'none'} />
             </span>
             <span className="nav__label">{group.name}</span>
             <span className="nav__count tnum">{unread > 0 ? count(unread) : ''}</span>

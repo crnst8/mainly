@@ -13,8 +13,10 @@ import {
   Warning,
 } from '@/components/icons';
 import { Button, Empty, IconButton, Pill, Progress } from '@/components/ui';
-import { addrList, bytes, displayName, fullDate, initials, listDate } from '@/lib/format';
+import { SenderAvatar } from '@/components/SenderAvatar';
+import { bytes, displayName, fullDate, listDate } from '@/lib/format';
 import { parseSearch, searchTerms } from '@/lib/search';
+import { allowImagesFromSender, remoteImagesAllowed } from '@/lib/sender';
 import { getApi } from '@/lib/api';
 import { useAccountColor, useStore } from '@/lib/store';
 import type { Attachment as AttachmentInfo, Id, Message } from '@/lib/types';
@@ -27,6 +29,7 @@ export function Reader() {
   const thread = useStore((s) => s.openThread);
   const loading = useStore((s) => s.readerLoading);
   const prefs = useStore((s) => s.prefs);
+  const savePrefs = useStore((s) => s.savePrefs);
   const colorOf = useAccountColor();
   const accounts = useStore((s) => s.accounts);
   // Re-opening the same message is the retry: `open` re-reads it, which makes
@@ -45,8 +48,8 @@ export function Reader() {
   // Reset per-message view state — otherwise "show images" leaks to the next.
   useEffect(() => {
     setShowHeaders(false);
-    setLoadRemote(prefs?.remoteImages === 'always');
-  }, [openId, prefs?.remoteImages]);
+    setLoadRemote(remoteImagesAllowed(prefs, message?.from));
+  }, [openId, prefs, message?.from]);
 
   if (!openId) {
     return (
@@ -82,9 +85,12 @@ export function Reader() {
           </h1>
 
           <div className="reader__from">
-            <span className="reader__avatar" style={{ '--tint': tint } as React.CSSProperties}>
-              {initials(message.from)}
-            </span>
+            <SenderAvatar
+              className="reader__avatar"
+              sender={message.from}
+              profiles={prefs?.senderProfiles ?? []}
+              tint={tint}
+            />
             <div className="reader__who">
               <div className="reader__name" data-selectable>
                 {displayName(message.from)}
@@ -92,10 +98,7 @@ export function Reader() {
               <div className="reader__addr" data-selectable>
                 {message.from.address}
               </div>
-              <div className="reader__to">
-                to {addrList(message.to)}
-                {message.cc.length > 0 && ` · cc ${addrList(message.cc)}`}
-              </div>
+
               <div className="reader__badges">
                 {account && <Pill tint={tint}>{account.label}</Pill>}
                 {message.labels.map((l) => (
@@ -133,6 +136,20 @@ export function Reader() {
               <div className="notice__actions">
                 <Button size="sm" variant="outline" onClick={() => setLoadRemote(true)}>
                   Show images
+                </Button>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => {
+                    setLoadRemote(true);
+                    if (!prefs) return;
+                    void savePrefs({
+                      remoteImages: prefs.remoteImages === 'never' ? 'trusted' : prefs.remoteImages,
+                      senderProfiles: allowImagesFromSender(message.from, prefs.senderProfiles),
+                    });
+                  }}
+                >
+                  Always allow {displayName(message.from)}
                 </Button>
               </div>
             </div>

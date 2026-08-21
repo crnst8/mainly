@@ -2,7 +2,7 @@
  * Bottom sheet primitive — the mobile equivalent of a modal.
  *
  * Lives here and not in `components/` because only this feature uses it
- * feature. Dragging the handle dismisses; tapping the backdrop or
+ * (AGENTS.md §2). Dragging the handle dismisses; tapping the backdrop or
  * pressing Escape closes. The content stays mounted while it animates out so
  * the exit transition is visible, then unmounts on the parent's side.
  */

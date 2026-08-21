@@ -214,7 +214,7 @@
 
 .mrow__stripe {
   flex-shrink: 0;
-  width: 12px;
+  width: 8px;
   align-self: stretch;
   background: var(--tint);
 }
@@ -225,11 +225,12 @@
   display: flex;
   flex-direction: column;
   justify-content: center;
-  gap: 3px;
+  gap: var(--s-1);
   padding: 0 var(--s-4);
 }
 
-.mrow__line {
+.mrow__senderline,
+.mrow__subjectline {
   display: flex;
   align-items: baseline;
   gap: var(--s-2);
@@ -241,25 +242,19 @@
   color: var(--text-faint);
 }
 
-/*
- * Sender and subject were both 700 and a half-step apart in colour, which at
- * arm's length read as one run of bold text with a colour change in the middle.
- * They now differ on three axes at once — size, weight and colour — so the eye
- * lands on the subject and picks the sender up as the label it is.
- */
+/* Sender labels the message; the subject gets its own stronger line beneath. */
 .mrow__sender {
-  flex-shrink: 0;
-  max-width: 42%;
   font-size: var(--t-xs);
-  font-weight: 500;
-  color: var(--text-faint);
+  font-weight: 300;
+  color: var(--text-secondary);
   letter-spacing: 0;
 }
 
 .mrow__subject {
-  flex-shrink: 1;
-  font-size: var(--t-sm);
-  font-weight: 700;
+  flex: 1;
+  min-width: 0;
+  font-size: var(--t-md);
+  font-weight:600;
   color: var(--text);
   letter-spacing: var(--tr-snug);
 }
@@ -272,23 +267,19 @@
 }
 
 .mrow__preview {
-  display: flex;
-  align-items: baseline;
-  gap: var(--s-3);
   min-width: 0;
   color: var(--text-faint);
   font-size: var(--t-xs);
 }
 
 .mrow__previewtext {
-  flex: 1;
-  min-width: 0;
+  display: block;
 }
 
 .mrow__date {
   flex-shrink: 0;
   font-family: var(--font-mono);
-  font-size: var(--t-2xs);
+  font-size: var(--t-xs);
   color: var(--text-faint);
 }
 

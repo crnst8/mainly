@@ -7,6 +7,7 @@
  */
 
 import { useState } from 'react';
+import { SenderAvatar } from '@/components/SenderAvatar';
 import {
   Chevron,
   Close,
@@ -22,15 +23,17 @@ import {
 import { Button, Field, IconButton, Row, Segmented, Spinner, Toggle } from '@/components/ui';
 import { SHORTCUTS } from '@/lib/keyboard';
 import { relative } from '@/lib/format';
+import { senderDomains, senderImageUrl } from '@/lib/sender';
 import { DEFAULT_SEARCH_WEIGHTS, type SearchWeights } from '@/lib/search';
 import { useDomains, useStore } from '@/lib/store';
-import type { Account, Density, ListColumn, Priority, SwipeAction, ThemeMode } from '@/lib/types';
+import type { Account, Density, ListColumn, Priority, SenderProfile, SwipeAction, ThemeMode } from '@/lib/types';
 import './settings.css';
 
 const TABS = [
   { id: 'appearance', label: 'Appearance', icon: <PaletteIcon size={15} /> },
   { id: 'colours', label: 'Colours', icon: <Globe size={15} /> },
   { id: 'list', label: 'Message list', icon: <Layout size={15} /> },
+  { id: 'senders', label: 'Senders', icon: <User size={15} /> },
   { id: 'search', label: 'Search', icon: <SearchIcon size={15} /> },
   { id: 'accounts', label: 'Accounts', icon: <User size={15} /> },
   { id: 'mobile', label: 'Mobile', icon: <Phone size={15} /> },
@@ -61,9 +64,9 @@ export function Settings() {
     <div className="settings" role="dialog" aria-modal="true" aria-label="Settings">
       <nav className="settings__nav">
         {/* The way out, in the position the app's wordmark occupies everywhere
-            else — the app's home control. This was a static "Settings" label:
-            dead text exactly where every other screen puts the control that
-            takes you back. */}
+            else — which PROJECT.md establishes as the home control. This was a
+            static "Settings" label: dead text exactly where every other screen
+            puts the control that takes you back. */}
         <button type="button" className="settings__back" onClick={() => setSettings(null)}>
           <Chevron size={13} dir="left" />
           <span>Mainly</span>
@@ -107,6 +110,7 @@ export function Settings() {
             {tab === 'appearance' && <Appearance />}
             {tab === 'colours' && <Colours />}
             {tab === 'list' && <ListSettings />}
+            {tab === 'senders' && <SenderSettings />}
             {tab === 'search' && <SearchSettings />}
             {tab === 'accounts' && <Accounts focus={raw.startsWith('account:') ? raw.slice(8) : null} />}
             {tab === 'mobile' && <MobileSettings />}
@@ -495,7 +499,7 @@ function ListSettings() {
           />
         </Row>
 
-        <Row title="Remote images" desc="Loading them tells senders when you opened a message.">
+        <Row title="Remote images" desc="Loading them tells senders when you opened a message. Trusted uses sender identities.">
           <Segmented
             ariaLabel="Remote images"
             value={prefs.remoteImages}
@@ -515,6 +519,150 @@ function ListSettings() {
             onChange={(sendGuards) => void savePrefs({ sendGuards })}
           />
         </Row>
+      </section>
+    </>
+  );
+}
+
+/* ── Senders ─────────────────────────────────────────────────────────────── */
+
+function SenderSettings() {
+  const prefs = useStore((s) => s.prefs!);
+  const savePrefs = useStore((s) => s.savePrefs);
+  const [name, setName] = useState('');
+  const [domains, setDomains] = useState('');
+  const [image, setImage] = useState('');
+  const [error, setError] = useState<string | null>(null);
+
+  function saveProfile(e: React.FormEvent) {
+    e.preventDefault();
+    const rawDomains = domains.split(/[\s,]+/).filter(Boolean);
+    const authorisedDomains = senderDomains(domains);
+    if (!authorisedDomains.length || authorisedDomains.length !== rawDomains.length) {
+      setError('Enter one or more valid domains, separated by commas.');
+      return;
+    }
+
+    const logo = senderImageUrl(image);
+    if (image.trim() && !logo) {
+      setError('A logo must be an HTTPS image URL.');
+      return;
+    }
+
+    const existing = prefs.senderProfiles.find((profile) =>
+      profile.domains.some((domain) => authorisedDomains.includes(domain.toLowerCase())),
+    );
+    const profile: SenderProfile = existing
+      ? {
+          ...existing,
+          name: name.trim() || existing.name,
+          domains: [...new Set([...existing.domains, ...authorisedDomains])],
+          imageUrl: logo ?? existing.imageUrl,
+        }
+      : {
+          id: authorisedDomains[0]!,
+          name: name.trim() || null,
+          domains: authorisedDomains,
+          imageUrl: logo,
+          allowRemoteImages: false,
+        };
+
+    void savePrefs({
+      senderProfiles: existing
+        ? prefs.senderProfiles.map((current) => (current.id === existing.id ? profile : current))
+        : [...prefs.senderProfiles, profile],
+    });
+    setName('');
+    setDomains('');
+    setImage('');
+    setError(null);
+  }
+
+  return (
+    <>
+      <section className="settings__section">
+        <p className="settings__note">
+          Sender identities make a domain and any of its subdomains one sender. Add only domains you authorise;
+          the app never guesses that separate domains belong together.
+        </p>
+      </section>
+
+      <section className="settings__section">
+        <div className="settings__sectionhead">
+          <span className="label">Add or update sender</span>
+        </div>
+        <form className="sender-form" onSubmit={saveProfile}>
+          <Field label="Name" hint="Optional, for this settings list.">
+            <input className="input" value={name} onChange={(e) => setName(e.target.value)} placeholder="Cloudflare" />
+          </Field>
+          <Field label="Authorised domains" hint="Comma-separated; each includes its subdomains.">
+            <input
+              className="input"
+              value={domains}
+              onChange={(e) => setDomains(e.target.value)}
+              placeholder="cloudflare.com, cloudflare.net"
+              required
+            />
+          </Field>
+          <Field label="Logo URL" hint="Optional HTTPS image URL; otherwise the monogram remains.">
+            <input
+              className="input"
+              type="url"
+              value={image}
+              onChange={(e) => setImage(e.target.value)}
+              placeholder="https://example.com/logo.svg"
+            />
+          </Field>
+          {error && <div className="sender-form__error">{error}</div>}
+          <Button type="submit" variant="primary">
+            Save sender
+          </Button>
+        </form>
+      </section>
+
+      <section className="settings__section">
+        <div className="settings__sectionhead">
+          <span className="label">Sender identities</span>
+        </div>
+        {prefs.senderProfiles.length === 0 ? (
+          <p className="settings__note">No sender identities yet.</p>
+        ) : (
+          <div className="sender-profiles">
+            {prefs.senderProfiles.map((profile) => (
+              <div className="sender-profile" key={profile.id}>
+                <SenderAvatar
+                  className="sender-profile__avatar"
+                  sender={{ name: profile.name, address: `sender@${profile.domains[0]}` }}
+                  profiles={[profile]}
+                  tint="var(--accent)"
+                />
+                <div className="sender-profile__main">
+                  <div className="sender-profile__name">{profile.name ?? profile.domains[0]}</div>
+                  <div className="sender-profile__domains">{profile.domains.join(' · ')}</div>
+                </div>
+                <Toggle
+                  label={`Allow remote images from ${profile.name ?? profile.domains[0]}`}
+                  checked={profile.allowRemoteImages}
+                  onChange={(allowRemoteImages) =>
+                    void savePrefs({
+                      senderProfiles: prefs.senderProfiles.map((current) =>
+                        current.id === profile.id ? { ...current, allowRemoteImages } : current,
+                      ),
+                    })
+                  }
+                />
+                <Button
+                  size="sm"
+                  onClick={() =>
+                    void savePrefs({ senderProfiles: prefs.senderProfiles.filter((current) => current.id !== profile.id) })
+                  }
+                >
+                  Remove
+                </Button>
+              </div>
+            ))}
+          </div>
+        )}
       </section>
     </>
   );
