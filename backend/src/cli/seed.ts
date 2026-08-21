@@ -16,7 +16,7 @@
  */
 
 import { pool, query } from '../db/index.ts';
-import { createUser } from '../modules/auth/index.ts';
+import { createUser, setPassword } from '../modules/auth/index.ts';
 import { seal } from '../lib/crypto.ts';
 import { refreshCounts } from '../sync/folders.ts';
 import { refreshAccountThreads } from '../sync/threads.ts';
@@ -81,8 +81,16 @@ async function ensureUser(): Promise<string> {
   const existing = await query<{ id: string }>('SELECT id FROM users WHERE email = $1', [
     FIXTURE_EMAIL,
   ]);
-  if (existing[0]) return existing[0].id;
-  return createUser(FIXTURE_EMAIL, FIXTURE_PASSWORD);
+  if (!existing[0]) return createUser(FIXTURE_EMAIL, FIXTURE_PASSWORD);
+  // The password is reset, not just the mail.
+  //
+  // The smoke suite rotates it to prove `/auth/password` works and rotates it
+  // back. If it is interrupted between the two — a 429, a killed process — the
+  // fixture is left holding a password nothing knows, and every later run fails
+  // at sign-in for a reason that has nothing to do with the code under test.
+  // Reseeding is the reset; it should reset all of it.
+  await setPassword(existing[0].id, FIXTURE_PASSWORD);
+  return existing[0].id;
 }
 
 export async function seed(): Promise<void> {

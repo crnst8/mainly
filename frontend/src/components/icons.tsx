@@ -245,3 +245,16 @@ export const Phone = (p: P) => (
     <path d="M7.2 12.3h1.6" />
   </Svg>
 );
+
+export const Key = (p: P) => (
+  <Svg {...p}>
+    <circle cx="5.4" cy="10.6" r="3.4" />
+    <path d="m7.8 8.2 6-6M11.4 4.6l1.6 1.6M9.8 6.2l1.6 1.6" />
+  </Svg>
+);
+
+export const SignOut = (p: P) => (
+  <Svg {...p}>
+    <path d="M6.2 2.5H3.5a1 1 0 0 0-1 1v9a1 1 0 0 0 1 1h2.7M9.6 5.2 12.4 8l-2.8 2.8M12.4 8H6.4" />
+  </Svg>
+);

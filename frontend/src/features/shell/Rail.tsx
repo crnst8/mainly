@@ -8,8 +8,8 @@
  * everything below domain level to the sidebar.
  */
 
-import { Inbox, Plus, Settings as SettingsIcon, Star } from '@/components/icons';
-import { IconButton } from '@/components/ui';
+import { Inbox, Key, Plus, Settings as SettingsIcon, SignOut, Star, User } from '@/components/icons';
+import { IconButton, PopLabel, PopSep, Popover } from '@/components/ui';
 import { useDomains, useStore } from '@/lib/store';
 
 export function Rail() {
@@ -109,7 +109,78 @@ export function Rail() {
         <IconButton label="Settings" hint="," onClick={() => setSettings('appearance')}>
           <SettingsIcon size={16} />
         </IconButton>
+        <AccountMenu />
       </div>
     </nav>
+  );
+}
+
+/* ── Account menu ──────────────────────────────────────────────────────────
+   Who you are signed in as, and the two things you can do about it.
+
+   In the rail rather than the topbar, one step below Settings, because the
+   topbar's right edge already carries an identity control — the one that picks
+   which of your addresses a new message goes out as. Two chips a thumb apart,
+   both showing an email address and meaning entirely different things, is how
+   someone clicks "sign out" looking for "reply from another address".
+
+   The rail is the app's own strip: All mail, your domains, Add account,
+   Settings. "Which person is using this browser" belongs with those, and it is
+   an edge target, which is the fastest thing on the screen to hit. */
+
+function AccountMenu() {
+  const user = useStore((s) => s.user);
+  const setSettings = useStore((s) => s.setSettings);
+  const signOut = useStore((s) => s.signOut);
+
+  return (
+    <Popover
+      align="start"
+      width={240}
+      trigger={(p) => (
+        <button
+          type="button"
+          className="rail__item rail__item--account"
+          aria-label={user ? `Account — signed in as ${user.email}` : 'Account'}
+          title={user ? `Signed in as ${user.email}` : 'Account'}
+          {...p}
+        >
+          <User size={16} />
+        </button>
+      )}
+    >
+      {(close) => (
+        <>
+          <PopLabel>Signed in as</PopLabel>
+          <div className="rail__account">{user?.email ?? '—'}</div>
+          <PopSep />
+          <button
+            type="button"
+            className="pop__item"
+            role="menuitem"
+            onClick={() => {
+              setSettings('signin');
+              close();
+            }}
+          >
+            <Key size={14} />
+            <span>Change password</span>
+          </button>
+          <button
+            type="button"
+            className="pop__item"
+            role="menuitem"
+            data-danger
+            onClick={() => {
+              close();
+              void signOut();
+            }}
+          >
+            <SignOut size={14} />
+            <span>Sign out</span>
+          </button>
+        </>
+      )}
+    </Popover>
   );
 }

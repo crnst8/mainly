@@ -23,6 +23,7 @@ import type {
   SavedView,
   ServerConfig,
   ServerEvent,
+  Session,
   SyncState,
   Thread,
   VerifyResult,
@@ -79,6 +80,14 @@ export class HttpApi implements MailApi {
   private patch<T>(path: string, body: unknown) {
     return this.req<T>(path, { method: 'PATCH', body: JSON.stringify(body) });
   }
+
+  /* Session */
+  session = () => this.req<Session>('/auth/session');
+  changePassword = (currentPassword: string, newPassword: string) =>
+    this.post<void>('/auth/password', { currentPassword, newPassword });
+  // Outside the authenticated prefix, so it works even when the session the
+  // caller holds has already expired — which is the one moment it must.
+  signOut = () => this.post<void>('/auth/logout');
 
   /* Accounts */
   listAccounts = () => this.req<Account[]>('/accounts');

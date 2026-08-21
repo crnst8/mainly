@@ -15,7 +15,7 @@ import {
   relevanceScore,
   resolveProfile,
 } from '../search';
-import { DEFAULT_PREFERENCES, withPreferenceDefaults } from '../types';
+import { DEFAULT_PREFERENCES, MIN_APP_PASSWORD, withPreferenceDefaults } from '../types';
 import type {
   Account,
   Autoconfig,
@@ -34,6 +34,7 @@ import type {
   SavedView,
   ServerConfig,
   ServerEvent,
+  Session,
   SyncState,
   Thread,
   VerifyResult,
@@ -56,6 +57,17 @@ export class MockApi implements MailApi {
   private prefs: Preferences = structuredClone(DEFAULT_PREFS);
   private listeners = new Set<(e: ServerEvent) => void>();
   private seq = 10_000;
+  /**
+   * The app password, once it has been changed.
+   *
+   * `null` means "not set yet", and any input of four or more characters is
+   * accepted as the current one — otherwise the success path would be
+   * unreachable in mock mode, because nobody can guess a secret the fixture
+   * invented. After a change it is the string that was actually typed, so the
+   * second attempt exercises the real "wrong current password" branch against
+   * something the user knows.
+   */
+  private appPassword: string | null = null;
 
   private emit(e: ServerEvent) {
     for (const l of this.listeners) l(e);
@@ -63,6 +75,37 @@ export class MockApi implements MailApi {
 
   private id(prefix: string) {
     return `${prefix}_${++this.seq}`;
+  }
+
+  /* ── Session ────────────────────────────────────────────────────────────── */
+
+  async session(): Promise<Session> {
+    await sleep(LATENCY.fast);
+    return { email: 'you@cmr.my' };
+  }
+
+  async changePassword(currentPassword: string, newPassword: string) {
+    await sleep(LATENCY.slow);
+    const currentOk = this.appPassword === null
+      ? currentPassword.length >= 4
+      : currentPassword === this.appPassword;
+    // Same words the backend uses, so the inline error is not a surprise the
+    // first time it appears against a real server.
+    if (!currentOk) throw new Error('That is not your current password');
+    if (newPassword.length < MIN_APP_PASSWORD) {
+      throw new Error(`The new password must be at least ${MIN_APP_PASSWORD} characters`);
+    }
+    if (newPassword === currentPassword) {
+      throw new Error('The new password is the same as the current one');
+    }
+    this.appPassword = newPassword;
+  }
+
+  async signOut() {
+    await sleep(LATENCY.fast);
+    // Nothing to end. The mock has no session, which is also why `Login` never
+    // appears in mock mode — the reload the caller does next lands straight
+    // back in the app rather than on the sign-in screen.
   }
 
   /* ── Accounts ───────────────────────────────────────────────────────────── */

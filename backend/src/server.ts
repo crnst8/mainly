@@ -21,7 +21,7 @@ import { config, runsSync, servesHttp } from './config.ts';
 import { close as closeDb, pool } from './db/index.ts';
 import { migrate } from './db/migrate.ts';
 import { AppError } from './lib/errors.ts';
-import { authRoutes, requireAuth } from './modules/auth/index.ts';
+import { authRoutes, requireAuth, sessionRoutes } from './modules/auth/index.ts';
 import { accountRoutes } from './modules/accounts/routes.ts';
 import { messageRoutes } from './modules/messages/routes.ts';
 import {
@@ -41,7 +41,16 @@ export async function build() {
     logger: {
       level: config.logLevel,
       // Never let a credential or a message body reach the log.
-      redact: ['req.headers.cookie', 'req.headers.authorization', 'req.body.password', '*.password'],
+      // `*.password` matches a key called exactly that. The password-change
+      // body names neither field that, so both are listed explicitly.
+      redact: [
+        'req.headers.cookie',
+        'req.headers.authorization',
+        'req.body.password',
+        '*.password',
+        '*.currentPassword',
+        '*.newPassword',
+      ],
     },
     trustProxy: true,
     bodyLimit: 25 * 1024 * 1024, // attachments
@@ -189,6 +198,7 @@ export async function build() {
   await app.register(
     async (authed) => {
       authed.addHook('preHandler', requireAuth);
+      await sessionRoutes(authed);
       await accountRoutes(authed);
       await folderRoutes(authed);
       await messageRoutes(authed);

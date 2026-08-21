@@ -15,11 +15,16 @@ import { one, query } from '../../db/index.ts';
 import { config } from '../../config.ts';
 import { randomToken, safeEqual } from '../../lib/crypto.ts';
 import { badRequest, forbidden, unauthorized } from '../../lib/errors.ts';
+import { MIN_APP_PASSWORD } from '../../contract/types.ts';
 import { resolveToken, TOKEN_SCOPES, type TokenScope } from './tokens.ts';
 
 const SESSION_COOKIE = 'mail_session';
 const CSRF_COOKIE = 'mail_csrf';
 const SESSION_TTL_MS = 30 * 24 * 3600 * 1000;
+
+/** Ceiling, because argon2 will cheerfully hash a megabyte if asked to. The
+ *  floor is `MIN_APP_PASSWORD`, in the contract, because the form enforces it too. */
+const MAX_PASSWORD = 256;
 
 declare module 'fastify' {
   interface FastifyRequest {
@@ -95,6 +100,92 @@ export async function authRoutes(app: FastifyInstance): Promise<void> {
     reply.clearCookie(SESSION_COOKIE, { path: '/' }).clearCookie(CSRF_COOKIE, { path: '/' });
     return reply.code(204).send();
   });
+}
+
+/**
+ * The authenticated half of auth.
+ *
+ * Registered inside the `requireAuth` context, unlike `authRoutes` above:
+ * signing in and signing out are things you do without a session, and these are
+ * things you do to the session you already have. Two functions rather than one
+ * with a per-route guard, so the boundary is visible at the call site in
+ * `server.ts` rather than buried in a config flag.
+ */
+export async function sessionRoutes(app: FastifyInstance): Promise<void> {
+  app.get('/auth/session', async (req) => {
+    const user = await one<{ email: string }>('SELECT email FROM users WHERE id = $1', [
+      req.userId,
+    ]);
+    // A live session whose user row is gone is not a 404 — the credential is
+    // what is invalid, and the client's 401 handling already knows what to do.
+    if (!user) throw unauthorized('Session expired');
+    return { email: user.email };
+  });
+
+  app.post<{ Body: { currentPassword?: string; newPassword?: string } }>(
+    '/auth/password',
+    {
+      config: {
+        // Answering "wrong password" is an oracle for the current one, so it is
+        // bounded. Looser than `/auth/login`'s five because the caller already
+        // holds a valid session — this is not the door, it is a room inside the
+        // house, and anyone in it can already read the mail. Ten leaves the
+        // smoke suite room to run twice in a minute without the limiter
+        // failing a check that has nothing to do with rate limiting.
+        rateLimit: { max: 10, timeWindow: '1 minute' },
+        // Handles the app credential. An agent token must never be able to
+        // change the password that would let someone mint more of them.
+        sessionOnly: true,
+      },
+    },
+    async (req, reply) => {
+      const { currentPassword, newPassword } = req.body ?? {};
+      if (!currentPassword || !newPassword) {
+        throw badRequest('Both the current and the new password are required');
+      }
+      if (newPassword.length < MIN_APP_PASSWORD) {
+        throw badRequest(`The new password must be at least ${MIN_APP_PASSWORD} characters`);
+      }
+      if (newPassword.length > MAX_PASSWORD) {
+        throw badRequest(`The new password must be at most ${MAX_PASSWORD} characters`);
+      }
+      if (newPassword === currentPassword) {
+        throw badRequest('The new password is the same as the current one');
+      }
+
+      const user = await one<{ password_hash: string }>(
+        'SELECT password_hash FROM users WHERE id = $1',
+        [req.userId],
+      );
+      if (!user) throw unauthorized('Session expired');
+
+      const ok = await argon2.verify(user.password_hash, currentPassword).catch(() => false);
+      // 401 rather than 403: the credential presented in the body is what was
+      // rejected. The session itself is untouched and stays valid.
+      if (!ok) throw unauthorized('That is not your current password');
+
+      const hash = await argon2.hash(newPassword, { type: argon2.argon2id });
+      await query('UPDATE users SET password_hash = $1 WHERE id = $2', [hash, req.userId]);
+
+      // Every *other* session dies with the old password.
+      //
+      // Changing a password because a laptop went missing has to actually sign
+      // that laptop out; leaving its cookie working makes the whole action
+      // theatre. This session survives — signing you out of the tab you just
+      // used is a bug, not security, and you have just proved you hold the
+      // current password.
+      //
+      // API tokens are deliberately left alone. They are a separate credential
+      // with their own lifecycle (`tokens.ts`), and a routine rotation that
+      // silently breaks every agent is a worse outcome than the one it guards
+      // against. Revoke them with `./dev.sh token revoke` when that is what is
+      // wanted.
+      const sid = req.cookies[SESSION_COOKIE] ?? '';
+      await query('DELETE FROM sessions WHERE user_id = $1 AND id <> $2', [req.userId, sid]);
+
+      return reply.code(204).send();
+    },
+  );
 }
 
 /**
@@ -184,6 +275,14 @@ async function requireBearer(req: FastifyRequest): Promise<void> {
 /** Every scope a token could hold. Re-exported so route modules do not have to
  *  reach into `tokens.ts` for the type alone. */
 export { TOKEN_SCOPES, type TokenScope };
+
+/** Set a password without checking the current one. For the setup CLI and the
+ *  seed fixture only — a person changing their own password goes through
+ *  `/auth/password`, which verifies before it writes. */
+export async function setPassword(userId: string, password: string): Promise<void> {
+  const hash = await argon2.hash(password, { type: argon2.argon2id });
+  await query('UPDATE users SET password_hash = $1 WHERE id = $2', [hash, userId]);
+}
 
 /** Used by the setup CLI and tests. Not exposed as an endpoint — this app does
  *  not have open registration. */

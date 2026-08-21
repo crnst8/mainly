@@ -23,12 +23,25 @@ import type {
   SavedView,
   ServerEvent,
   ServerConfig,
+  Session,
   SyncState,
   Thread,
   VerifyResult,
 } from './types';
 
 export interface MailApi {
+  /* Session — the app login, not a mailbox. See `Session` in types.ts. */
+
+  /** Who is signed in. */
+  session(): Promise<Session>;
+  /** Change the app password. Resolves on success; rejects with the server's
+   *  own words when the current password is wrong or the new one is refused.
+   *  Every other browser session is signed out as a side effect. */
+  changePassword(currentPassword: string, newPassword: string): Promise<void>;
+  /** End this session server-side. The caller is responsible for what the
+   *  browser does next. */
+  signOut(): Promise<void>;
+
   /* Accounts */
   listAccounts(): Promise<Account[]>;
   updateAccount(id: Id, patch: Partial<Account>): Promise<Account>;

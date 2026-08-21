@@ -28,6 +28,33 @@ export type Id = string;
 export type IsoDate = string;
 
 /* ──────────────────────────────────────────────────────────────────────────
+   Session
+   ────────────────────────────────────────────────────────────────────────── */
+
+/**
+ * Who is signed in — the *app* login, not a mailbox.
+ *
+ * The distinction matters everywhere below: `Account` is one of the forty-five
+ * mailboxes this client reads, and its password lives on the mail server.
+ * `Session` is the single credential that opens this client, and its password
+ * lives in `users`. They are never the same secret and never change together.
+ */
+export interface Session {
+  email: string;
+}
+
+/**
+ * Floor for the app password, in characters.
+ *
+ * In the contract because both ends enforce it and they must agree: the server
+ * because a rule only the browser applies is not a rule, the browser because a
+ * form that discovers the limit from a 400 has already asked for the password
+ * twice. The ceiling is the server's alone — it exists so argon2 is never asked
+ * to hash a megabyte, and nothing about it belongs in a form's hint text.
+ */
+export const MIN_APP_PASSWORD = 10;
+
+/* ──────────────────────────────────────────────────────────────────────────
    Accounts & domains
    ────────────────────────────────────────────────────────────────────────── */
 

@@ -483,6 +483,30 @@
   background: var(--danger);
 }
 
+/* The account trigger reads as a person, not another destination: a ring rather
+   than the filled square a domain glyph gets, so it never looks like a mailbox
+   you failed to recognise. */
+.rail__item--account {
+  border: 1px solid var(--line);
+}
+
+.rail__item--account[aria-expanded='true'] {
+  background: var(--bg-active);
+  border-color: var(--line-strong);
+  color: var(--text);
+}
+
+/* The address itself, inside the popover. Monospaced because it is an
+   identifier, and selectable because people copy it. */
+.rail__account {
+  padding: 0 var(--s-4) var(--s-3);
+  font-family: var(--font-mono);
+  font-size: var(--t-xs);
+  color: var(--text);
+  overflow-wrap: anywhere;
+  user-select: text;
+}
+
 /* ── Sidebar ──────────────────────────────────────────────────────────────── */
 
 .sidebar {

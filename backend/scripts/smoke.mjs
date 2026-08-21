@@ -72,6 +72,50 @@ check('csrf token issued', csrf.length > 0, 'no x-csrf-token header');
 const accounts = await call('/accounts');
 check('accounts lists', accounts.status === 200 && Array.isArray(accounts.body), `${accounts.status} ${accounts.text}`);
 
+/* ── The app login ──────────────────────────────────────────────────────────
+   Every assertion below typechecks perfectly while being wrong: whether the
+   current password is really verified, and whether other sessions really die,
+   are facts only a request can establish. */
+
+const me = await call('/auth/session');
+check('session names the signed-in user', me.status === 200 && me.body?.email === EMAIL, me.text);
+
+// Three calls to this route per run, and no more: it is rate-limited at ten a
+// minute, and a suite that spends its own budget fails on the limiter rather
+// than on the code. The length floor is left to the unit-free path — the form
+// enforces it before the request, and `MIN_APP_PASSWORD` is one shared constant.
+const wrongCurrent = await call('/auth/password', {
+  method: 'POST',
+  body: { currentPassword: 'not-the-password', newPassword: 'a-perfectly-fine-password' },
+});
+check('password change rejects a wrong current password', wrongCurrent.status === 401, `got ${wrongCurrent.status}`);
+
+const NEW_PASSWORD = 'smoke-password-rotated-4321';
+const changed = await call('/auth/password', {
+  method: 'POST',
+  body: { currentPassword: PASSWORD, newPassword: NEW_PASSWORD },
+});
+check('password change succeeds', changed.status === 204, `${changed.status} ${changed.text}`);
+
+const stillMine = await call('/accounts');
+// Half of the revocation, and deliberately only half.
+//
+// The DELETE excludes this session by id, and getting that exclusion backwards
+// — or dropping it — signs you out of the tab you just used, which is what this
+// catches. The other half, that every *other* session really did die, would
+// need a second sign-in, and `/auth/login` is rate-limited at five a minute per
+// IP: a smoke run that spends two of them locks the developer out of their own
+// browser for the rest of the minute. Not worth it for one assertion.
+check('the session that changed it survives', stillMine.status === 200, `got ${stillMine.status}`);
+
+// Back to the fixture's password, so a second run of this script starts where
+// the first one did.
+const restored = await call('/auth/password', {
+  method: 'POST',
+  body: { currentPassword: NEW_PASSWORD, newPassword: PASSWORD },
+});
+check('password change restores the fixture', restored.status === 204, `${restored.status} ${restored.text}`);
+
 const folders = await call('/folders');
 check('folders lists', folders.status === 200 && Array.isArray(folders.body), `${folders.status}`);
 

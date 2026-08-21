@@ -31,6 +31,7 @@ import type {
   Preferences,
   SavedView,
   Scope,
+  Session,
   SyncState,
   Thread,
 } from './types';
@@ -49,6 +50,9 @@ export interface State {
   error: string | null;
 
   /* Data */
+  /** Who is signed in — the app login, not a mailbox. Null until `boot`
+   *  resolves, and in mock mode for as long as the mock says so. */
+  user: Session | null;
   accounts: Account[];
   folders: Folder[];
   views: SavedView[];
@@ -210,6 +214,14 @@ interface Actions {
   saveTheme(patch: Partial<Preferences['theme']>): Promise<void>;
   saveCurrentView(name: string, glyph: string): Promise<void>;
 
+  /** Change the app password. Resolves to the server's message on rejection
+   *  rather than throwing, so the form can show it inline next to the field
+   *  that caused it — the same contract `updateAccountPassword` uses. */
+  changePassword(currentPassword: string, newPassword: string): Promise<string | null>;
+  /** End the session and reload. Everything this document holds — the message
+   *  index, cached bodies, the event stream — goes with it. */
+  signOut(): Promise<void>;
+
   setPalette(open: boolean): void;
   setSettings(tab: string | null): void;
   setOnboarding(open: boolean): void;
@@ -225,6 +237,11 @@ const pendingRemoval = new Set<Id>();
  *  run again after a sign-in without stacking a second copy of each. */
 let listening = false;
 
+/** The live SSE stream's teardown, so a second `boot` replaces it rather than
+ *  racing it. Module scope for the same reason `listening` is: it belongs to
+ *  the document, not to a render. */
+let unsubscribeEvents: (() => void) | null = null;
+
 /** Auto-dismiss timers, so undoing a toast with `z` also cancels the timer that
  *  would have dismissed it — otherwise it fires later against an id that is
  *  gone, and `dismissToast` walks the whole list for nothing. */
@@ -233,6 +250,7 @@ const toastTimers = new Map<string, ReturnType<typeof setTimeout>>();
 export const useStore = create<State & Actions>((set, get) => ({
   ready: false,
   error: null,
+  user: null,
   accounts: [],
   folders: [],
   views: [],
@@ -271,7 +289,8 @@ export const useStore = create<State & Actions>((set, get) => ({
   async boot() {
     try {
       const api = await getApi();
-      const [accounts, folders, views, storedPrefs, sync] = await Promise.all([
+      const [user, accounts, folders, views, storedPrefs, sync] = await Promise.all([
+        api.session(),
         api.listAccounts(),
         api.listFolders(),
         api.listViews(),
@@ -307,10 +326,14 @@ export const useStore = create<State & Actions>((set, get) => ({
         threaded: route.threaded,
         filters: route.filters,
       };
-      set({ accounts, folders, views, prefs, sync, query, ready: true });
+      set({ user, accounts, folders, views, prefs, sync, query, ready: true });
       applyTheme(prefs.theme);
 
-      api.subscribe((event) => {
+      // `boot` runs again after a sign-in, and a second `subscribe` would leave
+      // the first stream open and delivering into the same store. Close what the
+      // previous run opened before opening another.
+      unsubscribeEvents?.();
+      unsubscribeEvents = api.subscribe((event) => {
         const s = get();
         switch (event.type) {
           case 'sync':
@@ -1115,6 +1138,40 @@ export const useStore = create<State & Actions>((set, get) => ({
     const view = await api.saveView({ name, glyph, query: get().query, pinned: true });
     set({ views: [...get().views, view] });
     get().toast(`Saved view “${name}”`);
+  },
+
+  /* ── Session ────────────────────────────────────────────────────────────── */
+
+  async changePassword(currentPassword, newPassword) {
+    const api = await getApi();
+    try {
+      await api.changePassword(currentPassword, newPassword);
+      get().toast('Password changed');
+      return null;
+    } catch (e) {
+      return e instanceof Error ? e.message : String(e);
+    }
+  },
+
+  async signOut() {
+    const api = await getApi();
+    try {
+      await api.signOut();
+    } catch {
+      // The session is going away either way. A network failure here means the
+      // cookie may outlive the click, which is a reason to reload rather than a
+      // reason to stay signed in on screen — the reload's first request finds
+      // out for certain.
+    }
+    unsubscribeEvents?.();
+    unsubscribeEvents = null;
+    // A reload, not a state reset.
+    //
+    // Every message summary, every cached body and the event stream itself live
+    // in this document. Clearing the fifteen slices that hold them by hand is a
+    // list that goes stale the first time a sixteenth is added, and the one that
+    // gets forgotten is someone's mail still on screen after they signed out.
+    window.location.reload();
   },
 
   /* ── Overlays ───────────────────────────────────────────────────────────── */

@@ -580,6 +580,70 @@
   color: var(--text);
 }
 
+/* ── Sign-in ──────────────────────────────────────────────────────────────
+   The app login. Narrow on purpose: a password field the width of a settings
+   pane invites the eye to look for more fields, and there are only three. */
+
+.signin__who {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--s-4);
+  padding: var(--s-5) 0;
+}
+
+.signin__avatar {
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  flex-shrink: 0;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-full);
+  color: var(--text-muted);
+}
+
+.signin__whotext {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-2);
+  min-width: 0;
+}
+
+.signin__email {
+  font-family: var(--font-mono);
+  font-size: var(--t-sm);
+  color: var(--text);
+  overflow-wrap: anywhere;
+  user-select: text;
+}
+
+.signin__note {
+  font-size: var(--t-xs);
+  color: var(--text-faint);
+}
+
+.signin__form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-5);
+  max-width: 340px;
+  padding-top: var(--s-5);
+}
+
+.signin__acts {
+  display: flex;
+  align-items: center;
+  gap: var(--s-4);
+}
+
+.signin__done {
+  display: flex;
+  align-items: center;
+  gap: var(--s-2);
+  font-size: var(--t-xs);
+  color: var(--success);
+}
+
 @media (max-width: 860px) {
   .settings {
     grid-template-columns: 1fr;

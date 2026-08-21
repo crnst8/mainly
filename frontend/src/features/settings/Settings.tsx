@@ -9,14 +9,17 @@
 import { useState } from 'react';
 import { SenderAvatar } from '@/components/SenderAvatar';
 import {
+  Check,
   Chevron,
   Close,
   Command,
   Globe,
+  Key,
   Layout,
   Palette as PaletteIcon,
   Phone,
   Search as SearchIcon,
+  SignOut,
   Trash,
   User,
 } from '@/components/icons';
@@ -26,6 +29,7 @@ import { relative } from '@/lib/format';
 import { senderDomains, senderImageUrl } from '@/lib/sender';
 import { DEFAULT_SEARCH_WEIGHTS, type SearchWeights } from '@/lib/search';
 import { useDomains, useStore } from '@/lib/store';
+import { MIN_APP_PASSWORD } from '@/lib/types';
 import type { Account, Density, ListColumn, Priority, SenderProfile, SwipeAction, ThemeMode } from '@/lib/types';
 import './settings.css';
 
@@ -38,6 +42,12 @@ const TABS = [
   { id: 'accounts', label: 'Accounts', icon: <User size={15} /> },
   { id: 'mobile', label: 'Mobile', icon: <Phone size={15} /> },
   { id: 'keyboard', label: 'Keyboard', icon: <Command size={15} /> },
+  // Last, and named for the screen it maps to rather than "Account" — in this
+  // app "Accounts" already means the forty-five mailboxes, and two tabs a word
+  // apart describing two unrelated credentials is how someone changes the wrong
+  // password. Last is also where a sign-out belongs: the end of the list is the
+  // way out, not something to pass on the way to Colours.
+  { id: 'signin', label: 'Sign-in', icon: <Key size={15} /> },
 ];
 
 const ACCENTS = [
@@ -115,6 +125,7 @@ export function Settings() {
             {tab === 'accounts' && <Accounts focus={raw.startsWith('account:') ? raw.slice(8) : null} />}
             {tab === 'mobile' && <MobileSettings />}
             {tab === 'keyboard' && <Keyboard />}
+            {tab === 'signin' && <SignIn />}
           </div>
         </div>
       </div>
@@ -951,6 +962,188 @@ function AccountRow({ account: a, focused }: { account: Account; focused: boolea
         </div>
       )}
     </div>
+  );
+}
+
+/* ── Sign-in ──────────────────────────────────────────────────────────────
+   The app login: one credential, held by this client, unrelated to the forty-five
+   mailbox passwords under Accounts. Everything that can be done to it lives on
+   one pane — see who you are, change the password, leave — because "manage my
+   account" is one errand, and splitting it across three screens is how a person
+   ends up hunting for the sign-out. */
+
+function SignIn() {
+  const user = useStore((s) => s.user);
+  const changePassword = useStore((s) => s.changePassword);
+  const signOut = useStore((s) => s.signOut);
+
+  const [current, setCurrent] = useState('');
+  const [next, setNext] = useState('');
+  const [confirm, setConfirm] = useState('');
+  const [saving, setSaving] = useState(false);
+  const [failure, setFailure] = useState<string | null>(null);
+  const [done, setDone] = useState(false);
+  const [leaving, setLeaving] = useState(false);
+
+  // Checked here rather than only on the server: the server cannot see the
+  // confirmation field, and finding out you fat-fingered it after a round trip
+  // that also invalidated your other sessions is the wrong order of events.
+  const tooShort = next.length > 0 && next.length < MIN_APP_PASSWORD;
+  const mismatch = confirm.length > 0 && next !== confirm;
+  const ready = !!current && next.length >= MIN_APP_PASSWORD && next === confirm;
+
+  async function submit(e: React.FormEvent) {
+    e.preventDefault();
+    if (!ready) return;
+    setSaving(true);
+    setFailure(null);
+    const error = await changePassword(current, next);
+    setSaving(false);
+    if (error) {
+      setFailure(error);
+      return;
+    }
+    setCurrent('');
+    setNext('');
+    setConfirm('');
+    setDone(true);
+  }
+
+  return (
+    <>
+      <section className="settings__section">
+        <div className="settings__sectionhead">
+          <span className="label">Signed in as</span>
+        </div>
+        <div className="signin__who">
+          <span className="signin__avatar" aria-hidden="true">
+            <User size={16} />
+          </span>
+          <div className="signin__whotext">
+            <div className="signin__email">{user?.email ?? '—'}</div>
+            <div className="signin__note">
+              This is the login for the app itself. Mailbox passwords live under{' '}
+              <strong>Accounts</strong>.
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section className="settings__section">
+        <div className="settings__sectionhead">
+          <span className="label">Change password</span>
+        </div>
+
+        <form className="signin__form" onSubmit={submit}>
+          <Field label="Current password" error={failure}>
+            <input
+              className={`input ${failure ? 'input--invalid' : ''}`}
+              type="password"
+              autoComplete="current-password"
+              placeholder="••••••••"
+              value={current}
+              onChange={(e) => {
+                setCurrent(e.target.value);
+                setFailure(null);
+                setDone(false);
+              }}
+            />
+          </Field>
+
+          <Field
+            label="New password"
+            hint={`At least ${MIN_APP_PASSWORD} characters`}
+            error={tooShort ? `At least ${MIN_APP_PASSWORD} characters` : null}
+          >
+            <input
+              className={`input ${tooShort ? 'input--invalid' : ''}`}
+              type="password"
+              autoComplete="new-password"
+              placeholder="••••••••"
+              value={next}
+              onChange={(e) => {
+                setNext(e.target.value);
+                setDone(false);
+              }}
+            />
+          </Field>
+
+          <Field
+            label="Confirm new password"
+            error={mismatch ? 'These do not match' : null}
+          >
+            <input
+              className={`input ${mismatch ? 'input--invalid' : ''}`}
+              type="password"
+              autoComplete="new-password"
+              placeholder="••••••••"
+              value={confirm}
+              onChange={(e) => {
+                setConfirm(e.target.value);
+                setDone(false);
+              }}
+            />
+          </Field>
+
+          <p className="settings__note">
+            Changing it signs out every other browser you are signed in on. This one stays. API
+            tokens are a separate credential and keep working.
+          </p>
+
+          <div className="signin__acts">
+            <Button type="submit" variant="primary" disabled={!ready || saving}>
+              {saving ? <Spinner /> : null}
+              {saving ? 'Changing' : 'Change password'}
+            </Button>
+            {/* Persistent rather than a toast: this is the confirmation for an
+                action with no undo, and a message that vanishes in six seconds
+                is one the person who blinked never saw. */}
+            {done && (
+              <span className="signin__done">
+                <Check size={14} />
+                Password changed
+              </span>
+            )}
+          </div>
+        </form>
+      </section>
+
+      <section className="settings__section">
+        <div className="settings__sectionhead">
+          <span className="label">Session</span>
+        </div>
+        {/* Confirmed here, not in the rail's menu.
+            There, opening the menu is already the deliberate act and the item
+            sits behind it; here the button is bare on a pane someone is
+            scrolling through looking for something else. Signing out is not
+            destructive — mail stays on the server — but losing your place
+            mid-triage because a click landed one row low is a bad ending, and
+            endings are what an interaction is remembered by. */}
+        {leaving ? (
+          <div className="acctrow__confirm">
+            <span>
+              Sign out of <strong>mainly</strong>? Nothing is lost — mail stays on the server and
+              your settings stay with your account.
+            </span>
+            <div className="acctrow__confirm__acts">
+              <Button size="sm" onClick={() => setLeaving(false)}>
+                Stay
+              </Button>
+              <Button size="sm" variant="danger" onClick={() => void signOut()}>
+                Sign out
+              </Button>
+            </div>
+          </div>
+        ) : (
+          <Row title="Sign out" desc="Ends this session and returns to the sign-in screen.">
+            <Button variant="outline" onClick={() => setLeaving(true)}>
+              <SignOut size={14} />
+              Sign out
+            </Button>
+          </Row>
+        )}
+      </section>
+    </>
   );
 }
 
