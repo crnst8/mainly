@@ -1,3 +1,21 @@
+## 1.1.1 — 2026-08-21
+
+**Backend:**
+- GET /auth/session → returns your email
+- POST /auth/password → verifies current, sets new, deletes every other session. Rate-limited, refuses API tokens
+- Both registered behind requireAuth
+- Logger redacts the new password fields
+- Seed resets the fixture password so smoke can't poison it
+
+**Frontend:**
+- Rail bottom: account menu → email, Change password, Sign out
+- Settings → new Sign-in tab: email, 3-field change form, Sign out (with confirm)
+- Command palette: two new entries
+- MailApi gained session / changePassword / signOut, implemented in both http and mock adapters
+- Store: user state, sign-out reloads the document
+
+- feat: auth mgmt for account page, closes #1
+
 ## 1.1.0 — 2026-08-21
 
 Sender identities, mobile updates & general UI/UX tweaks for readability, spacing, fonts etc.
