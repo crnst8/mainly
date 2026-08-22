@@ -68,6 +68,15 @@ export async function build() {
     );
   }
 
+  /* Headers that only mean anything over TLS are sent only when there is TLS.
+     `upgrade-insecure-requests` is the one that breaks things: helmet adds it to
+     every CSP by default, and on a plaintext install it rewrites every
+     stylesheet, script and font on the page to https://, so the document loads
+     and every asset on it fails with ERR_SSL_PROTOCOL_ERROR. HSTS, COOP and
+     origin-keying are merely inert on an insecure origin — sending them there
+     just fills the console with warnings that they were ignored. */
+  const httpsOrigin = config.appOrigin.startsWith('https://');
+
   await app.register(helmet, {
     // A CSP is worth having only when this process serves the HTML. As an API
     // it answers JSON, and the policy would apply to nothing.
@@ -91,9 +100,15 @@ export async function build() {
             frameAncestors: ["'none'"],
             objectSrc: ["'none'"],
             baseUri: ["'self'"],
+            // null removes helmet's default. [] emits it with no value, which
+            // is the directive's only form.
+            upgradeInsecureRequests: httpsOrigin ? [] : null,
           },
         }
       : false,
+    strictTransportSecurity: httpsOrigin && { maxAge: 31536000, includeSubDomains: true },
+    crossOriginOpenerPolicy: httpsOrigin && { policy: 'same-origin' as const },
+    originAgentCluster: httpsOrigin,
     crossOriginResourcePolicy: { policy: 'same-site' },
   });
 
