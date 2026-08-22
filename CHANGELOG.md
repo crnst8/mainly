@@ -1,3 +1,7 @@
+## 1.1.2 — 2026-08-22
+
+- feat: bind to 0.0.0.0 so a fresh install now answers on LAN + Tailscale + localhost, and login works over plain HTTP
+
 ## 1.1.1 — 2026-08-21
 
 **Backend:**
