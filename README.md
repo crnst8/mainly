@@ -27,8 +27,26 @@ git clone https://github.com/crnst8/mainly && cd mainly
 ./mainly.sh user you@yourdomain.com # client login user
 ```
 
-Open <http://localhost:5274> and sign in with the password the second command
-printed, then add your mailboxes from the account screen.
+`./mainly.sh start` prints every URL that reaches it. Open one, sign in with the
+password the second command printed, then add your mailboxes from the account
+screen.
+
+Unless this machine has an address the internet can reach, that list is more
+than localhost: mainly listens on every interface, so your LAN address and your
+Tailscale address work too, from your phone or any other device, over plain
+HTTP with nothing else to configure.
+
+```
+  Open it at:
+    http://100.64.0.2:5274
+    http://192.168.1.20:5274
+    http://localhost:5274
+```
+
+`./mainly.sh bind` prints that list again later, and narrows it — `bind local`,
+`bind tailscale`, `bind lan`, or an address you name. A machine that *does* hold
+a public address is treated differently: the first run binds its private address
+only, because a plaintext login form does not belong on the internet.
 
 `mainly.sh start` generates its own secrets into `.env`, pulls the image, brings
 up Postgres, runs migrations and waits until the app answers. Re-running it is
@@ -153,9 +171,9 @@ The ones that matter on day one:
 
 | Variable | Default | What it does |
 | --- | --- | --- |
-| `APP_ORIGIN` | `http://localhost:5274` | The frontend, cookies and CORS are checked against it, so it must match exactly. |
+| `APP_ORIGIN` | the address detected on first run, else `http://localhost:5274` | The frontend, cookies and CORS are checked against it, so it must match exactly. An `https://` origin is what turns on the `Secure` cookie flag. |
 | `PORT` | `5274` | Host port. |
-| `BIND_ADDRESS` | `127.0.0.1` | Set to `0.0.0.0` only if you are not putting a reverse proxy in front. |
+| `BIND_ADDRESS` | `0.0.0.0` on a machine with no public address, else its private address | What the host port listens on. `0.0.0.0` is every interface, which is what makes LAN and Tailscale work with no further setup; `127.0.0.1` is localhost-only. Change it with `./mainly.sh bind`. |
 | `SECRET_KEY` | — | 32 random bytes, base64. Encrypts stored mailbox passwords. **Back this up.** |
 | `SESSION_SECRET` | — | Session cookie signing key. |
 | `POSTGRES_PASSWORD` | — | Generated for you on first run. |
@@ -168,6 +186,9 @@ The ones that matter on day one:
 
 ```sh
 ./mainly.sh start | stop | restart | status
+./mainly.sh bind [what]           # where it listens, and every URL that reaches it
+                                  # all | tailscale | lan | local | <address>
+./mainly.sh origin <url>          # the URL browsers open, when a proxy fronts this
 ./mainly.sh logs [app|db]
 ./mainly.sh user <email>          # create a login (no open registration)
 ./mainly.sh update                # pull the current image and restart

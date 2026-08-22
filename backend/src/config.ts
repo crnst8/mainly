@@ -1,8 +1,5 @@
 /**
- * Environment. Parsed once, at boot, and validated hard.
- *
- * A missing SECRET_KEY discovered at 3am when the first account tries to sync
- * is worse than a process that refuses to start.
+ * Environment parsed and validated at boot.
  */
 
 const req = (key: string): string => {
@@ -78,7 +75,7 @@ export const config = {
   },
 
   secrets: {
-    // 32 bytes, base64. Validated here so a truncated key never reaches AES.
+    // Base64-encoded 32-byte AES key.
     key: (() => {
       const raw = Buffer.from(req('SECRET_KEY'), 'base64');
       if (raw.length !== 32) {

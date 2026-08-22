@@ -1,9 +1,4 @@
-/**
- * The small modules: folders, views, preferences, drafts, sync, events.
- *
- * Grouped in one file while they are thin. Each becomes its own directory when
- * it grows real logic — folders and drafts are the two most likely to.
- */
+/** Routes for folders, views, preferences, drafts, sync, and events. */
 
 import type { FastifyInstance } from 'fastify';
 import { one, query } from '../../db/index.ts';
@@ -65,8 +60,7 @@ export async function folderRoutes(app: FastifyInstance): Promise<void> {
     return rows.map(toFolder);
   });
 
-  /** Create a folder on the mail server. See `sync/mailboxes.ts` for why an
-   *  IMAP CREATE is client behaviour rather than provisioning. */
+  /** Create a user-requested IMAP folder; see AGENTS.md §1. */
   app.post<{ Body: { accountId: string; name: string; parentId?: string | null } }>(
     '/folders',
     async (req, reply) => {

@@ -209,20 +209,8 @@ export async function sendDraft(userId: string, draftId: string): Promise<SendRe
 }
 
 /**
- * APPEND the sent bytes to the account's Sent folder, creating it if needed.
- *
- * `\Seen` because you have, by definition, read what you just wrote. Without it
- * every sent message arrives unread and the sidebar count becomes noise.
- *
- * On creation: a Dovecot install commonly declares `Sent` with
- * `special_use = \Sent` without autocreating it, so on a mailbox that has never
- * been sent from by an IMAP-aware client the folder simply does not exist. Without it a sent message
- * leaves and is filed nowhere the user can ever see — which is not "sending
- * mail". The rule this app holds to is that it never *provisions* anything on
- * the mail server — no accounts, no domains, no server configuration. An IMAP
- * CREATE issued as the already-authenticated user is ordinary client behaviour
- * and is what every mail client does on first send. Only `Sent`, only on
- * demand, and never any other folder.
+ * Append sent bytes as `\\Seen`; create and subscribe `Sent` only when absent.
+ * This is the folder-creation exception defined in AGENTS.md §1.
  */
 async function appendToSent(creds: AccountCredentials, raw: Buffer): Promise<void> {
   if (!raw.length) return;
@@ -237,22 +225,19 @@ async function appendToSent(creds: AccountCredentials, raw: Buffer): Promise<voi
     let path = sent?.path;
 
     if (!path) {
-      // The name comes from the server's own namespace, so a server that
-      // prefixes everything under INBOX. gets INBOX.Sent and one that does not
-      // gets Sent. imapflow applies the prefix for us.
+      // imapflow applies the account namespace prefix.
       path = 'Sent';
       try {
         await client.mailboxCreate(path);
         console.log({ account: creds.address, path }, 'created a Sent folder for first send');
       } catch (err) {
-        // Already there but unsubscribed, or not listed — either way, try the
-        // APPEND, which is the thing we actually need to succeed.
+        // The folder may already exist but be absent from LIST.
         console.warn(
           { account: creds.address, err: (err as Error).message },
           'could not create a Sent folder; attempting the append anyway',
         );
       }
-      // Subscribed, or it stays invisible in every other client the user owns.
+      // Keep the created folder visible to other IMAP clients.
       await client.mailboxSubscribe(path).catch(() => {});
     }
 

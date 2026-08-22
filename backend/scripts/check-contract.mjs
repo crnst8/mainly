@@ -1,13 +1,4 @@
-/**
- * The API contract exists in two places on purpose — the frontend must build
- * without the backend present, and vice versa. This fails the build if they
- * drift, which is the only thing that makes duplication safe.
- *
- * Two files are shared. `types.ts` is the shape of everything that crosses the
- * wire. `search.ts` is the search syntax: a query that means one thing in the
- * mock adapter and another in Postgres is worse than having no syntax, so the
- * parser is copied rather than reimplemented.
- */
+/** Verify the byte-identical frontend and backend contract files. */
 
 import { readFile } from 'node:fs/promises';
 import { createHash } from 'node:crypto';

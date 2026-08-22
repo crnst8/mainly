@@ -1,11 +1,4 @@
-/**
- * Folder pass. LIST/LSUB → the `folders` table.
- *
- * Cheap and idempotent, so it runs on a slow timer and on every account
- * creation. The interesting part is role mapping: SPECIAL-USE is the right
- * answer when the server advertises it, and name matching is the fallback for
- * the ones that do not. Dovecot advertises it; not every server does.
- */
+/** Folder pass: IMAP LIST/LSUB to the local `folders` table. */
 
 import { query, transaction } from '../db/index.ts';
 import type { FolderRole } from '../contract/types.ts';
@@ -56,8 +49,7 @@ const ROLE_ORDER: Record<FolderRole, number> = {
 
 export async function syncFolders(creds: AccountCredentials): Promise<number> {
   return withConnection(creds, async (client) => {
-    // One LIST covers both: the response carries `subscribed` per entry, so a
-    // separate LSUB round trip would be redundant.
+    // LIST includes the subscription state.
     const listed = await client.list();
 
     const rows = listed
@@ -68,16 +60,13 @@ export async function syncFolders(creds: AccountCredentials): Promise<number> {
         const raw = f.name || parts.at(-1) || f.path;
         const specialUse = f.specialUse;
         const role = roleOf(specialUse, raw, f.path);
-        // IMAP requires the inbox be named "INBOX" exactly, and Dovecot returns
-        // it that way. Shouting it in the sidebar beside "Receipts" and "Work"
-        // is a protocol detail leaking into the interface.
+        // Keep the protocol-required INBOX path while normalising its label.
         const name = raw.toUpperCase() === 'INBOX' ? 'Inbox' : raw;
         return {
           path: f.path,
           name,
           role,
-          // INBOX's children are depth 1, not 2 — the INBOX prefix is not a
-          // level anyone thinks in.
+          // Exclude the INBOX path prefix from display depth.
           depth: Math.max(0, parts.length - (parts[0]?.toUpperCase() === 'INBOX' ? 2 : 1)),
           parentPath: parts.length > 1 ? parts.slice(0, -1).join(delimiter) : null,
           subscribed: f.subscribed ?? true,
@@ -102,8 +91,7 @@ export async function syncFolders(creds: AccountCredentials): Promise<number> {
         );
       }
 
-      // Resolve parents in a second pass — the first pass may insert a child
-      // before its parent exists.
+      // Resolve parents after all folder rows exist.
       await tx.query(
         `
         UPDATE folders child

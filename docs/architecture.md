@@ -156,8 +156,8 @@ Decrypted only inside the sync worker, into a short-lived buffer, never logged
 and never returned by any endpoint. A `secret_key_version` column exists so the
 key can be rotated with a dual-read pass.
 
-**App auth.** The app's own users table, argon2id, an httpOnly + SameSite +
-Secure session cookie. No JWT in `localStorage` — this app renders untrusted
+**App auth.** The app's own users table, argon2id, an httpOnly + SameSite
+session cookie, `Secure` when `APP_ORIGIN` is `https://`. No JWT in `localStorage` — this app renders untrusted
 HTML, and a token reachable from JavaScript is a token an XSS steals.
 
 **HTML sanitisation** happens on ingest, server-side, before anything is stored:

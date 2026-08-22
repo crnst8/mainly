@@ -26,9 +26,9 @@ directly only if you are pointing at a Postgres you manage yourself.
 
 | Variable | Default | Notes |
 | --- | --- | --- |
-| `APP_ORIGIN` | `http://localhost:5274` | The address you open in a browser. Cookies and CORS are checked against it, so it must match exactly — scheme, host and port. Behind a proxy this is the public URL. A mismatch presents as being signed out immediately after signing in. |
+| `APP_ORIGIN` | the best address found on first run | The address you open in a browser, and what CORS is checked against. An `https://` origin marks the session cookie `Secure`; an `http://` one cannot, because browsers discard a `Secure` cookie that arrives over plain HTTP. Behind a proxy this is the public URL — `./mainly.sh origin https://mail.example.com`. Naming a host the app does not answer on presents as being signed out immediately after signing in. |
 | `PORT` | `5274` | Host port. |
-| `BIND_ADDRESS` | `127.0.0.1` | What the host port binds to. Setting it to `0.0.0.0` publishes a login form over plaintext HTTP; put a reverse proxy in front instead. |
+| `BIND_ADDRESS` | `0.0.0.0`, or the machine's private address when it also has a public one | What the host port listens on. `0.0.0.0` is every interface — localhost, LAN and Tailscale all answer, which is what makes a fresh install usable from another device with no TLS and no proxy. A single address narrows it to that one; `127.0.0.1` is localhost-only. `./mainly.sh bind all\|tailscale\|lan\|local\|<address>` rewrites it and restarts the container. |
 | `WEB_ROOT` | `/app/web` in the image | Where the built web UI is served from. Unset it to run this process as an API only. |
 
 ## Mail server reachability
@@ -64,7 +64,7 @@ directly only if you are pointing at a Postgres you manage yourself.
 | --- | --- | --- |
 | `ROLE` | `all` | `api`, `sync` or `all`. `all` runs the HTTP server and the sync workers in one process — the self-hosted default. Splitting them needs no other change: workers claim accounts with Postgres advisory locks, so there is no scheduler to run. |
 | `LOG_LEVEL` | `info` | Credentials, authorization headers, cookies and passwords are redacted from logs unconditionally. |
-| `NODE_ENV` | `production` in the image | Makes the session cookie `Secure`. |
+| `NODE_ENV` | `production` in the image | Terse error messages instead of stack traces. The session cookie's `Secure` flag follows `APP_ORIGIN`, not this. |
 | `APP_VERSION` | `dev` | Reported by `/api/health`. Set from the image tag by compose. |
 | `MAINLY_VERSION` | `latest` | Which image tag compose pulls. Pin it to stop `./mainly.sh update` moving you forward unexpectedly. |
 | `REDIS_URL` | — | Only needed once more than one API replica exists. Sessions live in Postgres so a single-container install needs no Redis. |

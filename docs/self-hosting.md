@@ -45,6 +45,28 @@ Postgres, applies migrations and waits until `/api/health` answers with a real
 database round trip. The second prints a generated password; set your own with
 `PASSWORD='…' ./mainly.sh user you@yourdomain.com`.
 
+It then prints every URL that reaches it. On a machine with no internet-facing
+address — a laptop, a NAS, a home server — that is **every interface**: the LAN
+address, the Tailscale address and localhost all answer, over plain HTTP, with
+no proxy and no certificate. Open one from your phone and sign in.
+
+```sh
+./mainly.sh bind             # the current setting, and every URL that reaches it
+./mainly.sh bind tailscale   # narrow it to the tailnet
+./mainly.sh bind local       # narrow it to this machine
+./mainly.sh bind 10.0.0.4    # or one address you name
+```
+
+A machine that *does* hold a public address is the exception: the first run
+binds its private address only. Docker's published ports are inserted ahead of
+most host firewalls, so `0.0.0.0` there would put an unencrypted login form on
+the internet — never a default.
+
+Two things that only work over HTTPS, whatever you bind: installing the app to
+a home screen (a service worker needs a secure context), and the `Secure` flag
+on the session cookie. Over plain HTTP the cookie is still `HttpOnly` and
+`SameSite=Strict`, but anything on the network path can read it.
+
 There is no open registration. Every user of a self-hosted mail client is its
 operator, so accounts are created from the host.
 
@@ -74,20 +96,27 @@ the default.
 
 ## Putting it on the internet
 
-The app binds `127.0.0.1` by design. Terminate TLS in front of it.
+A private network is one thing; the internet is another. **Do not leave it on
+plaintext and open the port** — that publishes a login form and a session cookie
+to anyone who looks. Terminate TLS in front of it instead.
 
-**Do not set `BIND_ADDRESS=0.0.0.0` and call it done** — that publishes a login
-form and a session cookie over plaintext HTTP.
-
-Set `APP_ORIGIN` to the public URL first. Cookies and CORS are checked against
-it, and a mismatch presents as "signed out immediately after signing in".
+Narrow the binding to the loopback first, so the proxy is the only way in and
+always has a stable target:
 
 ```sh
-# .env
-APP_ORIGIN=https://mail.example.com
+./mainly.sh bind local
 ```
 
-Then `./mainly.sh restart`.
+Then point `APP_ORIGIN` at the public URL — `https://` is also what marks the
+session cookie `Secure`:
+
+```sh
+./mainly.sh origin https://mail.example.com
+```
+
+Both rewrite `.env` and restart the container. CORS is checked against
+`APP_ORIGIN`, and naming a host the app does not actually answer on presents as
+"signed out immediately after signing in".
 
 ### Caddy
 

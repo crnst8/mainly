@@ -48,7 +48,11 @@ declare module 'fastify' {
 const cookieOptions = {
   httpOnly: true,
   sameSite: 'strict' as const,
-  secure: config.isProd,
+  // Follows APP_ORIGIN, not NODE_ENV. Browsers discard a `Secure` cookie set
+  // over plain HTTP everywhere but localhost, so a private-network install — a
+  // Tailscale or LAN address, no TLS — would sign in and be signed straight
+  // back out. A deployment behind TLS names an https:// origin and keeps it.
+  secure: config.appOrigin.startsWith('https://'),
   path: '/',
   maxAge: SESSION_TTL_MS / 1000,
 };
@@ -126,15 +130,9 @@ export async function sessionRoutes(app: FastifyInstance): Promise<void> {
     '/auth/password',
     {
       config: {
-        // Answering "wrong password" is an oracle for the current one, so it is
-        // bounded. Looser than `/auth/login`'s five because the caller already
-        // holds a valid session — this is not the door, it is a room inside the
-        // house, and anyone in it can already read the mail. Ten leaves the
-        // smoke suite room to run twice in a minute without the limiter
-        // failing a check that has nothing to do with rate limiting.
+        // Bound the current-password oracle for authenticated callers.
         rateLimit: { max: 10, timeWindow: '1 minute' },
-        // Handles the app credential. An agent token must never be able to
-        // change the password that would let someone mint more of them.
+        // App credentials are unavailable to API tokens.
         sessionOnly: true,
       },
     },
@@ -167,19 +165,7 @@ export async function sessionRoutes(app: FastifyInstance): Promise<void> {
       const hash = await argon2.hash(newPassword, { type: argon2.argon2id });
       await query('UPDATE users SET password_hash = $1 WHERE id = $2', [hash, req.userId]);
 
-      // Every *other* session dies with the old password.
-      //
-      // Changing a password because a laptop went missing has to actually sign
-      // that laptop out; leaving its cookie working makes the whole action
-      // theatre. This session survives — signing you out of the tab you just
-      // used is a bug, not security, and you have just proved you hold the
-      // current password.
-      //
-      // API tokens are deliberately left alone. They are a separate credential
-      // with their own lifecycle (`tokens.ts`), and a routine rotation that
-      // silently breaks every agent is a worse outcome than the one it guards
-      // against. Revoke them with `./dev.sh token revoke` when that is what is
-      // wanted.
+      // Revoke other sessions; API tokens have an independent lifecycle.
       const sid = req.cookies[SESSION_COOKIE] ?? '';
       await query('DELETE FROM sessions WHERE user_id = $1 AND id <> $2', [req.userId, sid]);
 

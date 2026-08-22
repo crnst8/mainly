@@ -1,30 +1,7 @@
 /**
- * Unsubscribing.
- *
- * This is the only thing the application does that leaves the boundary of the
- * user's own infrastructure. Everything else talks to their IMAP server, their
- * SMTP server, or their Postgres. This POSTs to a stranger's endpoint, or sends
- * mail to a stranger's address, and neither can be taken back.
- *
- * So the shape is: **plan, then execute, and never confuse the two.**
- *
- *   planUnsubscribe()     reads headers, says what is possible, changes nothing
- *   executeUnsubscribe()  does exactly one of those things, and records it
- *
- * Three rules hold the risk down.
- *
- *  1. **Only what the sender asked for.** An HTTPS target is POSTed to only
- *     when the message also carried `List-Unsubscribe-Post` (RFC 8058). Without
- *     it, the URL is a web page meant for a human, and firing a POST at it is
- *     as likely to confirm a subscription as cancel one. Those are reported,
- *     not actioned.
- *  2. **Never our own network.** The URL comes out of mail, which is to say
- *     from anybody. `assertPublicHttpsUrl` refuses loopback, private and
- *     link-local addresses, refuses non-HTTPS, and refuses redirects, so an
- *     unsubscribe link cannot be aimed at the API it is running next to.
- *  3. **Always a record.** Every attempt writes an `unsubscribe_attempts` row
- *     whether it worked or not, and the plan carries the sender's history — so
- *     the second question, "did I already do this", has an answer.
+ * Unsubscribe planning and execution.
+ * POST only RFC 8058 one-click HTTPS targets; reject non-public addresses and
+ * redirects; record every outcome in `unsubscribe_attempts`.
  */
 
 import { lookup } from 'node:dns/promises';
@@ -108,10 +85,7 @@ export async function planUnsubscribe(
 ): Promise<UnsubscribePlan> {
   const message = await loadMessage(userId, messageId);
   const body = await ensureBody(userId, messageId, { refetch: opts.fresh });
-  // A body that could not be read has no headers, which is indistinguishable
-  // from a message that published no unsubscribe method — and answering "this
-  // sender offers no way out" when the truth is "the mail server did not
-  // answer" is the wrong sentence to put in front of someone. Fail loudly.
+  // Header fetch failures are distinct from an absent unsubscribe option.
   if (body?.error) throw upstream(body.error);
   const headers = body?.headers ?? {};
 

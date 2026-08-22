@@ -1,9 +1,7 @@
 /**
  * Mailbox credential encryption.
  *
- * AES-256-GCM with a fresh 12-byte nonce per record. The auth tag is stored
- * separately so a truncated or tampered ciphertext fails loudly at decrypt
- * rather than silently producing garbage that we then send to an IMAP server.
+ * AES-256-GCM with a fresh 12-byte nonce and separately stored auth tag.
  *
  * Plaintext passwords exist only:
  *   - in the request that creates or verifies an account
@@ -37,9 +35,7 @@ export function open(sealed: Sealed): string {
   return Buffer.concat([decipher.update(sealed.ciphertext), decipher.final()]).toString('utf8');
 }
 
-/** Rotation seam: during a key rotation this reads the old key for records that
- *  have not been re-encrypted yet: set SECRET_KEY_V<n> to the retired key,
- *  raise SECRET_KEY_VERSION, and let a background pass re-seal. */
+/** Resolve the current or retained key for a sealed credential. */
 function keyFor(version: number): Buffer {
   if (version === config.secrets.keyVersion) return config.secrets.key;
   const previous = process.env[`SECRET_KEY_V${version}`];

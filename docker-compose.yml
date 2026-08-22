@@ -9,8 +9,11 @@
 # The published image is used by default; `docker compose up -d --build` builds
 # from this checkout instead.
 #
-# Ports bind to 127.0.0.1. Nothing here is reachable from the network until you
-# deliberately put a reverse proxy in front of it — see docs/self-hosting.md.
+# The app's port binds to BIND_ADDRESS (.env), which the first run of
+# ./mainly.sh sets to 0.0.0.0 on a machine with no public address: LAN and
+# Tailscale peers reach it in plaintext, and nothing else can route to it.
+# 127.0.0.1 keeps it localhost-only; a public site needs a reverse proxy — see
+# docs/self-hosting.md. Postgres is always localhost-only.
 
 name: mainly
 

@@ -12,9 +12,16 @@ created from the host. Every query is scoped by user id, but the design goal is
 
 ### Two things that are your call, and are off by default
 
-1. **`BIND_ADDRESS` defaults to `127.0.0.1`.** Setting it to `0.0.0.0` puts a
-   login form and a session cookie on your network in plaintext. Terminate TLS
-   in front of it instead — see
+1. **A first run listens on every interface, unless this machine has a public
+   address.** `./mainly.sh start` sets `BIND_ADDRESS=0.0.0.0` on a laptop, a NAS
+   or a home server, so LAN and Tailscale devices reach it without TLS — those
+   networks are the trust boundary, and the login form and session cookie cross
+   them in plaintext. On a machine that holds an internet-routable address, the
+   first run binds that machine's private address instead and never `0.0.0.0`;
+   published Docker ports sit in front of most host firewalls, so this is the
+   decision that keeps a plaintext login form off the internet. `./mainly.sh
+   bind local` narrows it to this machine. To go public, terminate TLS in front
+   of it — see
    [docs/self-hosting.md](docs/self-hosting.md#putting-it-on-the-internet).
 2. **`ALLOW_PRIVATE_IMAP_HOSTS` defaults to `false`.** Adding an account makes an
    outbound connection to a hostname you type in, so that endpoint is a
@@ -34,7 +41,10 @@ them, and logs redact cookies, authorization headers and anything named
 be rotated with a dual-read pass.
 
 **Application sessions** are argon2id-hashed passwords and an httpOnly,
-SameSite, Secure cookie. There is deliberately no JWT in `localStorage`: this
+SameSite cookie, marked `Secure` when `APP_ORIGIN` is an `https://` URL. A
+plaintext install on a private network cannot use `Secure` — browsers discard
+such a cookie — which is the cost of running one without TLS: anything on that
+network path can read the session. There is deliberately no JWT in `localStorage`: this
 app renders untrusted HTML, and a token reachable from JavaScript is a token an
 XSS steals.
 

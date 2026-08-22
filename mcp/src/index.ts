@@ -1,33 +1,8 @@
 #!/usr/bin/env node
 /**
- * The MCP server. Point OpenCode at this and an agent can work the mailbox.
- *
- *   MAIL_API_TOKEN=mailt_… node --experimental-strip-types mcp/src/index.ts
- *
- * Everything it can do, it does by calling the same HTTP API the browser calls,
- * with a scoped bearer token. See `client.ts`.
- *
- * ── The shape of the tools ──────────────────────────────────────────────────
- *
- * **Selectors, not just ids.** Every mutating tool takes either `ids` or a
- * `query` in the app's own search syntax. "Trash everything from that sender
- * older than a year" is one call, not a search followed by forty. The whole
- * point of an agent at 45 mailboxes is that it does not need a loop written for
- * it each time.
- *
- * **Which means every mutating tool also takes `dryRun`.** A selector that
- * resolves to more than the agent expected is the failure mode, so seeing the
- * list first is one boolean away and `max` is capped.
- *
- * **Annotations are honest.** `readOnlyHint` and `destructiveHint` are what a
- * client uses to decide whether to ask the user first, so `mail_delete` and
- * `mail_unsubscribe` declare themselves destructive even though trash is
- * recoverable — the second one genuinely is not, and a client that prompts for
- * both is behaving correctly.
- *
- * **Errors come back as text, not exceptions.** A tool that throws tells the
- * agent only that something failed. A tool that returns "Token is missing the
- * 'write' scope" tells it what to say to the user.
+ * MCP client for the browser HTTP API.
+ * Mutations accept ids or a search selector, require `dryRun`, and cap targets.
+ * Destructive annotations support client confirmation; errors return text.
  */
 
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
@@ -63,13 +38,7 @@ const client = new MailClient(process.env.MAIL_API_URL, token);
 /** How much of a body one `mail_read_message` call is allowed to spend. */
 const MAX_BODY_CHARS = Number(process.env.MAIL_MCP_MAX_BODY_CHARS ?? 8000);
 
-/**
- * The ceiling on a single selector, whatever the agent asks for.
- *
- * Not a performance limit — the API would serve 500 happily. It is a blast
- * radius. A query with a typo matches the whole mailbox, and the difference
- * between a bad afternoon and a restore-from-backup is this number.
- */
+/** Maximum messages selected by one mutating MCP call. */
 const MAX_TARGETS = 200;
 
 /* ── Result plumbing ────────────────────────────────────────────────────────*/
@@ -83,13 +52,7 @@ const failure = (body: string): ToolResult => ({
   isError: true,
 });
 
-/**
- * Runs a handler and turns anything it throws into a readable failure.
- *
- * An API error carries a message written for a person — "Token is missing the
- * 'write' scope", "That folder belongs to a different account" — and passing it
- * straight through is what lets the agent recover instead of retrying blind.
- */
+/** Convert handler exceptions into MCP text results. */
 async function guard(fn: () => Promise<ToolResult>): Promise<ToolResult> {
   try {
     return await fn();
@@ -201,7 +164,7 @@ server.registerTool(
       'Sort by relevance to get the ranking the app itself uses: the query is classified ' +
       '(a person hunt, a file hunt, a phrase, a date window) and weighted accordingly, ' +
       'with the account priority tier and folder taken into account. ' +
-      'Note: message bodies are not indexed — this searches subject, sender and a 200-character preview.',
+      'Message bodies are indexed from the first text part; older messages may remain unindexed while backfill runs.',
     inputSchema: {
       query: z.string().describe('The search, in the syntax above. An empty string matches everything.'),
       sort: z
