@@ -1,3 +1,7 @@
+## 1.1.4 — 2026-08-24
+
+- fix: parsing error, read marks, general swag
+
 ## 1.1.3 — 2026-08-22
 
 - fix: publish pipeline fixes
