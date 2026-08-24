@@ -247,6 +247,18 @@ let unsubscribeEvents: (() => void) | null = null;
  *  gone, and `dismissToast` walks the whole list for nothing. */
 const toastTimers = new Map<string, ReturnType<typeof setTimeout>>();
 
+/** There can only be one message held open. Clearing the previous timer when
+ *  navigation moves keeps a quick j/k pass from leaving a trail of messages
+ *  that become read after the user has already left them. */
+let markReadTimer: ReturnType<typeof setTimeout> | null = null;
+let openGeneration = 0;
+
+function cancelMarkRead(): void {
+  if (!markReadTimer) return;
+  clearTimeout(markReadTimer);
+  markReadTimer = null;
+}
+
 export const useStore = create<State & Actions>((set, get) => ({
   ready: false,
   error: null,
@@ -648,30 +660,60 @@ export const useStore = create<State & Actions>((set, get) => ({
   /* ── Reader ─────────────────────────────────────────────────────────────── */
 
   async open(id, mode = 'push') {
+    const generation = ++openGeneration;
+    cancelMarkRead();
     if (!id) {
       set({ openId: null, openMessage: null, openThread: null, nav: mode });
       return;
     }
-    set({ openId: id, readerLoading: true, focusedId: id, nav: mode });
+    set({ openId: id, openThread: null, readerLoading: true, focusedId: id, nav: mode });
     try {
       const api = await getApi();
       const message = await api.get(id);
       // Only commit if the user has not moved on while this was in flight.
-      if (get().openId !== id) return;
+      if (get().openId !== id || generation !== openGeneration) return;
       set({ openMessage: message, readerLoading: false });
+
+      // Reading starts when the message is visible, not when the secondary
+      // thread request happens to finish. Previously a slow or failed thread
+      // read meant this timer was never created, so clicking unread mail could
+      // leave it unread indefinitely.
+      const delay = get().prefs?.markReadDelayMs ?? 900;
+      const listed = get().result?.messages.find((m) => m.id === id);
+      // In threaded mode the row is unread when *any* member is unread, while
+      // `message` describes only the newest representative. Trusting the latter
+      // skipped auto-read whenever that newest message had already been seen.
+      const unreadAtOpen = listed ? !listed.seen : !message.seen;
+      let readDelayElapsed = false;
+      if (delay >= 0 && unreadAtOpen) {
+        markReadTimer = setTimeout(() => {
+          markReadTimer = null;
+          readDelayElapsed = true;
+          const current = get();
+          if (current.openId !== id || generation !== openGeneration) return;
+          // A collapsed row represents the conversation. Mark every unread
+          // member we know about so the next thread-count refresh cannot make
+          // the row spring back to unread.
+          const unread = current.openThread?.messages.filter((m) => !m.seen).map((m) => m.id) ?? [];
+          void current.act([...new Set([id, ...unread])], { type: 'flag', add: ['seen'], remove: [] });
+        }, delay);
+      }
 
       if (get().query.threaded && message.threadId) {
         const thread = await api.getThread(message.threadId);
-        if (get().openId === id) set({ openThread: thread.messages.length > 1 ? thread : null });
+        if (get().openId === id && generation === openGeneration) {
+          set({ openThread: thread.messages.length > 1 ? thread : null });
+          // With an instant/short delay the timer can beat the thread lookup.
+          // Finish the conversation once its member ids arrive.
+          if (readDelayElapsed) {
+            const unread = thread.messages.filter((m) => !m.seen && m.id !== id).map((m) => m.id);
+            if (unread.length) {
+              void get().act(unread, { type: 'flag', add: ['seen'], remove: [] });
+            }
+          }
+        }
       } else {
         set({ openThread: null });
-      }
-
-      const delay = get().prefs?.markReadDelayMs ?? 900;
-      if (delay >= 0 && !message.seen) {
-        setTimeout(() => {
-          if (get().openId === id) void get().act([id], { type: 'flag', add: ['seen'], remove: [] });
-        }, delay);
       }
     } catch (e) {
       set({ readerLoading: false, error: e instanceof Error ? e.message : String(e) });

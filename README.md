@@ -44,7 +44,12 @@ HTTP with nothing else to configure.
 ```
 
 `./mainly.sh bind` prints that list again later, and narrows it — `bind local`,
-`bind tailscale`, `bind lan`, or an address you name. A machine that *does* hold
+`bind tailscale`, `bind lan`, or an address you name. One thing plain HTTP
+cannot do is offer to **install mainly as an app** — browsers gate that on
+`https://` or `localhost` — so `./mainly.sh tls` explains where you stand, and
+`./mainly.sh tls tailscale` puts a real certificate in front on a tailnet that
+issues them. [docs/self-hosting.md](docs/self-hosting.md#installing-it-as-an-app)
+has the route for everywhere else. A machine that *does* hold
 a public address is treated differently: the first run binds its private address
 only, because a plaintext login form does not belong on the internet.
 
@@ -189,6 +194,7 @@ The ones that matter on day one:
 ./mainly.sh bind [what]           # where it listens, and every URL that reaches it
                                   # all | tailscale | lan | local | <address>
 ./mainly.sh origin <url>          # the URL browsers open, when a proxy fronts this
+./mainly.sh tls [tailscale|off]   # HTTPS, which is what installing it as an app needs
 ./mainly.sh logs [app|db]
 ./mainly.sh user <email>          # create a login (no open registration)
 ./mainly.sh update                # pull the current image and restart

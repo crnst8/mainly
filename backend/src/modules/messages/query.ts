@@ -26,6 +26,7 @@ import {
 } from '../../contract/search.ts';
 import { relevanceSql, searchWhere } from './search-sql.ts';
 import type { ListQuery, ListResult, MessageSummary, Priority } from '../../contract/types.ts';
+import { toPreview } from '../../sync/parse.ts';
 
 const COUNT_CAP = 10_000;
 const MAX_LIMIT = 500;
@@ -705,7 +706,9 @@ function toSummary(r: MessageRow): MessageSummary {
     from: { name: r.from_name, address: r.from_address },
     to: r.to_addrs,
     subject: r.subject,
-    preview: r.preview,
+    // Normalise again at the API edge so previews indexed before the parser was
+    // hardened do not keep exposing markup until a full mailbox re-index.
+    preview: toPreview(r.preview, false),
     date: r.date.toISOString(),
     // A thread is unread if any message in it is unread, and flagged if any is
     // flagged — the row stands for the whole conversation.

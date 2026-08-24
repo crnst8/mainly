@@ -422,15 +422,15 @@ export async function ensureBody(
     ],
   );
 
-  // The envelope pass takes its preview from the first text part, which is empty
-  // for messages whose text part was too large to read cheaply, or absent. Now
-  // that the real body is here, fill it in — this is also what puts the message
-  // into search results that match on preview.
+  // The envelope pass takes its preview from one MIME part. The full parser has
+  // better evidence, so let it repair empty previews as well as HTML that a
+  // sender mislabeled as plain text. This also repairs search text after the
+  // message is opened instead of requiring a full mailbox re-index.
   const preview = toPreview(text ?? (html ? html : ''), !text && !!html);
   await query(
     `UPDATE messages
         SET body_cached_at = now(),
-            preview = CASE WHEN $2 <> '' AND preview = '' THEN $2 ELSE preview END
+            preview = CASE WHEN $2 <> '' THEN $2 ELSE preview END
       WHERE id = $1`,
     [target.id, preview],
   );

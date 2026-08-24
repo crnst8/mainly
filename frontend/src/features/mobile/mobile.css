@@ -201,10 +201,14 @@
   border-bottom: 1px solid color-mix(in oklab, var(--tint) 35%, var(--line));
 }
 
-/* Read sits on the sunken surface, unread on the flat — inverted from the
-   desktop, so unread is the thing that pops on a small screen. */
+/* Read sits on the sunken surface while unread gets a restrained accent wash,
+   so unread is the thing that pops on a small screen. */
 .mrow[data-read] {
   background: var(--bg-sunken);
+}
+
+.mrow:not([data-read]) {
+  background: color-mix(in oklab, var(--accent) 5%, var(--bg));
 }
 
 /* Pinned rows get a warm tint and a red marker at the right edge. */
@@ -242,6 +246,15 @@
   color: var(--text-faint);
 }
 
+.mrow__unread {
+  width: 6px;
+  height: 6px;
+  flex-shrink: 0;
+  border-radius: 50%;
+  background: var(--accent);
+  box-shadow: 0 0 0 2px var(--accent-soft);
+}
+
 /* Sender labels the message; the subject gets its own stronger line beneath. */
 .mrow__sender {
   font-size: var(--t-xs);
@@ -254,16 +267,25 @@
   flex: 1;
   min-width: 0;
   font-size: var(--t-md);
-  font-weight:600;
+  font-weight: 700;
   color: var(--text);
   letter-spacing: var(--tr-snug);
+}
+
+.mrow[data-read] .mrow__subject {
+  color: var(--text-secondary);
+  font-weight: 400;
 }
 
 /* Unread lifts the sender too, or the row's one strong signal is competing
    with a label that has gone quiet. */
 .mrow:not([data-read]) .mrow__sender {
-  color: var(--text-secondary);
-  font-weight: 600;
+  color: var(--text);
+  font-weight: 700;
+}
+
+.mrow[data-read] .mrow__preview {
+  color: color-mix(in oklab, var(--text-faint) 78%, transparent);
 }
 
 .mrow__preview {

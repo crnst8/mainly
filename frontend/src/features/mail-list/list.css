@@ -305,6 +305,12 @@
   cursor: default;
 }
 
+/* Unread is a row state, not just a nine-pixel dot. A quiet accent wash gives
+   it a distinct surface while keeping account stripes and selection dominant. */
+.row-msg[data-read='false'] {
+  background: color-mix(in oklab, var(--accent) 5%, var(--bg));
+}
+
 .row-msg:hover {
   background: var(--bg-hover);
 }
@@ -341,6 +347,10 @@
   width: 3px;
   background: var(--tint);
   opacity: 0.85;
+}
+
+.row-msg[data-read='true'] .row-msg__stripe {
+  opacity: 0.5;
 }
 
 .row-msg[data-stripe='false'] .row-msg__stripe {
@@ -408,7 +418,7 @@
 
 .row-msg[data-read='false'] .row-msg__sender {
   color: var(--text);
-  font-weight: 500;
+  font-weight: 700;
 }
 
 .row-msg__subject {
@@ -423,7 +433,7 @@
 
 .row-msg[data-read='false'] .row-msg__subject {
   color: var(--text);
-  font-weight: 500;
+  font-weight: 700;
 }
 
 .row-msg__preview {
@@ -433,6 +443,10 @@
   text-overflow: ellipsis;
   white-space: nowrap;
   line-height: var(--lh-snug);
+}
+
+.row-msg[data-read='false'] .row-msg__preview {
+  color: var(--text-muted);
 }
 
 :root[data-density='compact'] .row-msg {

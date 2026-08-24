@@ -94,6 +94,86 @@ the default.
 
 ---
 
+## Installing it as an app
+
+A browser offers "install this app" only where the page may register a service
+worker, and only a **secure origin** may: `https://`, or `localhost`. A LAN
+address or a tailnet address over plain HTTP is not one, however private that
+network actually is — so on `http://100.64.0.2:5274` the install option simply
+does not appear, and nothing in the app can conjure it.
+
+That leaves one requirement: a hostname with a certificate. Two routes get
+there without exposing anything to the internet.
+
+### Tailscale, if Tailscale runs your tailnet
+
+```sh
+./mainly.sh tls tailscale
+```
+
+`tailscale serve` terminates TLS in front of mainly using your tailnet's own
+certificate, on your node's MagicDNS name, reachable by tailnet devices and
+nothing else. The command points `APP_ORIGIN` at it and restarts the container.
+
+It needs HTTPS certificates enabled for the tailnet — admin console → **DNS** →
+**HTTPS Certificates**. A self-hosted control server (Headscale) issues no
+certificates at all, so use the next route there.
+
+Plain HTTP on the LAN keeps working alongside it: the session cookie is marked
+`Secure` per request, not per install, so the same instance can serve a
+certificate to one device and plaintext to another.
+
+### A hostname you own, on any private address
+
+This works everywhere — Headscale, a plain LAN, a VPN — and needs no inbound
+port, because the certificate is proved over DNS rather than over HTTP.
+
+1. Point a hostname you own at the private address: an `A` record for
+   `mail.example.com` → `100.64.0.2`. Public DNS answering with a private
+   address is fine, and unreachable to anyone not on that network.
+2. Put Caddy in front, with a DNS-01 certificate. `docker-compose.override.yml`
+   beside the main compose file:
+
+   ```yaml
+   services:
+     proxy:
+       image: ghcr.io/caddybuilds/caddy-cloudflare:latest
+       restart: unless-stopped
+       depends_on: [app]
+       environment:
+         CF_API_TOKEN: ${CF_API_TOKEN:?a Cloudflare token with DNS:Edit on the zone}
+         MAINLY_HOSTNAME: ${MAINLY_HOSTNAME:?the hostname above}
+       volumes:
+         - ./Caddyfile:/etc/caddy/Caddyfile:ro
+         - caddy-data:/data
+       ports:
+         - '${BIND_ADDRESS:-0.0.0.0}:443:443'
+
+   volumes:
+     caddy-data:
+   ```
+
+   ```caddyfile
+   # Caddyfile
+   {$MAINLY_HOSTNAME} {
+       tls {
+           dns cloudflare {$CF_API_TOKEN}
+       }
+       reverse_proxy app:5274
+   }
+   ```
+
+   The image is Caddy built with the Cloudflare DNS module; other providers have
+   equivalents, and `caddy-dns/*` on GitHub lists them.
+3. Add `CF_API_TOKEN` and `MAINLY_HOSTNAME` to `.env`, then:
+
+   ```sh
+   ./mainly.sh origin https://mail.example.com
+   ./mainly.sh start
+   ```
+
+Open the hostname from a phone on that network and the install prompt is there.
+
 ## Putting it on the internet
 
 A private network is one thing; the internet is another. **Do not leave it on
@@ -175,7 +255,10 @@ Two requirements, whatever you pick:
    batches when a buffer happens to fill.
 
 A Tailscale-only deployment is a legitimate answer here: no public exposure, and
-the mail client is reachable from every device you own.
+the mail client is reachable from every device you own — `./mainly.sh tls
+tailscale` sets that up in one command, and
+[Installing it as an app](#installing-it-as-an-app) covers what a certificate
+buys you beyond privacy.
 
 ---
 

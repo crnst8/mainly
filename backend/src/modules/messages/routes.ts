@@ -25,6 +25,7 @@ import { refreshCounts, publishCounts } from '../../sync/folders.ts';
 import { refreshThreads } from '../../sync/threads.ts';
 import { syncNow } from '../../sync/engine.ts';
 import { ensureBody, fetchAttachment, type CachedBody } from '../../sync/bodies.ts';
+import { toPreview } from '../../sync/parse.ts';
 
 export async function messageRoutes(app: FastifyInstance): Promise<void> {
   // A POST that reads. The verb is a transport detail, so the scope is declared
@@ -398,7 +399,9 @@ function toMessage(r: MessageRow, fetched: CachedBody | null = null): Message {
     bcc: parseAddrHeader(fetched?.headers ?? r.headers, 'bcc'),
     replyTo: parseAddrHeader(fetched?.headers ?? r.headers, 'reply-to'),
     subject: r.subject,
-    preview: r.preview,
+    // Old index rows may predate HTML sniffing. Keep every reader/thread path
+    // on the same plain-text preview contract as the list query.
+    preview: toPreview(r.preview, false),
     date: r.date.toISOString(),
     seen: r.seen,
     flagged: r.flagged,

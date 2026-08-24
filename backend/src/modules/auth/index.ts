@@ -3,8 +3,8 @@
  *
  * Session cookie, not a bearer token in JS. This app renders untrusted HTML
  * from strangers; a credential reachable from JavaScript is a credential an
- * XSS walks away with. httpOnly + SameSite=Strict + Secure closes that path,
- * and CSRF is handled by a double-submit token instead.
+ * XSS walks away with. httpOnly + SameSite=Strict (+ Secure over TLS) closes
+ * that path, and CSRF is handled by a double-submit token instead.
  *
  * Sessions live in Postgres so a single-container deployment needs no Redis.
  */
@@ -12,7 +12,6 @@
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import argon2 from 'argon2';
 import { one, query } from '../../db/index.ts';
-import { config } from '../../config.ts';
 import { randomToken, safeEqual } from '../../lib/crypto.ts';
 import { badRequest, forbidden, unauthorized } from '../../lib/errors.ts';
 import { MIN_APP_PASSWORD } from '../../contract/types.ts';
@@ -45,17 +44,22 @@ declare module 'fastify' {
   }
 }
 
-const cookieOptions = {
+/*
+ * Decided per request rather than per install, because one instance is often
+ * reachable both ways at once: https through a proxy or `tailscale serve`, and
+ * plain http on its LAN address at the same time. `Secure` is required for the
+ * first and fatal to the second — browsers discard a Secure cookie that arrives
+ * over plain HTTP, so the sign-in appears to work and the next request is
+ * anonymous. `req.protocol` reads X-Forwarded-Proto (the server sets
+ * trustProxy), which is what a TLS-terminating proxy in front of this sends.
+ */
+const cookieOptions = (req: FastifyRequest) => ({
   httpOnly: true,
   sameSite: 'strict' as const,
-  // Follows APP_ORIGIN, not NODE_ENV. Browsers discard a `Secure` cookie set
-  // over plain HTTP everywhere but localhost, so a private-network install — a
-  // Tailscale or LAN address, no TLS — would sign in and be signed straight
-  // back out. A deployment behind TLS names an https:// origin and keeps it.
-  secure: config.appOrigin.startsWith('https://'),
+  secure: req.protocol === 'https',
   path: '/',
   maxAge: SESSION_TTL_MS / 1000,
-};
+});
 
 export async function authRoutes(app: FastifyInstance): Promise<void> {
   app.post<{ Body: { email: string; password: string } }>(
@@ -87,11 +91,12 @@ export async function authRoutes(app: FastifyInstance): Promise<void> {
         [sessionId, user.id, csrf, `${SESSION_TTL_MS} milliseconds`],
       );
 
+      const cookie = cookieOptions(req);
       reply
-        .setCookie(SESSION_COOKIE, sessionId, cookieOptions)
+        .setCookie(SESSION_COOKIE, sessionId, cookie)
         // Readable by JS on purpose: the client echoes it back in a header,
         // which is the whole double-submit mechanism.
-        .setCookie(CSRF_COOKIE, csrf, { ...cookieOptions, httpOnly: false })
+        .setCookie(CSRF_COOKIE, csrf, { ...cookie, httpOnly: false })
         .header('x-csrf-token', csrf);
 
       return { ok: true };

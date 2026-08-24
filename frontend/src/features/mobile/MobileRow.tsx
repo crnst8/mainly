@@ -23,6 +23,7 @@ export function MobileRow({ message: m }: { message: MessageSummary }) {
       <span className="mrow__stripe" />
       <div className="mrow__main">
         <div className="mrow__senderline">
+          {!m.seen && <span className="mrow__unread" aria-hidden="true" />}
           {m.answered && <Reply className="mrow__answered" size={11} />}
           <span className="mrow__sender truncate">{displayName(m.from)}</span>
         </div>

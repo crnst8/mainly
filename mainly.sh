@@ -487,6 +487,123 @@ cmd_bind() {
   say ""
 }
 
+# ── HTTPS, and the install-as-an-app prompt that hangs off it ────────────────
+#
+# A browser offers "install this app" only where the page may register a service
+# worker, and only a secure origin may: https, or localhost. A LAN or tailnet
+# address over plain http is not one, however private that network actually is,
+# and no manifest or header changes it. A home-screen install needs a hostname
+# and a certificate — that is the whole story.
+#
+# On a tailnet run by Tailscale itself, `tailscale serve` is the entire answer:
+# it terminates TLS with a certificate every device already trusts, reachable
+# from the tailnet and nowhere else. A self-hosted control server — Headscale —
+# issues no certificates, so that path does not exist there; docs/self-hosting.md
+# has the DNS-01 route, which works for any private address.
+
+tailscale_cli() {
+  if command -v tailscale >/dev/null 2>&1; then printf 'tailscale'; return 0; fi
+  local app='/Applications/Tailscale.app/Contents/MacOS/Tailscale'
+  if [[ -x "$app" ]]; then printf '%s' "$app"; return 0; fi
+  return 1
+}
+
+# The names this tailnet can get a certificate for. Empty when it issues none,
+# which is what a "CertDomains": null in the status means.
+tailscale_cert_domains() {
+  local ts
+  ts="$(tailscale_cli)" || return 0
+  "$ts" status --json 2>/dev/null | tr -d ' \n' |
+    grep -oE '"CertDomains":\[[^]]*\]' | grep -oE '[A-Za-z0-9._-]+\.[A-Za-z]{2,}' || true
+}
+
+cmd_tls() {
+  load_env
+  local ts serve_status url
+
+  case "${1:-status}" in
+    status|'')
+      say ""
+      if [[ "${APP_ORIGIN:-}" == https://* ]]; then
+        ok "HTTPS — ${BOLD}${APP_ORIGIN}${RESET}"
+        say "${DIM}  A secure origin, so a browser will offer to install mainly as an app.${RESET}"
+      else
+        say "  ${BOLD}${APP_ORIGIN:-http://localhost:${PORT:-5274}}${RESET} — plain HTTP."
+        say ""
+        say "  Everything works over it but one thing: installing mainly as an app."
+        say "  Browsers gate that on a secure origin — https, or localhost — so a LAN"
+        say "  or tailnet address will not offer it, however private that network is."
+      fi
+      if ts="$(tailscale_cli)"; then
+        serve_status="$("$ts" serve status 2>/dev/null || true)"
+        if [[ -n "$serve_status" && "$serve_status" != *"No serve config"* ]]; then
+          say ""
+          say "  tailscale serve:"
+          printf '%s\n' "$serve_status" | sed 's/^/    /'
+        elif [[ -n "$(tailscale_cert_domains)" ]]; then
+          say ""
+          say "${DIM}  This tailnet issues certificates — './mainly.sh tls tailscale' is one step.${RESET}"
+        fi
+      fi
+      say ""
+      say "${DIM}  docs/self-hosting.md — HTTPS on a private network${RESET}"
+      say ""
+      ;;
+
+    tailscale|ts|on)
+      ts="$(tailscale_cli)" || die "No 'tailscale' command on this machine."
+      [[ -n "$(tailscale_cert_domains)" ]] || die \
+"This tailnet issues no HTTPS certificates, so there is nothing for serve to
+terminate TLS with.
+
+  On tailscale.com   admin console → DNS → HTTPS Certificates → Enable
+  On Headscale       they do not exist; use the route below
+
+docs/self-hosting.md has the one that always works: a hostname you own, a
+certificate over DNS-01, and a proxy in front of this. It needs no inbound
+port, so a private address is no obstacle."
+
+      step "Putting tailscale serve in front of port ${PORT:-5274}"
+      "$ts" serve --bg "http://127.0.0.1:${PORT:-5274}" \
+        || die "tailscale serve refused — its output above says why."
+
+      url="$("$ts" serve status 2>/dev/null | grep -oE 'https://[A-Za-z0-9._-]+' | head -n 1 || true)"
+      [[ -n "$url" ]] || die "serve took the config but reported no URL. './mainly.sh tls' shows what it has."
+
+      set_env_var APP_ORIGIN "$url"
+      APP_ORIGIN="$url"
+      if docker_ready; then apply_to_running || true; fi
+
+      say ""
+      ok "Serving at ${BOLD}${url}${RESET}"
+      say ""
+      say "  Tailnet devices only, with a certificate they already trust. Open it on a"
+      say "  phone and the browser will offer to install mainly as an app."
+      say ""
+      say "${DIM}  Plain HTTP on ${BIND_ADDRESS:-127.0.0.1}:${PORT:-5274} keeps working for anything off the tailnet —${RESET}"
+      say "${DIM}  the session cookie is marked Secure per request, not per install.${RESET}"
+      say ""
+      ;;
+
+    off)
+      ts="$(tailscale_cli)" || die "No 'tailscale' command on this machine."
+      step "Taking the serve config down"
+      "$ts" serve reset || warn "tailscale serve reset did not succeed — check 'tailscale serve status'"
+      local back
+      back="$(reachable_urls)"; back="${back%%$'\n'*}"
+      set_env_var APP_ORIGIN "$back"
+      APP_ORIGIN="$back"
+      if docker_ready; then apply_to_running || true; fi
+      ok "Back to ${BOLD}${back}${RESET}"
+      say ""
+      ;;
+
+    *)
+      die "usage: ./mainly.sh tls [tailscale|off]"
+      ;;
+  esac
+}
+
 cmd_origin() {
   load_env
   if [[ -z "${1:-}" ]]; then
@@ -613,6 +730,8 @@ ${BOLD}mainly${RESET} — self-hosted multi-domain mail client
                                  one and every URL that reaches it.
   ./mainly.sh origin <url>       The URL browsers open. Set it when a reverse
                                  proxy fronts this.
+  ./mainly.sh tls [tailscale]    HTTPS, which is what installing mainly as an
+                                 app needs. No argument explains where you are.
   ./mainly.sh logs [app|db]      Follow the log.
   ./mainly.sh update             Pull the current image and restart.
   ./mainly.sh backup [dir]       pg_dump to ./backups by default.
@@ -633,6 +752,7 @@ case "${1:-}" in
   status)  cmd_status ;;
   bind)    shift; cmd_bind "$@" ;;
   origin)  shift; cmd_origin "$@" ;;
+  tls)     shift; cmd_tls "$@" ;;
   logs)    shift; cmd_logs "$@" ;;
   user)    shift; cmd_user "$@" ;;
   token)   shift; cmd_token "$@" ;;

@@ -206,22 +206,67 @@ const ENTITIES: Record<string, string> = {
   '#39': "'",
 };
 
+const HTML_ELEMENT =
+  /<\s*\/?\s*(?:!doctype|html|head|body|title|meta|link|style|script|table|tbody|thead|tfoot|tr|td|th|div|span|p|br|ul|ol|li|h[1-6]|blockquote|section|article|header|footer|main|a|img|strong|em|b|i)\b[^>]*>/i;
+const HTML_ELEMENT_START =
+  /<\s*\/?\s*(?:!doctype|html|head|body|title|meta|link|style|script|table|tbody|thead|tfoot|tr|td|th|div|span|p|br|ul|ol|li|h[1-6]|blockquote|section|article|header|footer|main|a|img|strong|em|b|i)(?:\s|\/?>|$)/i;
+
+function decodeEntities(text: string): string {
+  return text.replace(/&(#\d+|#x[0-9a-f]+|[a-z]+);/gi, (whole, name: string) => {
+    const key = name.toLowerCase();
+    if (ENTITIES[key]) return ENTITIES[key];
+    const point = key.startsWith('#x')
+      ? parseInt(key.slice(2), 16)
+      : key.startsWith('#')
+        ? Number(key.slice(1))
+        : Number.NaN;
+    if (Number.isInteger(point) && point >= 0 && point <= 0x10ffff) {
+      return String.fromCodePoint(point);
+    }
+    return whole;
+  });
+}
+
+/**
+ * Some senders declare an HTML body as text/plain, and some gateways encode a
+ * complete HTML document one extra time. MIME metadata is the useful default,
+ * but recognisable markup is better evidence than a broken declaration.
+ */
+export function looksLikeHtml(text: string): boolean {
+  let candidate = text;
+  for (let i = 0; i < 2; i++) {
+    if (HTML_ELEMENT.test(candidate) || HTML_ELEMENT_START.test(candidate)) return true;
+    const decoded = decodeEntities(candidate);
+    if (decoded === candidate) break;
+    candidate = decoded;
+  }
+  return HTML_ELEMENT.test(candidate) || HTML_ELEMENT_START.test(candidate);
+}
+
 /** Enough HTML-to-text for 200 characters of preview. The reader gets the real
  *  sanitised HTML; this only has to read like a sentence. */
 export function htmlToText(html: string): string {
-  return html
-    .replace(/<(script|style|head)[\s\S]*?<\/\1>/gi, ' ')
+  // Decode before stripping so `&lt;div&gt;Hello&lt;/div&gt;` cannot leak its
+  // tags into the list. Two passes cover the double-encoded output produced by
+  // a handful of mailing-list gateways.
+  let source = html;
+  for (let i = 0; i < 2; i++) {
+    const decoded = decodeEntities(source);
+    if (decoded === source) break;
+    source = decoded;
+  }
+
+  return source
+    // `$` deliberately handles a truncated preview that ends inside a style or
+    // script block. Empty is preferable to showing CSS or JavaScript as mail.
+    .replace(/<(script|style|head)\b[^>]*>[\s\S]*?(?:<\/\1\s*>|$)/gi, ' ')
     .replace(/<!--[\s\S]*?-->/g, ' ')
     .replace(/<br\s*\/?>/gi, ' ')
     .replace(/<\/(p|div|tr|li|h[1-6])>/gi, ' ')
     .replace(/<[^>]+>/g, '')
-    .replace(/&(#\d+|#x[0-9a-f]+|[a-z]+);/gi, (whole, name: string) => {
-      const key = name.toLowerCase();
-      if (ENTITIES[key]) return ENTITIES[key];
-      if (key.startsWith('#x')) return String.fromCodePoint(parseInt(key.slice(2), 16));
-      if (key.startsWith('#')) return String.fromCodePoint(Number(key.slice(1)));
-      return whole;
-    })
+    // Stored previews are length-capped, so the last tag may have lost its `>`.
+    .replace(/<[^>]*$/g, '')
+    .replace(/&(#\d+|#x[0-9a-f]+|[a-z]+);/gi, (whole) => decodeEntities(whole))
     .replace(/\s+/g, ' ')
     .trim();
 }
@@ -236,8 +281,9 @@ export const PREVIEW_CHARS = 200;
  * nothing about the reply.
  */
 export function toPreview(text: string, isHtml: boolean): string {
-  let body = isHtml ? htmlToText(text) : text;
-  if (!isHtml) {
+  const containsHtml = isHtml || looksLikeHtml(text);
+  let body = containsHtml ? htmlToText(text) : text;
+  if (!containsHtml) {
     body = body
       .split(/\r?\n/)
       .filter((line) => !line.startsWith('>'))
