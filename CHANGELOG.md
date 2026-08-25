@@ -1,3 +1,19 @@
+## 1.2.0 — 2026-08-25
+
+**Features**:
+
+- Sender & domain monograms can be changed to images or icons by right-click
+- Help page added with feature walkthroughs & configurations - needs some de-slopificiation but offers some starting guidance
+- Tags assigned to emails & senders appear as badges in msg rows
+
+**Fixes:**
+
+- Account group folder colours weren’t showing,
+- Shift-select bulk messages was intermittent
+- ‘mainly’ removed from header logo
+- clicking header logo when in collapsed/half-screen mode now goes back to message list
+- html parsing occasionally failed in previews
+
 ## 1.1.4 — 2026-08-24
 
 - fix: parsing error, read marks, general swag
