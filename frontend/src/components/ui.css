@@ -192,6 +192,61 @@
   object-fit: contain;
 }
 
+/* The avatar as a control. Nothing appears until the pointer is on it — every
+   row in the list has one of these, and forty affordances announcing themselves
+   at rest would be forty distractions from the mail. */
+.sender-avatar--action {
+  cursor: pointer;
+  transition: box-shadow var(--dur-fast) var(--ease-out);
+}
+
+.sender-avatar--action:hover {
+  box-shadow: inset 0 0 0 1px color-mix(in oklab, var(--tint) 60%, transparent);
+}
+
+/* ── Sender panel ─────────────────────────────────────────────────────────── */
+
+.senderpop {
+  display: flex;
+  align-items: center;
+  gap: var(--s-4);
+  padding: var(--s-3) var(--s-4);
+  min-width: 0;
+}
+
+.senderpop__preview {
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  flex-shrink: 0;
+  border-radius: var(--radius-sm);
+  background: color-mix(in oklab, var(--tint) 14%, transparent);
+  color: color-mix(in oklab, var(--tint) 82%, var(--text));
+  font-family: var(--font-mono);
+  font-size: var(--t-2xs);
+}
+
+.senderpop__text {
+  min-width: 0;
+}
+
+.senderpop__addr {
+  font-size: var(--t-xs);
+  color: var(--text);
+}
+
+.senderpop__scope {
+  font-size: var(--t-2xs);
+  color: var(--text-faint);
+}
+
+.senderpop__error {
+  padding: 0 var(--s-4) var(--s-3);
+  font-size: var(--t-2xs);
+  color: var(--danger);
+}
+
 .pill--tinted {
   border-color: color-mix(in oklab, var(--tint) 34%, transparent);
   background: color-mix(in oklab, var(--tint) 10%, transparent);
@@ -541,6 +596,66 @@ textarea.input {
   flex-wrap: wrap;
   gap: var(--s-3);
   padding: var(--s-3) var(--s-4) var(--s-4);
+}
+
+/* The icon picker: a grid of marks with no meaning until someone assigns one.
+   Scrolls rather than wrapping into a menu six hundred pixels tall — forty
+   icons is a set you browse, not one you take in at a glance. */
+.glyphs {
+  max-height: 232px;
+  padding: 0 var(--s-3) var(--s-3);
+}
+
+.glyphs__head {
+  padding: var(--s-3) var(--s-2) var(--s-2);
+}
+
+.glyphs__grid {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 2px;
+}
+
+.glyphs__item {
+  display: grid;
+  place-items: center;
+  aspect-ratio: 1;
+  border-radius: var(--radius-sm);
+  color: var(--text-secondary);
+  transition:
+    background var(--dur-fast) var(--ease-out),
+    color var(--dur-fast) var(--ease-out);
+}
+
+.glyphs__item:hover {
+  background: var(--bg-hover);
+  color: var(--text);
+}
+
+.glyphs__item[aria-pressed='true'] {
+  background: var(--accent-soft);
+  color: var(--accent-text);
+  box-shadow: inset 0 0 0 1px var(--accent);
+}
+
+/* A menu field with a leading icon. The icon is decoration inside the control's
+   own box, so the input keeps the full width and the focus ring. */
+.pop__search {
+  position: relative;
+  display: flex;
+  flex: 1;
+  align-items: center;
+  color: var(--text-faint);
+}
+
+.pop__search > svg {
+  position: absolute;
+  left: var(--s-3);
+  pointer-events: none;
+}
+
+.pop__search .input {
+  padding-left: calc(var(--s-3) * 2 + 12px);
 }
 
 /* An input living inside a menu — "new label", "new folder". */

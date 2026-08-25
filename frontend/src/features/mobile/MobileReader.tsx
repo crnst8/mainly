@@ -19,12 +19,14 @@ import {
 } from '@/components/icons';
 import { Button, Empty, IconButton, Pill, Progress } from '@/components/ui';
 import { SenderAvatar } from '@/components/SenderAvatar';
+import { SenderMenu } from '@/components/SenderMenu';
+import { useContextMenu } from '@/components/context-menu';
 import { addrList, bytes, displayName, fullDate, listDate, relative } from '@/lib/format';
 import { parseSearch, searchTerms } from '@/lib/search';
 import { allowImagesFromSender, remoteImagesAllowed } from '@/lib/sender';
 import { getApi } from '@/lib/api';
 import { useAccountColor, useStore } from '@/lib/store';
-import type { Attachment as AttachmentInfo, Message } from '@/lib/types';
+import type { Addr, Attachment as AttachmentInfo, Message } from '@/lib/types';
 import { MessageBody } from '@/features/reader/MessageBody';
 
 export function MobileReader() {
@@ -44,6 +46,7 @@ export function MobileReader() {
   );
 
   const [loadRemote, setLoadRemote] = useState(false);
+  const senderMenu = useContextMenu<Addr>();
   const [showDetail, setShowDetail] = useState(false);
 
   useEffect(() => {
@@ -89,6 +92,7 @@ export function MobileReader() {
               sender={message.from}
               profiles={prefs?.senderProfiles ?? []}
               tint={tint}
+              onClick={(e) => senderMenu.onContextMenu(e, message.from)}
             />
             <div className="mreader__who">
               <div className="mreader__topline">
@@ -201,6 +205,8 @@ export function MobileReader() {
           <QuickReply />
         </div>
       </div>
+
+      <SenderMenu controller={senderMenu} />
     </div>
   );
 }

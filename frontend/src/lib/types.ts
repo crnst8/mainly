@@ -504,6 +504,16 @@ export interface Theme {
   reduceMotion: boolean;
   /** Domain → colour. Accounts inherit unless overridden. */
   domainColors: Record<string, string>;
+  /**
+   * Domain → glyph id from the pickable set (see `components/glyphs.tsx`).
+   *
+   * Presentation for the rail, where a domain is otherwise two letters of its
+   * own name. At eight domains the letters start colliding — "chungus.holdings"
+   * and "chungus.group" are both CH — and a picture is the fastest way out of
+   * that without widening the rail. An id nothing resolves falls back to the
+   * letters, so a glyph removed in a later version breaks nothing.
+   */
+  domainIcons: Record<string, string>;
   /** Folder role → colour. */
   folderColors: Partial<Record<FolderRole, string>>;
   /** Label → colour. */
@@ -566,6 +576,7 @@ export const DEFAULT_PREFERENCES: Preferences = {
     contrast: 'normal',
     reduceMotion: false,
     domainColors: {},
+    domainIcons: {},
     folderColors: {},
     labelColors: {},
     fontScale: 1,

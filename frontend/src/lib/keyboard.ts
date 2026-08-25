@@ -56,6 +56,7 @@ export function useKeyboard() {
 
       if (e.key === 'Escape') {
         if (s.palette) return s.setPalette(false);
+        if (s.help) return s.setHelp(null);
         if (s.settings) return s.setSettings(null);
         if (s.selectedIds.size) return s.clearSelection();
         if (s.openId) return void s.open(null);
@@ -64,7 +65,7 @@ export function useKeyboard() {
 
       // Everything below is for the app surface, not for form fields.
       if (inEditable(e.target)) return;
-      if (s.palette || s.settings || s.onboarding) return;
+      if (s.palette || s.help || s.settings || s.onboarding) return;
 
       if (mod && e.key.toLowerCase() === 'a') {
         e.preventDefault();
@@ -98,14 +99,22 @@ export function useKeyboard() {
       /* ── Single keys ──────────────────────────────────────────────────── */
 
       switch (e.key) {
+        // The capital is shift+j, which the browser reports as a different key
+        // rather than as `j` with a modifier. It is listed beside the lowercase
+        // one and still reads `shiftKey`, so Caps Lock — which also sends `J`,
+        // with no shift — keeps moving rather than silently selecting.
         case 'j':
+        case 'J':
         case 'ArrowDown':
           e.preventDefault();
-          return s.moveFocus(1);
+          // Shift is the keyboard's shift-click: it grows the selection from
+          // wherever it was anchored rather than moving alone.
+          return s.moveFocus(1, e.shiftKey);
         case 'k':
+        case 'K':
         case 'ArrowUp':
           e.preventDefault();
-          return s.moveFocus(-1);
+          return s.moveFocus(-1, e.shiftKey);
         case 'Enter':
           e.preventDefault();
           return void s.open(s.focusedId);
@@ -151,7 +160,7 @@ export function useKeyboard() {
           return s.setSettings('appearance');
         case '?':
           e.preventDefault();
-          return s.setSettings('keyboard');
+          return s.setHelp('shortcuts');
         case 'z': {
           e.preventDefault();
           // Undo the most recent reversible toast.
@@ -200,6 +209,9 @@ export const SHORTCUTS: { keys: string[]; label: string; group: string }[] = [
   { keys: ['⌘', 'K'], label: 'Command palette', group: 'Navigate' },
 
   { keys: ['x'], label: 'Select', group: 'Act' },
+  { keys: ['⇧', 'j'], label: 'Extend selection down', group: 'Act' },
+  { keys: ['⇧', 'k'], label: 'Extend selection up', group: 'Act' },
+  { keys: ['⇧', 'click'], label: 'Select everything between', group: 'Act' },
   { keys: ['⌘', 'A'], label: 'Select all', group: 'Act' },
   { keys: ['u'], label: 'Toggle read', group: 'Act' },
   { keys: ['s'], label: 'Toggle flag', group: 'Act' },
@@ -214,5 +226,5 @@ export const SHORTCUTS: { keys: string[]; label: string; group: string }[] = [
   { keys: ['⌘', '↵'], label: 'Send', group: 'Write' },
 
   { keys: [','], label: 'Settings', group: 'App' },
-  { keys: ['?'], label: 'Keyboard shortcuts', group: 'App' },
+  { keys: ['?'], label: 'Help and guides', group: 'App' },
 ];

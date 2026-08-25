@@ -68,6 +68,12 @@
   color: var(--text);
 }
 
+.mobile__topactions {
+  display: flex;
+  align-items: center;
+  gap: var(--s-1);
+}
+
 /* ── Chips ───────────────────────────────────────────────────────────────── */
 
 .mobile__chips {

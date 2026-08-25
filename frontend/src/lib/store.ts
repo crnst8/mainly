@@ -105,6 +105,7 @@ export interface State {
 
   /* Overlays */
   palette: boolean;
+  help: string | null;
   settings: string | null;
   onboarding: boolean;
 
@@ -140,7 +141,11 @@ interface Actions {
   resync(): Promise<void>;
 
   focus(id: Id | null): void;
-  moveFocus(delta: number): void;
+  /** `extend` grows the selection from the anchor instead of moving alone —
+   *  shift+j/k, the keyboard's version of a shift-click. */
+  moveFocus(delta: number, extend?: boolean): void;
+  /** `range` selects everything between the anchor and `id`, in the order the
+   *  list is actually drawn in — shift-click, by another name. */
   toggleSelect(id: Id, mode?: 'single' | 'range' | 'add'): void;
   /** Add or remove a whole set at once — a group header, a saved search, an
    *  agent handing over a list. One `set` rather than one per id. */
@@ -165,6 +170,15 @@ interface Actions {
    *  of what its own label says roughly half the time. */
   setFlag(ids: Id[], flagged: boolean): Promise<void>;
   setRead(ids: Id[], seen: boolean): Promise<void>;
+  /**
+   * Mark every unread message in a set of mailboxes read.
+   *
+   * Not `setRead` with a list of ids: the list holds one page of one scope, and
+   * "mark this group read" is about mail that is mostly not on screen. The
+   * unread set is read back through the ordinary query API — the same path the
+   * list uses — so there is no second definition of what unread means.
+   */
+  markAccountsRead(accountIds: Id[], label: string, folderIds?: Id[]): Promise<void>;
   archive(ids?: Id[]): Promise<void>;
   trash(ids?: Id[]): Promise<void>;
 
@@ -223,6 +237,7 @@ interface Actions {
   signOut(): Promise<void>;
 
   setPalette(open: boolean): void;
+  setHelp(guide: string | null): void;
   setSettings(tab: string | null): void;
   setOnboarding(open: boolean): void;
   toast(message: string, undo?: () => void): void;
@@ -232,6 +247,14 @@ interface Actions {
 /** Ids that are staged for removal but still inside the undo window. Kept out
  *  of the store so re-renders do not depend on them. */
 const pendingRemoval = new Set<Id>();
+
+/* Bulk mark-read paging. A page is large because the rows are thrown away and
+   only the ids kept; the cap is what stops "mark read" on a hundred-thousand
+   message archive from becoming a job with no progress bar. The write chunk is
+   smaller so one rejected batch does not take the whole set with it. */
+const MARK_READ_PAGE = 500;
+const MARK_READ_MAX = 20_000;
+const MARK_READ_CHUNK = 250;
 
 /** Window listeners are wired once per document, not once per boot. `boot` can
  *  run again after a sign-in without stacking a second copy of each. */
@@ -291,6 +314,7 @@ export const useStore = create<State & Actions>((set, get) => ({
   searchBase: null,
 
   palette: false,
+  help: null,
   settings: null,
   onboarding: false,
   toasts: [],
@@ -598,22 +622,31 @@ export const useStore = create<State & Actions>((set, get) => ({
     set({ focusedId: id, anchorId: id });
   },
 
-  moveFocus(delta) {
-    const rows = get().result?.messages ?? [];
+  moveFocus(delta, extend) {
+    const rows = visualOrder(get());
     if (!rows.length) return;
-    const i = rows.findIndex((m) => m.id === get().focusedId);
+    const i = rows.indexOf(get().focusedId ?? '');
     const next = Math.min(rows.length - 1, Math.max(0, (i === -1 ? 0 : i) + delta));
     const target = rows[next];
     if (!target) return;
-    set({ focusedId: target.id });
+
+    // Shift+j/k is the keyboard's shift-click: it grows the selection from the
+    // anchor and leaves the reader where it is, because extending a selection
+    // is not going somewhere.
+    if (extend) {
+      if (!get().anchorId) set({ anchorId: rows[i === -1 ? 0 : i] ?? target });
+      get().toggleSelect(target, 'range');
+      return;
+    }
+
+    set({ focusedId: target, anchorId: target });
     // The reader following j/k is not navigation. Pushing here would turn Back
     // into an undo stack for keystrokes.
-    if (get().openId) void get().open(target.id, 'replace');
+    if (get().openId) void get().open(target, 'replace');
   },
 
   toggleSelect(id, mode = 'add') {
-    const { selectedIds, anchorId, result } = get();
-    const rows = result?.messages ?? [];
+    const { selectedIds, anchorId } = get();
     const next = new Set(selectedIds);
 
     if (mode === 'single') {
@@ -621,12 +654,21 @@ export const useStore = create<State & Actions>((set, get) => ({
       return;
     }
 
-    if (mode === 'range' && anchorId) {
-      const a = rows.findIndex((m) => m.id === anchorId);
-      const b = rows.findIndex((m) => m.id === id);
+    if (mode === 'range') {
+      const rows = visualOrder(get());
+      // No anchor means nothing has been touched in this list yet, so the range
+      // is from the top — which is what a shift-click into a fresh list means
+      // everywhere else. Falling through to a plain toggle instead is how a
+      // shift-click used to select exactly one message.
+      const from = anchorId ?? rows[0];
+      const a = from ? rows.indexOf(from) : -1;
+      const b = rows.indexOf(id);
       if (a !== -1 && b !== -1) {
-        for (let i = Math.min(a, b); i <= Math.max(a, b); i++) next.add(rows[i]!.id);
-        set({ selectedIds: next, focusedId: id });
+        for (let i = Math.min(a, b); i <= Math.max(a, b); i++) next.add(rows[i]!);
+        // The anchor stays put: shift-clicking again re-ranges from the same
+        // place, so overshooting is corrected by a second click rather than by
+        // starting over.
+        set({ selectedIds: next, anchorId: from, focusedId: id });
         return;
       }
     }
@@ -666,7 +708,10 @@ export const useStore = create<State & Actions>((set, get) => ({
       set({ openId: null, openMessage: null, openThread: null, nav: mode });
       return;
     }
-    set({ openId: id, openThread: null, readerLoading: true, focusedId: id, nav: mode });
+    // Opening is a deliberate touch of one row, so it becomes the anchor: a
+    // shift-click after reading something ranges from the message you read
+    // rather than from wherever the selection last happened to be.
+    set({ openId: id, openThread: null, readerLoading: true, focusedId: id, anchorId: id, nav: mode });
     try {
       const api = await getApi();
       const message = await api.get(id);
@@ -721,10 +766,12 @@ export const useStore = create<State & Actions>((set, get) => ({
   },
 
   async openNext(delta) {
-    const rows = get().result?.messages ?? [];
-    const i = rows.findIndex((m) => m.id === get().openId);
+    // The order on screen, not the order the page arrived in — "next message"
+    // has to mean the row below the one you are reading.
+    const rows = visualOrder(get());
+    const i = rows.indexOf(get().openId ?? '');
     const target = rows[Math.min(rows.length - 1, Math.max(0, i + delta))];
-    if (target && target.id !== get().openId) await get().open(target.id, 'replace');
+    if (target && target !== get().openId) await get().open(target, 'replace');
   },
 
   async loadThreadBody(id) {
@@ -866,6 +913,69 @@ export const useStore = create<State & Actions>((set, get) => ({
   async setRead(ids, seen) {
     if (!ids.length) return;
     await get().act(ids, { type: 'flag', add: seen ? ['seen'] : [], remove: seen ? [] : ['seen'] });
+  },
+
+  async markAccountsRead(accountIds, label, folderIds) {
+    if (!accountIds.length) return;
+    const api = await getApi();
+    const ids: Id[] = [];
+    try {
+      // One scope per mailbox rather than a unified scope filtered down to
+      // them: a unified query drops hidden accounts, and a hidden mailbox is
+      // still in the group, still counted in the number this menu just showed,
+      // and still expected to go quiet when you ask the group to.
+      for (const accountId of accountIds) {
+        let cursor: string | null = null;
+        do {
+          const page: ListResult = await api.list({
+            scope: { kind: 'account', value: accountId, role: null },
+            sort: 'date',
+            dir: 'desc',
+            group: 'none',
+            filters: { ...emptyFilters(), unreadOnly: true, folderIds: folderIds ?? [] },
+            // Threads would collapse a conversation to one row and leave its
+            // other unread members behind, which is the one thing "mark all
+            // read" must not do.
+            threaded: false,
+            limit: MARK_READ_PAGE,
+            cursor,
+          });
+          for (const m of page.messages) ids.push(m.id);
+          cursor = page.nextCursor;
+        } while (cursor && ids.length < MARK_READ_MAX);
+      }
+    } catch (e) {
+      get().toast(e instanceof Error ? e.message : 'Could not read that mailbox');
+      return;
+    }
+
+    if (!ids.length) {
+      get().toast(`Nothing unread in ${label}`);
+      return;
+    }
+
+    const write = async (seen: boolean) => {
+      for (let i = 0; i < ids.length; i += MARK_READ_CHUNK) {
+        await api.act(ids.slice(i, i + MARK_READ_CHUNK), {
+          type: 'flag',
+          add: seen ? ['seen'] : [],
+          remove: seen ? [] : ['seen'],
+        });
+      }
+      await get().resync();
+    };
+
+    try {
+      await write(true);
+    } catch (e) {
+      get().toast(e instanceof Error ? e.message : 'Could not mark those read');
+      void get().resync();
+      return;
+    }
+
+    // Undoable, because the ids are already in hand and "mark 400 read" is
+    // exactly the action someone fires at the wrong group.
+    get().toast(`Marked ${ids.length} read · ${label}`, () => void write(false));
   },
 
   async archive(ids) {
@@ -1221,6 +1331,9 @@ export const useStore = create<State & Actions>((set, get) => ({
   setPalette(open) {
     set({ palette: open });
   },
+  setHelp(guide) {
+    set({ help: guide });
+  },
   setSettings(tab) {
     // Opening is going somewhere, so it earns a history entry and Back closes
     // it. Closing is handled by the router, which steps back out of the entry
@@ -1255,6 +1368,26 @@ export const useStore = create<State & Actions>((set, get) => ({
 // production builds by the constant-folded import.meta.env.DEV check.
 if (import.meta.env.DEV) {
   (globalThis as unknown as { __store: typeof useStore }).__store = useStore;
+}
+
+/**
+ * The ids of every row, in the order they are drawn.
+ *
+ * A range selection has to mean "everything between these two *on screen*".
+ * `result.messages` is the sorted page; grouping reorders it — group by sender
+ * and the twelve rows between two clicks are a different twelve. Reusing
+ * `groupMessages` rather than mirroring it means the list and the selection
+ * cannot disagree about what is between what.
+ */
+function visualOrder(state: State): Id[] {
+  const messages = state.result?.messages ?? [];
+  if (state.query.group === 'none') return messages.map((m) => m.id);
+  const groups = groupMessages(messages, state.query.group, {
+    accountLabel: (id) => state.accounts.find((a) => a.id === id)?.label ?? id,
+    accountDomain: (id) => state.accounts.find((a) => a.id === id)?.domain ?? '',
+    folderName: (id) => state.folders.find((f) => f.id === id)?.name ?? id,
+  });
+  return groups.flatMap((g) => g.messages.map((m) => m.id));
 }
 
 /** One group changed, the rest untouched. Every group mutation but reordering

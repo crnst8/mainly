@@ -408,10 +408,15 @@ function GroupNode({
           <button
             type="button"
             className="nav nav--group"
+            /* The colour is carried as a custom property rather than painted
+               inline, so the row can wear it in more than one place — the icon
+               and the edge hairline — without JS deciding what those are. */
+            style={group.color ? ({ '--tint': group.color } as React.CSSProperties) : undefined}
+            data-tinted={group.color ? '' : undefined}
             data-unread={unread > 0 || undefined}
             onClick={() => void toggleAccountGroup(group.id)}
             onContextMenu={(e) => onMenu(e, { kind: 'group', group })}
-            title={`${group.name} — right-click to rename, colour or remove`}
+            title={`${group.name} — right-click to rename, colour, mark read or remove`}
           >
             <span className="nav__icon" style={group.color ? { color: group.color } : undefined}>
               <FolderIcon size={13} fill={group.color ?? 'none'} />

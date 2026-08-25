@@ -54,39 +54,27 @@
   border-right: 1px solid var(--line);
 }
 
-/* The wordmark is the home control, so it carries a control's affordances —
-   otherwise it reads as decoration and nobody clicks it. */
+/* The mark is the home control, so it carries a control's affordances —
+   otherwise it reads as decoration and nobody clicks it. The wordmark that used
+   to sit beside it is gone: the glyph alone is the identity, and in a half-width
+   window this button is doing navigation work that a product name only got in
+   the way of. Square, because a 20px icon in a 26px box is the target. */
 .topbar__mark {
-  display: flex;
-  align-items: center;
-  gap: var(--s-3);
+  display: grid;
+  place-items: center;
+  width: 26px;
   height: 26px;
-  padding: 0 var(--s-3);
-  margin-left: calc(var(--s-3) * -1);
   border-radius: var(--radius-sm);
-  /*
-   * The wordmark is set in Paper Mono, lowercase.
-   *
-   * This is the one deliberate exception to the type rule: mono means
-   * machine data everywhere else in the app. A logotype is neither
-   * language nor data, it is a mark, and this one is drawn to sit with the
-   * monospaced glyph beside it rather than with the prose.
-   *
-   * Weight 400, because Paper Mono ships one cut and asking for 700 gets a
-   * synthetic bold: smeared stems and a mark that looks slightly wrong without
-   * anyone being able to say why. Presence comes from tracking instead, which
-   * opens rather than tightens — negative tracking on a monospace fights the
-   * even rhythm that is the whole reason to use one.
-   */
-  font-family: var(--font-mono);
-  font-size: var(--t-sm);
-  font-weight: 400;
-  letter-spacing: 0.02em;
   color: var(--text);
   -webkit-app-region: no-drag;
   transition:
     background var(--dur-fast) var(--ease-out),
     opacity var(--dur-fast) var(--ease-out);
+}
+
+/* Both marks occupy the same cell, so the hidden one costs no layout. */
+.topbar__mark > .topbar__logo {
+  grid-area: 1 / 1;
 }
 
 .topbar__mark:hover {
@@ -102,21 +90,19 @@
   color: var(--text-secondary);
 }
 
+
 /*
  * Two marks, one shown.
  *
  * The artwork is black-on-transparent for light surfaces and off-white for dark
  * ones, and both files share an identical ink bounding box, so the swap does not
- * shift the wordmark by a pixel. Doing it in CSS rather than by switching `src`
- * in JS means the correct mark is painted on the first frame — index.html
- * resolves the theme onto `data-theme` before React exists.
+ * shift the mark by a pixel. Doing it in CSS rather than by switching `src` in
+ * JS means the correct mark is painted on the first frame — index.html resolves
+ * the theme onto `data-theme` before React exists.
  */
 .topbar__logo {
   width: 20px;
   height: 20px;
-  flex-shrink: 0;
-  /* An image inside a flex control picks up the line box otherwise, which
-     leaves it sitting a pixel low next to the text. */
   display: block;
   object-fit: contain;
 }
@@ -133,8 +119,8 @@
   display: block;
 }
 
-/* Already home dims the word; the mark keeps its own colour, because a logo
-   that fades is a logo that looks broken. */
+/* Already home dims it a touch. Only a touch: a logo that fades is a logo that
+   looks broken. */
 .topbar__mark[aria-current='true'] .topbar__logo {
   opacity: 0.85;
 }
@@ -463,6 +449,26 @@
 }
 
 .rail__item[aria-current='true'] .rail__glyph {
+  background: var(--tint);
+  border-color: var(--tint);
+  color: oklch(100% 0 0);
+}
+
+/* A chosen icon takes the same 26px tile as the initials it replaces, so the
+   rail's rhythm does not change when one domain gets a picture and the rest
+   keep their letters. */
+.rail__icon {
+  display: grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  border-radius: var(--radius-sm);
+  background: color-mix(in oklab, var(--tint) 16%, transparent);
+  border: 1px solid color-mix(in oklab, var(--tint) 34%, transparent);
+  color: color-mix(in oklab, var(--tint) 82%, var(--text));
+}
+
+.rail__item[aria-current='true'] .rail__icon {
   background: var(--tint);
   border-color: var(--tint);
   color: oklch(100% 0 0);
@@ -934,9 +940,6 @@
   .sidebar {
     display: none;
   }
-  .topbar__brand {
-    display: none;
-  }
 }
 
 /* ── Account groups ──────────────────────────────────────────────────────────
@@ -964,8 +967,25 @@
 }
 
 .nav--group {
+  position: relative;
+  padding-left: var(--s-5);
   font-weight: 500;
   color: var(--text);
+}
+
+/* A coloured group wears its colour the way a mailbox does — as a hairline on
+   the edge — so the two axes of the sidebar are read the same way. Uncoloured
+   groups draw nothing at all rather than a grey placeholder: the indent is
+   already saying where they sit. */
+.nav--group[data-tinted]::before {
+  content: '';
+  position: absolute;
+  left: 3px;
+  top: 5px;
+  bottom: 5px;
+  width: 2px;
+  border-radius: 1px;
+  background: var(--tint);
 }
 
 .group__empty {

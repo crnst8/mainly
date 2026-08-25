@@ -7,9 +7,10 @@
  */
 
 import { useState } from 'react';
-import { Chevron, Plus } from '@/components/icons';
+import { Chevron, Plus, Question, Settings as SettingsIcon } from '@/components/icons';
 import { MobileComposer } from './MobileComposer';
 import { Onboarding } from '@/features/accounts/Onboarding';
+import { Help } from '@/features/help/Help';
 import { Settings } from '@/features/settings/Settings';
 import { SearchBox } from '@/features/shell/SearchBox';
 import { Toasts } from '@/features/shell/AppShell';
@@ -25,6 +26,7 @@ import './mobile.css';
 export function MobileShell() {
   useRouter();
   const compose = useStore((s) => s.compose);
+  const help = useStore((s) => s.help);
   const settings = useStore((s) => s.settings);
   const onboarding = useStore((s) => s.onboarding);
   const openId = useStore((s) => s.openId);
@@ -58,6 +60,7 @@ export function MobileShell() {
 
       <MobileComposer />
       <Toasts />
+      {help && <Help />}
       {settings && <Settings />}
       {onboarding && <Onboarding />}
     </div>
@@ -74,6 +77,7 @@ function MobileTopbar({
   onOpenFilter: () => void;
 }) {
   const goHome = useStore((s) => s.goHome);
+  const setHelp = useStore((s) => s.setHelp);
   const setSettings = useStore((s) => s.setSettings);
   const result = useStore((s) => s.result);
   const unread = result?.facets.unread ?? 0;
@@ -120,22 +124,24 @@ function MobileTopbar({
         <Chip label="Filter" caret onClick={onOpenFilter} />
       </div>
 
-      <button
-        type="button"
-        className="mobile__gear"
-        aria-label="Settings"
-        onClick={() => setSettings('mobile')}
-      >
-        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-          <circle cx="12" cy="12" r="3" fill="currentColor" />
-          <path
-            d="M12 2v3M12 19v3M4.9 4.9l2.1 2.1M17 17l2.1 2.1M2 12h3M19 12h3M4.9 19.1 7 17M17 7l2.1-2.1"
-            stroke="currentColor"
-            strokeWidth="1.6"
-            strokeLinecap="round"
-          />
-        </svg>
-      </button>
+      <div className="mobile__topactions">
+        <button
+          type="button"
+          className="mobile__gear"
+          aria-label="Help and guides"
+          onClick={() => setHelp('start')}
+        >
+          <Question size={18} />
+        </button>
+        <button
+          type="button"
+          className="mobile__gear"
+          aria-label="Settings"
+          onClick={() => setSettings('mobile')}
+        >
+          <SettingsIcon size={18} />
+        </button>
+      </div>
     </header>
   );
 }

@@ -77,6 +77,33 @@ export function allowImagesFromSender(sender: Addr, profiles: SenderProfile[]): 
   ];
 }
 
+/**
+ * Set or clear the logo for the sender's identity.
+ *
+ * Creates a profile for the sender's own domain when there is not one yet, so
+ * assigning a picture is a single gesture rather than "go to settings, add an
+ * identity, come back". `url` is trusted to have been through `senderImageUrl`;
+ * `null` clears the picture and leaves the identity — the domains and the image
+ * permission on it are separate decisions the user made.
+ */
+export function setSenderImage(sender: Addr, profiles: SenderProfile[], url: string | null): SenderProfile[] {
+  const existing = senderProfileFor(sender, profiles);
+  if (existing) return profiles.map((profile) => (profile.id === existing.id ? { ...profile, imageUrl: url } : profile));
+
+  const domain = senderDomain(sender.address);
+  if (!domain || !url) return profiles;
+  return [
+    ...profiles,
+    {
+      id: domain,
+      name: sender.name?.trim() || null,
+      domains: [domain],
+      imageUrl: url,
+      allowRemoteImages: false,
+    },
+  ];
+}
+
 /** Only an explicitly supplied HTTPS URL may become a sender logo. */
 export function senderImageUrl(value: string): string | null {
   const raw = value.trim();

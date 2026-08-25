@@ -8,9 +8,12 @@
  * everything below domain level to the sidebar.
  */
 
-import { Inbox, Key, Plus, Settings as SettingsIcon, SignOut, Star, User } from '@/components/icons';
+import { Inbox, Key, Plus, Question, Settings as SettingsIcon, SignOut, Star, User } from '@/components/icons';
+import { Glyph, glyphDef } from '@/components/glyphs';
+import { useContextMenu } from '@/components/context-menu';
 import { IconButton, PopLabel, PopSep, Popover } from '@/components/ui';
 import { useDomains, useStore } from '@/lib/store';
+import { RailMenu, type RailTarget } from './RailMenu';
 
 export function Rail() {
   const domains = useDomains();
@@ -19,18 +22,27 @@ export function Rail() {
   const prefs = useStore((s) => s.prefs);
   const setScope = useStore((s) => s.setScope);
   const openView = useStore((s) => s.openView);
+  const setHelp = useStore((s) => s.setHelp);
   const setSettings = useStore((s) => s.setSettings);
   const setOnboarding = useStore((s) => s.setOnboarding);
   const accounts = useStore((s) => s.accounts);
+  /* One menu for the rail, not one per domain — same reason the list mounts one
+     for five hundred rows. */
+  const menu = useContextMenu<RailTarget>();
 
   const totalUnread = accounts.reduce((n, a) => n + (a.hidden ? 0 : a.unread), 0);
   const tint = (domain: string) => prefs?.theme.domainColors[domain] ?? 'var(--n-6)';
 
-  /** Two-letter glyph from the domain: "bigchungus.holdings" → BI, "notchungus.xyz" → NO. */
+  /** Two letters from the domain: "bigchungus.holdings" → BI, "notchungus.xyz" → NO.
+   *  The fallback when the user has not chosen a picture for it. */
   const glyphOf = (domain: string) => {
     const [head = ''] = domain.split('.');
     return head.slice(0, 2);
   };
+
+  /** The chosen icon, or null — including when a stored id names a glyph this
+   *  build does not have, which must degrade to the letters rather than a hole. */
+  const iconOf = (domain: string) => glyphDef(prefs?.theme.domainIcons[domain])?.id ?? null;
 
   return (
     <nav className="rail" aria-label="Domains">
@@ -53,6 +65,7 @@ export function Rail() {
       <div className="rail__group">
         {domains.map(({ domain, accounts: list, unread }) => {
           const broken = list.some((a) => a.status === 'auth_error' || a.status === 'connect_error');
+          const icon = iconOf(domain);
           return (
             <button
               key={domain}
@@ -61,10 +74,17 @@ export function Rail() {
               style={{ '--tint': tint(domain), '--marker': tint(domain) } as React.CSSProperties}
               aria-current={scope.kind === 'domain' && scope.value === domain}
               aria-label={`${domain} — ${unread} unread`}
-              title={`${domain} · ${list.length} account${list.length > 1 ? 's' : ''} · ${unread} unread`}
+              title={`${domain} · ${list.length} account${list.length > 1 ? 's' : ''} · ${unread} unread · right-click for an icon`}
               onClick={() => setScope({ kind: 'domain', value: domain, role: 'inbox' })}
+              onContextMenu={(e) => menu.onContextMenu(e, { kind: 'domain', domain })}
             >
-              <span className="rail__glyph">{glyphOf(domain)}</span>
+              {icon ? (
+                <span className="rail__icon">
+                  <Glyph name={icon} size={17} />
+                </span>
+              ) : (
+                <span className="rail__glyph">{glyphOf(domain)}</span>
+              )}
               {(unread > 0 || broken) && <span className="rail__badge" data-error={broken || undefined} />}
             </button>
           );
@@ -106,11 +126,16 @@ export function Rail() {
         <IconButton label="Add account" onClick={() => setOnboarding(true)}>
           <Plus size={16} />
         </IconButton>
+        <IconButton label="Help and guides" hint="?" onClick={() => setHelp('start')}>
+          <Question size={16} />
+        </IconButton>
         <IconButton label="Settings" hint="," onClick={() => setSettings('appearance')}>
           <SettingsIcon size={16} />
         </IconButton>
         <AccountMenu />
       </div>
+
+      <RailMenu controller={menu} />
     </nav>
   );
 }

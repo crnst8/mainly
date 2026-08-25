@@ -521,17 +521,47 @@
   color: var(--text-muted);
 }
 
+/* Tags sit between the sender and the subject and hold their width. Letting
+   them shrink clipped a name mid-word — "Rece" identifies nothing, and a badge
+   that cannot be read is worse than no badge, because it still costs the row
+   the space. The subject gives way instead; it was going to truncate anyway. */
 .row-msg__labels {
   display: flex;
+  align-items: center;
   gap: var(--s-2);
+  flex: 0 0 auto;
 }
 
 .row-msg__label {
-  display: inline-block;
-  height: 5px;
-  width: 5px;
-  border-radius: var(--radius-full);
-  background: var(--tint, var(--n-6));
+  max-width: 11ch;
+  padding: 0 5px;
+  border-radius: var(--radius-sm);
+  /* Tinted, not filled. A row can carry three of these next to an account
+     stripe and a flag; three saturated blocks would out-shout the subject they
+     are describing. */
+  background: color-mix(in oklab, var(--tint, var(--n-6)) 16%, transparent);
+  box-shadow: inset 0 0 0 1px color-mix(in oklab, var(--tint, var(--n-6)) 34%, transparent);
+  color: color-mix(in oklab, var(--tint, var(--n-6)) 72%, var(--text));
+  font-size: var(--t-2xs);
+  line-height: 15px;
+  font-weight: 500;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  flex-shrink: 0;
+}
+
+.row-msg__label--more {
+  font-family: var(--font-mono);
+  color: var(--text-faint);
+  background: transparent;
+  box-shadow: inset 0 0 0 1px var(--line);
+}
+
+/* Compact hides the preview and puts sender and subject on one line; the tags
+   stay, because at that density they are doing more work than ever. */
+:root[data-density='compact'] .row-msg__label {
+  max-width: 8ch;
 }
 
 /* Hover actions. Hidden until the pointer is on the row — Fitts inside the row,

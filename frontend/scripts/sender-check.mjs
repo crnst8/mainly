@@ -8,7 +8,9 @@ import {
   sameSender,
   senderDomain,
   senderDomains,
+  senderImageUrl,
   senderProfileFor,
+  setSenderImage,
 } from '../src/lib/sender.ts';
 
 let passed = 0;
@@ -68,6 +70,34 @@ check('trusted remote images require an explicitly authorised sender', () => {
 check('allowing a sender makes the current domain explicit', () => {
   const sender = { name: null, address: 'hello@updates.example.com' };
   assert.deepEqual(allowImagesFromSender(sender, []).map((profile) => profile.domains), [['updates.example.com']]);
+});
+
+check('only an https address can become a sender picture', () => {
+  assert.equal(senderImageUrl('https://assets.example/logo.svg'), 'https://assets.example/logo.svg');
+  assert.equal(senderImageUrl('http://assets.example/logo.svg'), null);
+  assert.equal(senderImageUrl('javascript:alert(1)'), null);
+  assert.equal(senderImageUrl('  '), null);
+});
+
+check('a picture lands on the identity that owns the sender', () => {
+  // An existing identity is updated in place, subdomains included, rather than
+  // gaining a second profile that would then compete with it.
+  const updated = setSenderImage(notices, profiles, 'https://assets.example/new.svg');
+  assert.equal(updated.length, 1);
+  assert.equal(updated[0].imageUrl, 'https://assets.example/new.svg');
+
+  // A sender with no identity yet gets one for its own domain only.
+  const fresh = setSenderImage(stranger, [], 'https://assets.example/other.svg');
+  assert.deepEqual(fresh.map((profile) => profile.domains), [['cloudflare.net']]);
+
+  // Clearing keeps the identity: the domains and the image permission on it are
+  // separate decisions the user made.
+  const cleared = setSenderImage(notices, profiles, null);
+  assert.equal(cleared[0].imageUrl, null);
+  assert.equal(cleared[0].allowRemoteImages, true);
+
+  // Nothing to clear means nothing is created.
+  assert.deepEqual(setSenderImage(stranger, [], null), []);
 });
 
 if (failed) {

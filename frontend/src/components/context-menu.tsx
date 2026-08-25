@@ -78,8 +78,15 @@ export function ContextMenu<T>({
   useEffect(() => {
     if (!open) return;
 
+    /* Inside is "inside any surface of this menu", not "inside this element".
+       Submenus are portalled to the body, so `contains` says a swatch two
+       levels down is an outside click: the menu unmounted on mousedown and the
+       click that would have applied the colour never reached a button that was
+       still in the document. Every panel carries `data-menu-surface`, so the
+       question is asked of the whole menu rather than of its root. */
     const onDown = (e: MouseEvent) => {
-      if (!ref.current?.contains(e.target as Node)) close();
+      const el = e.target as Element | null;
+      if (!el?.closest?.('[data-menu-surface]')) close();
     };
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
@@ -99,18 +106,24 @@ export function ContextMenu<T>({
     };
 
     // `true` so a scroll anywhere closes it before the menu detaches from the
-    // row it belongs to.
-    const onScroll = () => close();
+    // row it belongs to — anywhere except inside the menu, where a long panel
+    // scrolling its own contents is the user reading it, not leaving it.
+    const onScroll = (e: Event) => {
+      const el = e.target as Element | null;
+      if (el?.closest?.('[data-menu-surface]')) return;
+      close();
+    };
+    const onResize = () => close();
 
     document.addEventListener('mousedown', onDown);
     document.addEventListener('keydown', onKey, true);
     window.addEventListener('scroll', onScroll, true);
-    window.addEventListener('resize', onScroll);
+    window.addEventListener('resize', onResize);
     return () => {
       document.removeEventListener('mousedown', onDown);
       document.removeEventListener('keydown', onKey, true);
       window.removeEventListener('scroll', onScroll, true);
-      window.removeEventListener('resize', onScroll);
+      window.removeEventListener('resize', onResize);
     };
   }, [open, close]);
 
@@ -120,6 +133,7 @@ export function ContextMenu<T>({
     <div
       ref={ref}
       className="pop pop--ctx"
+      data-menu-surface=""
       style={{ top: pos.top, left: pos.left, width }}
       role="menu"
       // Right-clicking the menu itself should not open a second one behind it.
@@ -267,7 +281,10 @@ export function MenuSub({
         role="menuitem"
         aria-haspopup="menu"
         aria-expanded={open}
-        onClick={() => setOpen((v) => !v)}
+        // Opens, never toggles. Hover has usually opened it already by the
+        // time the click lands, and a toggle there closes the panel the user
+        // is reaching for. `ArrowLeft` and Escape are how it closes.
+        onClick={() => setOpen(true)}
         onFocus={hold}
         onKeyDown={(e) => {
           if (e.key === 'ArrowRight') {
@@ -292,6 +309,7 @@ export function MenuSub({
           <div
             ref={panelRef}
             className="pop pop--ctx"
+            data-menu-surface=""
             style={{ top: pos.top, left: pos.left, width }}
             role="menu"
             onMouseEnter={hold}

@@ -12,7 +12,10 @@
 <img src="site/sc.png#gh-light-mode-only" width="820" alt="Twelve mailboxes across seven domains in one message list">
 <img src="site/sc-dark.png#gh-dark-mode-only" width="820" alt="Twelve mailboxes across seven domains in one message list">
 
+[Mainly isn't a mail server, but you can get started with the stack I use here.](https://github.com/crnst8/mailstack)
+
 </div>
+
 
 ---
 

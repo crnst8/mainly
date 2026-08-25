@@ -12,12 +12,13 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Archive, Attachment, Check, Dot, Star, Trash } from '@/components/icons';
 import { Empty, IconButton, Mark } from '@/components/ui';
 import { SenderAvatar } from '@/components/SenderAvatar';
+import { SenderMenu } from '@/components/SenderMenu';
 import { listDate, displayName } from '@/lib/format';
 import { parseSearch, searchTerms } from '@/lib/search';
 import { homeScope, searchNarrowing } from '@/lib/scope';
 import { useAccountColor, useGroups, useStore } from '@/lib/store';
 import { firstItemAt } from '@/lib/virtual';
-import type { Id, MessageSummary } from '@/lib/types';
+import type { Addr, Id, MessageSummary } from '@/lib/types';
 import { useContextMenu } from '@/components/context-menu';
 import { ListBar } from './ListBar';
 import { MessageMenu } from './MessageMenu';
@@ -63,8 +64,10 @@ export function MailList() {
   );
 
   /* One menu for the whole list, not one per row. Five hundred rows must not
-     mean five hundred mounted menus that are almost always closed. */
+     mean five hundred mounted menus that are almost always closed. The same
+     goes for the sender panel behind every monogram. */
   const menu = useContextMenu<MessageSummary>();
+  const senderMenu = useContextMenu<Addr>();
 
   const scrollerRef = useRef<HTMLDivElement>(null);
   const [scrollTop, setScrollTop] = useState(0);
@@ -196,6 +199,7 @@ export function MailList() {
                   top={item.top}
                   terms={terms}
                   onMenu={menu.onContextMenu}
+                  onSenderMenu={senderMenu.onContextMenu}
                 />
               ),
             )}
@@ -205,6 +209,7 @@ export function MailList() {
       )}
 
       <MessageMenu controller={menu} />
+      <SenderMenu controller={senderMenu} />
     </section>
   );
 }
@@ -256,11 +261,13 @@ function Row({
   top,
   terms,
   onMenu,
+  onSenderMenu,
 }: {
   message: MessageSummary;
   top: number;
   terms: string[];
   onMenu: (e: React.MouseEvent, subject: MessageSummary) => void;
+  onSenderMenu: (e: React.MouseEvent, subject: Addr) => void;
 }) {
   const focused = useStore((s) => s.focusedId === m.id);
   const selected = useStore((s) => s.selectedIds.has(m.id));
@@ -291,6 +298,13 @@ function Row({
       data-open={open || undefined}
       data-read={m.seen}
       data-stripe={showStripe}
+      // A shift-click is a range, and the browser's own idea of shift-click is
+      // "extend the text selection" — which paints half the list blue on the
+      // way to selecting twelve messages. This is the only place to stop it:
+      // the selection is made on mousedown, before any click handler runs.
+      onMouseDown={(e) => {
+        if (e.shiftKey) e.preventDefault();
+      }}
       onClick={(e) => {
         if (e.shiftKey) toggleSelect(m.id, 'range');
         else if (e.metaKey || e.ctrlKey) toggleSelect(m.id, 'add');
@@ -352,6 +366,12 @@ function Row({
           sender={m.from}
           profiles={prefs?.senderProfiles ?? []}
           tint={tint}
+          // Not the row's click. Reaching for the monogram is a statement about
+          // the sender, not about the message next to it.
+          onClick={(e) => {
+            e.stopPropagation();
+            onSenderMenu(e, m.from);
+          }}
         />
       ) : (
         <span />
@@ -362,6 +382,33 @@ function Row({
           <span className="row-msg__sender">
             <Mark text={displayName(m.from)} terms={terms} />
           </span>
+          {/* Tags read as words, not as dots: a five-pixel chip in the margin
+              could say a row was tagged but never *which* tag, which is the
+              only question a tag answers.
+
+              Ahead of the subject, and never squeezed, because the subject is
+              the thing that truncates on every row anyway — a badge behind it
+              is a badge nobody sees. Two, then a count: past two the row is
+              about its labels instead of its mail. */}
+          {m.labels.length > 0 && (
+            <span className="row-msg__labels">
+              {m.labels.slice(0, 2).map((l) => (
+                <span
+                  key={l}
+                  className="row-msg__label"
+                  title={l}
+                  style={{ '--tint': labelColors[l] ?? 'var(--n-6)' } as React.CSSProperties}
+                >
+                  {l}
+                </span>
+              ))}
+              {m.labels.length > 2 && (
+                <span className="row-msg__label row-msg__label--more" title={m.labels.join(' · ')}>
+                  +{m.labels.length - 2}
+                </span>
+              )}
+            </span>
+          )}
           <span className="row-msg__subject truncate">
             <Mark text={m.subject} terms={terms} />
           </span>
@@ -374,18 +421,6 @@ function Row({
       <div className="row-msg__aside">
         <span className="row-msg__date tnum">{listDate(m.date)}</span>
         <div className="row-msg__marks">
-          {m.labels.length > 0 && (
-            <span className="row-msg__labels">
-              {m.labels.slice(0, 3).map((l) => (
-                <span
-                  key={l}
-                  className="row-msg__label"
-                  title={l}
-                  style={{ '--tint': labelColors[l] ?? 'var(--n-6)' } as React.CSSProperties}
-                />
-              ))}
-            </span>
-          )}
           {m.threadCount > 1 && <span className="row-msg__thread tnum">{m.threadCount}</span>}
           {m.hasAttachments && <Attachment size={12} />}
           {m.flagged && (

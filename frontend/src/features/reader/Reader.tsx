@@ -14,12 +14,14 @@ import {
 } from '@/components/icons';
 import { Button, Empty, IconButton, Pill, Progress } from '@/components/ui';
 import { SenderAvatar } from '@/components/SenderAvatar';
+import { SenderMenu } from '@/components/SenderMenu';
+import { useContextMenu } from '@/components/context-menu';
 import { bytes, displayName, fullDate, listDate } from '@/lib/format';
 import { parseSearch, searchTerms } from '@/lib/search';
 import { allowImagesFromSender, remoteImagesAllowed } from '@/lib/sender';
 import { getApi } from '@/lib/api';
 import { useAccountColor, useStore } from '@/lib/store';
-import type { Attachment as AttachmentInfo, Id, Message } from '@/lib/types';
+import type { Addr, Attachment as AttachmentInfo, Id, Message } from '@/lib/types';
 import { MessageBody } from './MessageBody';
 import './reader.css';
 
@@ -38,6 +40,7 @@ export function Reader() {
 
   const [showHeaders, setShowHeaders] = useState(false);
   const [loadRemote, setLoadRemote] = useState(false);
+  const senderMenu = useContextMenu<Addr>();
 
   const scope = useStore((s) => s.query.scope);
   const terms = useMemo(
@@ -90,6 +93,7 @@ export function Reader() {
               sender={message.from}
               profiles={prefs?.senderProfiles ?? []}
               tint={tint}
+              onClick={(e) => senderMenu.onContextMenu(e, message.from)}
             />
             <div className="reader__who">
               <div className="reader__name" data-selectable>
@@ -194,6 +198,8 @@ export function Reader() {
           </div>
         </div>
       </div>
+
+      <SenderMenu controller={senderMenu} />
     </section>
   );
 }

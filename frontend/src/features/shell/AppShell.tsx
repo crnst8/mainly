@@ -1,9 +1,11 @@
 import { Check, Chevron, Command, Inbox, Plus, Refresh, Undo } from '@/components/icons';
 import { Button, IconButton, Kbd, PopLabel, Popover } from '@/components/ui';
 import { useKeyboard } from '@/lib/keyboard';
+import { useIsStacked } from '@/lib/media';
 import { useRouter } from '@/lib/router';
 import { useAccountColor, useStore } from '@/lib/store';
 import { Composer } from '@/features/compose/Composer';
+import { Help } from '@/features/help/Help';
 import { MailList } from '@/features/mail-list/MailList';
 import { Onboarding } from '@/features/accounts/Onboarding';
 import { Reader } from '@/features/reader/Reader';
@@ -19,6 +21,7 @@ export function AppShell() {
   useRouter();
   const preview = useStore((s) => s.prefs?.preview ?? 'right');
   const openId = useStore((s) => s.openId);
+  const help = useStore((s) => s.help);
   const settings = useStore((s) => s.settings);
   const onboarding = useStore((s) => s.onboarding);
 
@@ -35,6 +38,7 @@ export function AppShell() {
       <Composer />
       <CommandPalette />
       <Toasts />
+      {help && <Help />}
       {settings && <Settings />}
       {onboarding && <Onboarding />}
     </div>
@@ -50,20 +54,34 @@ function Topbar() {
   const goHome = useStore((s) => s.goHome);
   const atHome = useStore((s) => s.query.scope.kind === 'unified' && s.query.scope.role === 'inbox');
   const busy = useStore((s) => s.sync.busy);
+  const openId = useStore((s) => s.openId);
+  const open = useStore((s) => s.open);
+  const stacked = useIsStacked();
+
+  /*
+   * In a half-width window the reader covers the list rather than sitting
+   * beside it, and the mark is the only thing left in the top-left. "All mail"
+   * from there throws away the message you were reading *and* the place you
+   * were reading it from, to answer a question nobody asked. Going back one
+   * step — to the list that is directly underneath — is what the position and
+   * the gesture both imply. At full width the list never went anywhere, so it
+   * stays the way home.
+   */
+  const backToList = stacked && openId !== null;
 
   return (
     <header className="topbar">
       <div className="topbar__brand">
-        {/* The wordmark is the way home. It is a control, so it looks and
-            behaves like one — hover, focus ring, pressed state, and a title
-            that names the destination rather than the product. */}
+        {/* The mark is a control, not a logo sitting in a corner, so it looks
+            and behaves like one — hover, pressed state, and a title that names
+            the destination rather than the product. */}
         <button
           type="button"
           className="topbar__mark"
-          aria-label="All mail"
-          aria-current={atHome}
-          title="All mail · g h"
-          onClick={goHome}
+          aria-label={backToList ? 'Back to messages' : 'All mail'}
+          aria-current={!backToList && atHome}
+          title={backToList ? 'Back to messages' : 'All mail · g h'}
+          onClick={() => (backToList ? void open(null) : goHome())}
         >
           {/* Both variants ship and CSS picks one, rather than swapping `src`
               from JS. index.html resolves the theme onto `data-theme` before the
@@ -92,7 +110,6 @@ function Topbar() {
             width={20}
             height={20}
           />
-          <span>mainly</span>
         </button>
       </div>
 

@@ -5,6 +5,16 @@ import { useSyncExternalStore } from 'react';
 
 const TOUCH_BREAKPOINT = '(max-width: 720px)';
 
+/**
+ * Where the desktop shell stops showing two panes side by side.
+ *
+ * Must stay in step with the `max-width: 1080px` block in `shell.css`, which is
+ * where the sidebar goes away and the reader stops sitting *next to* the list
+ * and starts sitting *over* it. Anything that has to know whether the list is
+ * still visible reads this rather than guessing from a width of its own.
+ */
+const STACKED_BREAKPOINT = '(max-width: 1080px)';
+
 /** Read once at module load: the override is a deliberate, stable choice for a
  *  session, not something that should follow the window around. */
 const forced = new URLSearchParams(window.location.search).get('ui');
@@ -23,6 +33,25 @@ function snapshot(): boolean {
 
 export function useIsMobile(): boolean {
   return useSyncExternalStore(subscribe, snapshot, snapshot);
+}
+
+/**
+ * True when the desktop shell has collapsed to one pane at a time — a window
+ * dragged to half a screen, most often — so the reader covers the message list
+ * instead of sitting beside it.
+ */
+export function useIsStacked(): boolean {
+  return useSyncExternalStore(subscribeStacked, stackedSnapshot, stackedSnapshot);
+}
+
+function subscribeStacked(cb: () => void): () => void {
+  const mql = matchMedia(STACKED_BREAKPOINT);
+  mql.addEventListener('change', cb);
+  return () => mql.removeEventListener('change', cb);
+}
+
+function stackedSnapshot(): boolean {
+  return matchMedia(STACKED_BREAKPOINT).matches;
 }
 
 /**
