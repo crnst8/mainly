@@ -1,3 +1,8 @@
+## 1.2.2 — 2026-08-27
+
+- docs: release notes for 1.3.0
+- feat: inverted colours toggle & print
+
 ## 1.3.0 — 2026-08-27
 
 Added a colour engine (`relight.ts`) that keeps a sender's hues and moves only lightness, driving three things: mail bodies re-lit for dark mode with a one-key toggle (i) back to the original.
