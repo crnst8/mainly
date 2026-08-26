@@ -7,7 +7,7 @@
  * leased, used, and returned; idle ones are reaped.
  */
 
-import { ImapFlow } from 'imapflow';
+import { ImapFlow, type Logger } from 'imapflow';
 import { config } from '../config.ts';
 import { open } from '../lib/crypto.ts';
 import { upstream } from '../lib/errors.ts';
@@ -57,9 +57,65 @@ export function assertHostAllowed(host: string): void {
   }
 }
 
+/* ── What the server said no to ────────────────────────────────────────────── */
+
+/**
+ * The last refusal a connection heard, kept so replay can quote it.
+ *
+ * imapflow answers a refused STORE, MOVE or COPY with `false` and keeps the
+ * server's own words to itself: every command in its `lib/commands` catches the
+ * NO/BAD, hands the error to its logger, and returns. Under `logger: false`
+ * that text is gone, which leaves sync/replay.ts parking an op as "the server
+ * refused" — the same non-answer as "sync failed".
+ *
+ * Only the server's response text is kept, and nothing is written anywhere.
+ * imapflow's lower log levels carry the LOGIN command and message bytes, and
+ * this process does not put either into a log.
+ */
+interface Refusal {
+  text: string | null;
+}
+
+const refusals = new WeakMap<ImapFlow, Refusal>();
+
+function capturingLogger(slot: Refusal): Logger {
+  const drop = (): void => {};
+  const record = (entry: unknown): void => {
+    const err = (entry as { err?: Record<string, unknown> } | null)?.err;
+    if (!err) return;
+    // `enhanceCommandError` puts the server's line on `response` and its
+    // response code on `serverResponseCode`. Either alone is usable; together
+    // they read like the server talking.
+    const parts = [err.serverResponseCode, err.response ?? err.message].filter(
+      (v): v is string => typeof v === 'string' && v.trim() !== '',
+    );
+    if (parts.length) slot.text = parts.join(' ');
+  };
+  // `trace` and `fatal` are outside imapflow's `Logger` type but inside what it
+  // calls. An absent `fatal` is `console.log`ged by its synthetic wrapper —
+  // exactly the leak `logger: false` was there to prevent.
+  const logger = { trace: drop, debug: drop, info: drop, warn: record, error: record, fatal: record };
+  return logger;
+}
+
+/**
+ * Take the last refusal recorded for this connection, clearing it.
+ *
+ * Cleared on read so a later op cannot inherit an earlier one's reason and park
+ * itself with somebody else's error text.
+ */
+export function takeRefusal(client: ImapFlow): string | null {
+  const slot = refusals.get(client);
+  if (!slot?.text) return null;
+  const text = slot.text;
+  slot.text = null;
+  return text;
+}
+
 export async function connect(creds: AccountCredentials): Promise<ImapFlow> {
   const { host, servername } = resolveHost(creds.imapHost);
 
+  const refusal: Refusal = { text: null };
   const client = new ImapFlow({
     host,
     port: creds.imapPort,
@@ -75,13 +131,18 @@ export async function connect(creds: AccountCredentials): Promise<ImapFlow> {
         keyVersion: creds.secretKeyVersion,
       }),
     },
-    logger: false,
+    // Not `false`: that also throws away the server's reason for refusing a
+    // command, which replay needs. The logger below remembers that one string
+    // and drops every other entry.
+    logger: capturingLogger(refusal),
     // Never emit credentials or message contents into logs.
     emitLogs: false,
     tls: { servername, minVersion: 'TLSv1.2' },
     connectionTimeout: config.imap.connectTimeoutMs,
     greetingTimeout: config.imap.connectTimeoutMs,
   });
+
+  refusals.set(client, refusal);
 
   await client.connect();
   if (creds.imapSecurity === 'starttls' && !client.secureConnection) {

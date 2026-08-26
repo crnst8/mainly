@@ -18,7 +18,7 @@
 import type { ImapFlow } from 'imapflow';
 import { query } from '../db/index.ts';
 import type { Flag, MessageAction } from '../contract/types.ts';
-import { withConnection, type AccountCredentials } from './pool.ts';
+import { withConnection, takeRefusal, type AccountCredentials } from './pool.ts';
 
 /** Ops attempted per pass. Bounded so one account with a thousand queued moves
  *  cannot hold the connection while every other account waits. */
@@ -117,7 +117,48 @@ function byFolder(targets: Target[]): Map<string, number[]> {
   return out;
 }
 
-async function applyOp(client: ImapFlow, accountId: string, op: OpRow): Promise<void> {
+/**
+ * Assert that a command the server could refuse actually ran.
+ *
+ * imapflow reports a refused mutation by return value, not by throwing:
+ * `messageFlagsAdd`, `messageFlagsRemove`, `messageMove`, `messageCopy` and
+ * `messageDelete` each catch the server's NO/BAD, log it, and answer `false`.
+ * Taking that for success is how a failed STORE passed for a completed op — the
+ * queue row was deleted, the guard in sync/envelopes.ts that holds local flag
+ * state while a change is in flight went with it, and the next envelope pass
+ * wrote the server's still-unread flag back over the read the user had just
+ * made. Mail marked read came back unread seconds later, survived a reload, and
+ * nothing anywhere said why.
+ *
+ * Throwing puts the op back on the queue with the server's own words, where it
+ * either succeeds on a retry or parks — and either way the guard keeps what the
+ * user did.
+ */
+function confirm(ok: unknown, client: ImapFlow, what: string): void {
+  if (ok) return;
+  const said = takeRefusal(client);
+  throw new Error(said ? `${what}: ${said}` : `${what}: the server refused the command`);
+}
+
+/**
+ * Refuse a flag the open mailbox will not keep.
+ *
+ * PERMANENTFLAGS is the server saying which flags survive the session; `\*`
+ * means "anything", and an absent list means the server did not say, which is
+ * not a refusal. imapflow checks the same thing and returns `false` without
+ * sending a command, which is indistinguishable from a rejection on the wire —
+ * so check first and name the flag and the mailbox. Permanent, because eight
+ * retries will not change a mailbox's mind.
+ */
+function assertKeepable(client: ImapFlow, path: string, flag: string): void {
+  const flags = client.mailbox ? client.mailbox.permanentFlags : undefined;
+  if (!flags || flags.has('\\*') || flags.has(flag)) return;
+  throw permanent(`${path} does not keep the ${flag} flag`);
+}
+
+/** One op against one connection. Exported for replay.test.ts, which drives the
+ *  flag path — the one branch that never touches the database. */
+export async function applyOp(client: ImapFlow, accountId: string, op: OpRow): Promise<void> {
   const { action, targets } = op.payload;
   if (!targets?.length) return;
   const sources = byFolder(targets);
@@ -130,8 +171,23 @@ async function applyOp(client: ImapFlow, accountId: string, op: OpRow): Promise<
       for (const [path, uids] of sources) {
         const lock = await client.getMailboxLock(path);
         try {
-          if (add.length) await client.messageFlagsAdd(uids, add, { uid: true });
-          if (remove.length) await client.messageFlagsRemove(uids, remove, { uid: true });
+          // Removal is always allowed; only setting a flag needs the mailbox to
+          // keep it.
+          for (const flag of add) assertKeepable(client, path, flag);
+          if (add.length) {
+            confirm(
+              await client.messageFlagsAdd(uids, add, { uid: true }),
+              client,
+              `Setting ${add.join(' ')} on ${uids.length} message(s) in ${path}`,
+            );
+          }
+          if (remove.length) {
+            confirm(
+              await client.messageFlagsRemove(uids, remove, { uid: true }),
+              client,
+              `Clearing ${remove.join(' ')} on ${uids.length} message(s) in ${path}`,
+            );
+          }
         } finally {
           lock.release();
         }
@@ -150,9 +206,20 @@ async function applyOp(client: ImapFlow, accountId: string, op: OpRow): Promise<
         if (target && path === target) continue; // already there
         const lock = await client.getMailboxLock(path);
         try {
-          if (target) await client.messageMove(uids, target, { uid: true });
-          // Permanent delete, or no trash folder to move to.
-          else await client.messageDelete(uids, { uid: true });
+          if (target) {
+            confirm(
+              await client.messageMove(uids, target, { uid: true }),
+              client,
+              `Moving ${uids.length} message(s) from ${path} to ${target}`,
+            );
+          } else {
+            // Permanent delete, or no trash folder to move to.
+            confirm(
+              await client.messageDelete(uids, { uid: true }),
+              client,
+              `Deleting ${uids.length} message(s) from ${path}`,
+            );
+          }
         } finally {
           lock.release();
         }
@@ -174,7 +241,11 @@ async function applyOp(client: ImapFlow, accountId: string, op: OpRow): Promise<
       for (const [path, uids] of sources) {
         const lock = await client.getMailboxLock(path);
         try {
-          await client.messageCopy(uids, target, { uid: true });
+          confirm(
+            await client.messageCopy(uids, target, { uid: true }),
+            client,
+            `Copying ${uids.length} message(s) from ${path} to ${target}`,
+          );
         } finally {
           lock.release();
         }
