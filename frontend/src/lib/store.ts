@@ -15,6 +15,9 @@ import { create } from 'zustand';
 import { getApi } from './api';
 import { collapseThreads, defaultQuery, emptyFilters, groupMessages, type Group } from './query';
 import { homeScope } from './scope';
+import { usePrefersDark } from './media';
+import { printMessage } from './print';
+import { remoteImagesAllowed } from './sender';
 import { parseLocation, routeDefaults, sameFilters, sameScope, type RouteState } from './url';
 import { withPreferenceDefaults } from './types';
 import type {
@@ -25,14 +28,17 @@ import type {
   Id,
   ListQuery,
   ListResult,
+  MailColors,
   Message,
   MessageAction,
   MessageSummary,
   Preferences,
+  PrintColors,
   SavedView,
   Scope,
   Session,
   SyncState,
+  ThemeMode,
   Thread,
 } from './types';
 
@@ -77,6 +83,28 @@ export interface State {
   openMessage: Message | null;
   openThread: Thread | null;
   readerLoading: boolean;
+  /**
+   * A one-message answer to "re-light this, or show it as sent?".
+   *
+   * `null` means "whatever the preference says", which is the state every
+   * message opens in. An explicit boolean is the reader having overruled it for
+   * *this* message, and it is deliberately not sticky: the reason to see one
+   * message as sent — a colour swatch, a chart, something that looked wrong —
+   * is a property of that message, and carrying the answer to the next one
+   * would silently turn a glance into a setting.
+   */
+  mailOverride: boolean | null;
+  /**
+   * The same shape of answer for remote images: `null` defers to the sender's
+   * standing permission, a boolean is this message only.
+   *
+   * It lives here rather than in the reader because two components render a
+   * message and a third — the printer — has to know what the reader agreed to.
+   * Held locally it was also reset by *any* preference write, so adjusting the
+   * density in settings put the blocked-images notice back over a message whose
+   * images you were looking at.
+   */
+  mailRemote: boolean | null;
 
   /* Compose */
   composer: Draft | null;
@@ -157,6 +185,15 @@ interface Actions {
    *  click or Enter is navigation; the reader following j/k is not. */
   open(id: Id | null, mode?: 'push' | 'replace'): Promise<void>;
   openNext(delta: number): Promise<void>;
+  /** Override the re-lighting of the open message, or `null` to hand it back
+   *  to the preference. */
+  setMailOverride(dark: boolean | null): void;
+  /** Show or hide the open message's remote images, or `null` to hand the
+   *  answer back to the sender's standing permission. */
+  setMailRemote(show: boolean | null): void;
+  /** Send the open message to the printer. `colors` defaults to the
+   *  preference. */
+  printOpen(colors?: PrintColors): void;
   /** Fetch one thread member's body and patch it into the open thread. The
    *  thread read serves cached bodies only, so expanding an item is what asks
    *  the server for it. */
@@ -305,6 +342,8 @@ export const useStore = create<State & Actions>((set, get) => ({
   openMessage: null,
   openThread: null,
   readerLoading: false,
+  mailOverride: null,
+  mailRemote: null,
 
   composer: null,
   composerMinimised: false,
@@ -705,13 +744,29 @@ export const useStore = create<State & Actions>((set, get) => ({
     const generation = ++openGeneration;
     cancelMarkRead();
     if (!id) {
-      set({ openId: null, openMessage: null, openThread: null, nav: mode });
+      set({
+        openId: null,
+        openMessage: null,
+        openThread: null,
+        mailOverride: null,
+        mailRemote: null,
+        nav: mode,
+      });
       return;
     }
     // Opening is a deliberate touch of one row, so it becomes the anchor: a
     // shift-click after reading something ranges from the message you read
     // rather than from wherever the selection last happened to be.
-    set({ openId: id, openThread: null, readerLoading: true, focusedId: id, anchorId: id, nav: mode });
+    set({
+      openId: id,
+      openThread: null,
+      readerLoading: true,
+      focusedId: id,
+      anchorId: id,
+      mailOverride: null,
+      mailRemote: null,
+      nav: mode,
+    });
     try {
       const api = await getApi();
       const message = await api.get(id);
@@ -772,6 +827,27 @@ export const useStore = create<State & Actions>((set, get) => ({
     const i = rows.indexOf(get().openId ?? '');
     const target = rows[Math.min(rows.length - 1, Math.max(0, i + delta))];
     if (target && target !== get().openId) await get().open(target, 'replace');
+  },
+
+  setMailOverride(dark) {
+    set({ mailOverride: dark });
+  },
+
+  setMailRemote(show) {
+    set({ mailRemote: show });
+  },
+
+  printOpen(colors) {
+    const { openMessage, prefs } = get();
+    if (!openMessage) return;
+    printMessage(openMessage, {
+      colors: colors ?? prefs?.printColors ?? 'paper',
+      // The printer gets exactly what the reader has already agreed to see.
+      // Fetching a remote image for the print job would announce the open to
+      // the sender through the back door, having just been told no at the
+      // front one.
+      loadRemote: showRemoteNow(get()),
+    });
   },
 
   async loadThreadBody(id) {
@@ -844,7 +920,14 @@ export const useStore = create<State & Actions>((set, get) => ({
       if (get().openId && ids.includes(get().openId!)) {
         // The reader sliding onto the next message is a consequence of the
         // action, not a place the user chose to go.
-        set({ openId: survivor?.id ?? null, openMessage: null, openThread: null, nav: 'replace' });
+        set({
+      openId: survivor?.id ?? null,
+      openMessage: null,
+      openThread: null,
+      mailOverride: null,
+      mailRemote: null,
+      nav: 'replace',
+    });
         if (survivor) void get().open(survivor.id, 'replace');
       }
     }
@@ -1710,6 +1793,61 @@ export function applyTheme(theme: Preferences['theme']) {
 }
 
 /* ── Derived selectors ──────────────────────────────────────────────────────── */
+
+/**
+ * How the open message should be coloured, resolved.
+ *
+ * One definition, two entry points, because the question is asked from two
+ * kinds of code: `useMailDark` for anything rendering, `mailDarkNow` for the
+ * keyboard handler and the command palette, which have a store snapshot and no
+ * hooks. They must never be able to disagree, so neither of them contains the
+ * rule — `mailDarkFor` does.
+ */
+export function mailDarkFor(colors: MailColors, mode: ThemeMode, osDark: boolean): boolean {
+  if (colors === 'sent') return false;
+  if (colors === 'dark') return true;
+  return mode === 'system' ? osDark : mode === 'dark';
+}
+
+/** The reader's own surface, resolved. What a mail body is put down on, which
+ *  is not the same question as whether it gets re-lit. */
+export function useThemeIsDark(): boolean {
+  const mode = useStore((s) => s.prefs?.theme.mode ?? 'system');
+  const osDark = usePrefersDark();
+  return mode === 'system' ? osDark : mode === 'dark';
+}
+
+export function useMailDark(): boolean {
+  const override = useStore((s) => s.mailOverride);
+  const colors = useStore((s) => s.prefs?.mailColors ?? 'follow');
+  const mode = useStore((s) => s.prefs?.theme.mode ?? 'system');
+  const osDark = usePrefersDark();
+  return override ?? mailDarkFor(colors, mode, osDark);
+}
+
+export function mailDarkNow(s: State & Actions): boolean {
+  return (
+    s.mailOverride ??
+    mailDarkFor(
+      s.prefs?.mailColors ?? 'follow',
+      s.prefs?.theme.mode ?? 'system',
+      matchMedia('(prefers-color-scheme: dark)').matches,
+    )
+  );
+}
+
+/** Whether the open message's remote images are showing — the per-message
+ *  answer where there is one, the sender's standing permission otherwise. */
+export function useShowRemote(): boolean {
+  const override = useStore((s) => s.mailRemote);
+  const prefs = useStore((s) => s.prefs);
+  const from = useStore((s) => s.openMessage?.from ?? null);
+  return override ?? remoteImagesAllowed(prefs, from);
+}
+
+export function showRemoteNow(s: State & Actions): boolean {
+  return s.mailRemote ?? remoteImagesAllowed(s.prefs, s.openMessage?.from);
+}
 
 /**
  * The list, grouped.

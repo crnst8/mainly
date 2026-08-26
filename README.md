@@ -125,6 +125,30 @@ and offers to fix it, without stopping the other eleven.
 
 
 
+### Reading in the dark, and on paper
+A message is drawn for white paper, and that assumption breaks in two opposite
+directions. In dark mode Mainly re-lights the sender's colours to sit on a dark
+surface — hues kept, lightness moved — including the common case of a message
+that declares no background at all and hardcodes dark grey text, which is
+otherwise unreadable. A message already designed dark is left as it is. One
+button in the reader, or `i`, shows any message exactly as it was sent and back
+again, for that message only.
+
+Most mail declares no background at all, which is not the same as declaring
+white: it means the message is standing on whatever the reader put behind it.
+When its ink was written for the opposite surface — light text from a dark
+template, read on a light page, or the reverse when a message is shown as sent
+in dark mode — it is given the surface it was drawn for, on its own card, and
+every colour the sender chose survives untouched. A message that paints its own
+background is never touched this way.
+
+`p` prints. Printing builds a page holding the message and nothing of the mail
+client, titled with the subject line, in black on white — dark bands and pale
+small print lifted, everything else untouched. This is the answer to receipts
+that arrive *in the body* with nothing attached and no file to save: print it,
+choose **Save as PDF**, and the subject is already the filename. **As sent**
+prints the sender's own colours instead.
+
 ### Housekeeping Tools
 Flags, labels, moves, archive, trash and snooze, all replayed to IMAP where they
 have an IMAP meaning and kept app-side where they do not. One-click unsubscribe
@@ -252,6 +276,8 @@ scripts/            site build and deploy, release
 | List semantics (executable spec) | `frontend/src/lib/query.ts` |
 | URL ⇄ view state | `frontend/src/lib/url.ts` · `router.ts` |
 | Design tokens | `frontend/src/styles/tokens.css` |
+| Mail sanitising, shared by reader and printer | `frontend/src/lib/mail-html.ts` |
+| Sender colours → dark screen or paper | `frontend/src/lib/relight.ts` · `print.ts` |
 | Touch shell (below 720px) | `frontend/src/features/mobile/` |
 | App state | `frontend/src/lib/store.ts` |
 | Server composition root | `backend/src/server.ts` |

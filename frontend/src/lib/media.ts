@@ -55,6 +55,29 @@ function stackedSnapshot(): boolean {
 }
 
 /**
+ * The OS colour-scheme preference.
+ *
+ * `applyTheme` already writes the resolved theme onto `:root`, which is enough
+ * for CSS. This exists for the code that has to *decide* something from it —
+ * whether a mail body needs re-lighting — because that decision happens in
+ * React and a dataset attribute does not re-render anything when the OS flips
+ * at sunset.
+ */
+export function usePrefersDark(): boolean {
+  return useSyncExternalStore(subscribeDark, darkSnapshot, darkSnapshot);
+}
+
+function subscribeDark(cb: () => void): () => void {
+  const mql = matchMedia('(prefers-color-scheme: dark)');
+  mql.addEventListener('change', cb);
+  return () => mql.removeEventListener('change', cb);
+}
+
+function darkSnapshot(): boolean {
+  return matchMedia('(prefers-color-scheme: dark)').matches;
+}
+
+/**
  * Pixels of viewport currently covered by the on-screen keyboard.
  *
  * The layout viewport does not shrink when a soft keyboard opens on iOS, so a

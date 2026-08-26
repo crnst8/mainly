@@ -71,6 +71,49 @@
   color: var(--text-faint);
 }
 
+/* ── Print control ────────────────────────────────────────────────────────
+   A split button: the face prints with the stored default, the chevron picks
+   the other mode. One control, so it reads as one idea, but the common case
+   never has to open anything. */
+
+.reader__print {
+  display: inline-flex;
+  align-items: center;
+}
+
+.reader__print__more {
+  display: grid;
+  place-items: center;
+  width: 14px;
+  height: var(--ctl-h);
+  margin-left: -3px;
+  border-radius: var(--radius-sm);
+  color: var(--text-faint);
+  transition:
+    background var(--dur-fast) var(--ease-out),
+    color var(--dur-fast) var(--ease-out);
+}
+
+.reader__print__more:hover,
+.reader__print__more[aria-expanded='true'] {
+  background: var(--bg-hover);
+  color: var(--text);
+}
+
+.reader__print__note {
+  padding: var(--s-4) var(--s-5) var(--s-3);
+  border-top: 1px solid var(--line-soft);
+  margin-top: var(--s-2);
+  font-size: var(--t-2xs);
+  line-height: var(--lh-snug);
+  color: var(--text-faint);
+}
+
+.reader__print__note strong {
+  color: var(--text-secondary);
+  font-weight: 500;
+}
+
 /* ── Scroll body ──────────────────────────────────────────────────────────── */
 
 .reader__scroll {
@@ -204,6 +247,48 @@
 .reader__body__scroll {
   overflow-x: auto;
   max-width: 100%;
+}
+
+/* ── A borrowed surface ───────────────────────────────────────────────────
+   Most mail declares no background. That is not the same as declaring white:
+   it means the message is standing on whatever the reader put behind it. When
+   the sender's ink was written for the opposite kind of surface — light text
+   from a dark template, read on a light page — the result is white on
+   grey-white, and neither side is wrong. They just do not belong together.
+
+   So the message is given the surface it was drawn for, as its own card, and
+   every colour the sender chose survives untouched. That is why this applies
+   even in "as sent": supplying a background the sender omitted is not a
+   recolouring, and "as sent" rendering a blank rectangle helps nobody.
+
+   The attribute sits on the shadow host, so the padding scrolls with wide
+   content instead of collapsing at the right edge of the scroll container. */
+.reader__body__scroll > [data-surface] {
+  padding: var(--s-6);
+  border-radius: var(--radius);
+  border: 1px solid var(--line);
+}
+
+/* Custom properties are the only thing that crosses a shadow boundary, which
+   is exactly what makes this work: re-pointing them here moves the baseline
+   inside the mail — quote rules, code blocks, blocked-image placeholders — onto
+   the card rather than leaving it dressed for the page underneath. */
+.reader__body__scroll > [data-surface='dark'] {
+  background: var(--mail-dark-bg);
+  color: var(--mail-dark-ink);
+  --line: var(--mail-dark-line);
+  --line-strong: var(--mail-dark-line);
+  --bg-sunken: var(--mail-dark-sunken);
+  --text-muted: var(--mail-dark-ink);
+}
+
+.reader__body__scroll > [data-surface='light'] {
+  background: var(--mail-light-bg);
+  color: var(--mail-light-ink);
+  --line: var(--mail-light-line);
+  --line-strong: var(--mail-light-line);
+  --bg-sunken: var(--mail-light-sunken);
+  --text-muted: var(--mail-light-ink);
 }
 
 .reader__text {

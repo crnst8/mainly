@@ -466,6 +466,25 @@ export const BULK_CHUNK = 5;
 
 export type ThemeMode = 'light' | 'dark' | 'system';
 export type Density = 'compact' | 'cosy' | 'relaxed';
+
+/**
+ * What to do with the colours a sender chose.
+ *
+ * A message is drawn for white paper. On a dark surface that is at best a
+ * floodlight and at worst unreadable — the common failure is a body that
+ * declares no background at all and hardcodes dark grey text, which then lands
+ * on the reader's dark grey. `follow` re-lights those for the current theme,
+ * which means it does nothing at all in light mode.
+ *
+ * `sent` is the escape hatch, and it exists because re-lighting is a judgement:
+ * when a colour *is* the content — a swatch, a chart, a brand proof — the only
+ * correct rendering is the sender's own.
+ */
+export type MailColors = 'follow' | 'dark' | 'sent';
+
+/** How a message is coloured on its way to a printer. `paper` re-lights it for
+ *  black ink on white; `original` prints what the sender drew. */
+export type PrintColors = 'paper' | 'original';
 export type LayoutMode = 'columns' | 'stacked' | 'list';
 export type PreviewPosition = 'right' | 'bottom' | 'off';
 
@@ -539,6 +558,11 @@ export interface Preferences {
   undoWindowMs: number;
   /** Load remote images without asking, per sender trust. */
   remoteImages: 'always' | 'never' | 'trusted';
+  /** Default treatment of a sender's colours in the reader. Overridable per
+   *  message, and the override never outlives the message. */
+  mailColors: MailColors;
+  /** Which colour mode the print control reaches for first. */
+  printColors: PrintColors;
   /** Explicit sender identities used for image permission and branding. */
   senderProfiles: SenderProfile[];
   /** Confirm before sending with an empty subject etc. */
@@ -600,6 +624,12 @@ export const DEFAULT_PREFERENCES: Preferences = {
   markReadDelayMs: 900,
   undoWindowMs: 6000,
   remoteImages: 'trusted',
+  // Follow the theme. Anyone who has read mail in a dark client knows the
+  // alternative, and it is not "faithful" — it is a white rectangle at 2am.
+  mailColors: 'follow',
+  // Paper, because the whole reason to print a message is that the receipt is
+  // in the body and there is no attachment to save. That job wants black ink.
+  printColors: 'paper',
   senderProfiles: [],
   sendGuards: true,
   search: DEFAULT_SEARCH_PREFERENCES,

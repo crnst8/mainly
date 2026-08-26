@@ -1,75 +1,28 @@
 /**
  * Renders an HTML mail body.
  *
- * Security posture, in order:
- *  1. The backend sanitises on ingest (allow-list, no script/style/object/form,
- *     no event handlers, no javascript: URIs). That is the real defence.
- *  2. This component mounts the result inside a **shadow root**, so the mail's
- *     markup can never inherit or leak app styles — the classic reason webmail
- *     bodies wreck the surrounding UI.
- *  3. A second, cheap strip runs here anyway. Defence in depth costs ~1ms.
+ * The markup is prepared by `lib/mail-html` — one sanitiser, shared with the
+ * print path — and then mounted inside a **shadow root**, so the mail's own
+ * CSS can never inherit or leak app styles. That isolation is the classic
+ * reason webmail bodies wreck the surrounding UI, and it is also what makes
+ * `relight` safe: everything it rewrites is inside a boundary nothing else
+ * reads across.
  *
- * Remote images are rewritten to `data-src` and only restored when the user
- * asks, because loading them silently tells every sender exactly when a message
- * was opened.
+ * `relight` is the dark-mode pass. A message was drawn for white paper; on a
+ * dark surface it arrives as a floodlight, or — worse and far more common —
+ * as a body that declares no background at all and hardcodes `color: #333`,
+ * which lands dark grey on dark grey and cannot be read. Re-lighting it is not
+ * a preference for its own sake; without it half of dark mode is broken.
  */
 
 import { useEffect, useRef } from 'react';
 import { markInDom } from '@/lib/highlight';
+import { hardenLinks, linkifyInDom, loadDeferredImages, sanitiseBody } from '@/lib/mail-html';
+import { readIntent, relight } from '@/lib/relight';
 
 /** Stable empty default, so an unmarked body does not re-run the effect on
  *  every render. */
 const EMPTY_TERMS: string[] = [];
-
-const BLOCKED_TAGS = /<\/?(script|iframe|object|embed|form|link|meta|base)\b[^>]*>/gi;
-const EVENT_ATTRS = /\son[a-z]+\s*=\s*(?:"[^"]*"|'[^']*'|[^\s>]+)/gi;
-const JS_URI = /(href|src)\s*=\s*(?:"javascript:[^"]*"|'javascript:[^']*')/gi;
-const URL = /https?:\/\/[^\s<>"']+|www\.[^\s<>"']+/gi;
-const URL_TRAILING_PUNCTUATION = /[.,;:!?]+$/;
-const LINKIFY_SKIP = new Set(['A', 'CODE', 'PRE', 'SCRIPT', 'STYLE', 'TEXTAREA']);
-
-/** Turn prose URLs into safe external links without reparsing the message. */
-function linkifyInDom(root: ParentNode): void {
-  const doc = (root as Element).ownerDocument ?? document;
-  const walker = doc.createTreeWalker(root as Node, NodeFilter.SHOW_TEXT, {
-    acceptNode(node: Node) {
-      const parent = node.parentElement;
-      if (!parent || LINKIFY_SKIP.has(parent.tagName)) return NodeFilter.FILTER_REJECT;
-      return node.nodeValue?.match(URL)
-        ? NodeFilter.FILTER_ACCEPT
-        : NodeFilter.FILTER_REJECT;
-    },
-  });
-
-  const targets: Text[] = [];
-  for (let node = walker.nextNode(); node; node = walker.nextNode()) targets.push(node as Text);
-
-  for (const node of targets) {
-    const value = node.nodeValue ?? '';
-    URL.lastIndex = 0;
-    const fragment = doc.createDocumentFragment();
-    let at = 0;
-
-    for (let match = URL.exec(value); match; match = URL.exec(value)) {
-      const raw = match[0];
-      const url = raw.replace(URL_TRAILING_PUNCTUATION, '');
-      if (!url) continue;
-
-      if (match.index > at) fragment.append(doc.createTextNode(value.slice(at, match.index)));
-      const link = doc.createElement('a');
-      link.href = url.startsWith('www.') ? `https://${url}` : url;
-      link.target = '_blank';
-      link.rel = 'noopener noreferrer nofollow';
-      link.textContent = url;
-      fragment.append(link);
-      at = match.index + url.length;
-    }
-
-    if (at === 0) continue;
-    if (at < value.length) fragment.append(doc.createTextNode(value.slice(at)));
-    node.replaceWith(fragment);
-  }
-}
 
 /** Styles applied *inside* the shadow root. The mail's own CSS still wins for
  *  its own elements; this only sets a sane baseline. */
@@ -114,11 +67,26 @@ export function MessageBody({
   html,
   text,
   loadRemote,
+  relit = false,
+  surface = 'light',
   terms = EMPTY_TERMS,
 }: {
   html: string | null;
   text: string | null;
   loadRemote: boolean;
+  /** Re-light the sender's colours for a dark surface. There is no "undo"
+   *  path: changing this rebuilds the subtree from the sanitised source, so
+   *  the original is always one render away. */
+  relit?: boolean;
+  /**
+   * What the message is being put down on.
+   *
+   * Separate from `relit`, because they are separate facts and the interesting
+   * cases are the ones where they disagree — a message shown as sent on a dark
+   * reader, or re-lit for dark while the app is light. Either way the surface
+   * is what decides whether the body can be left standing on the page.
+   */
+  surface?: 'light' | 'dark';
   /** Search terms to mark. Marking happens on the parsed DOM inside the shadow
    *  root, never by splicing markup back into the sanitised string. */
   terms?: string[];
@@ -143,34 +111,37 @@ export function MessageBody({
     if (shadowRef.current?.host !== host) shadowRef.current = host.attachShadow({ mode: 'open' });
     const root = shadowRef.current;
 
-    const clean = html
-      .replace(BLOCKED_TAGS, '')
-      .replace(EVENT_ATTRS, '')
-      .replace(JS_URI, '$1="#"')
-      // Defer remote images until the user opts in.
-      .replace(/<img([^>]*?)\ssrc=(["'])(https?:\/\/[^"']*)\2/gi, '<img$1 data-src=$2$3$2');
-
-    root.innerHTML = `<style>${SHADOW_CSS}</style><div>${clean}</div>`;
+    root.innerHTML = `<style>${SHADOW_CSS}</style><div>${sanitiseBody(html)}</div>`;
 
     // Also make plaintext URLs links. Existing and generated links open
     // externally, never with a window.opener handle.
     linkifyInDom(root);
-    for (const a of root.querySelectorAll('a')) {
-      a.setAttribute('target', '_blank');
-      a.setAttribute('rel', 'noopener noreferrer nofollow');
-    }
+    hardenLinks(root);
 
-    if (loadRemote) {
-      for (const img of root.querySelectorAll<HTMLImageElement>('img[data-src]')) {
-        img.src = img.dataset.src!;
-        delete img.dataset.src;
-      }
-    }
+    if (loadRemote) loadDeferredImages(root);
+
+    // After the images are restored, so this sees the tree it will actually be
+    // looking at rather than a set of empty placeholders.
+    const verdict = relit ? relight(root, 'dark') : readIntent(root);
+
+    /*
+     * Does the body need a surface of its own?
+     *
+     * Only when it brought none — a message that paints its own background
+     * cannot be caught out by what is behind it. Re-lighting settles the
+     * question the other way: it has just moved the sender's ink to suit a dark
+     * surface, so a dark surface is what it now wants, whatever it wanted
+     * before.
+     */
+    const wants = relit ? true : verdict.inkForDark;
+    const borrowed = !verdict.standsAlone && wants !== (surface === 'dark');
+    if (borrowed) host.dataset.surface = wants ? 'dark' : 'light';
+    else delete host.dataset.surface;
 
     // After sanitising and after the DOM exists — marking edits text nodes in
     // place, so it can only ever produce `<mark>` elements this code created.
     markInDom(root, terms);
-  }, [html, loadRemote, terms, text]);
+  }, [html, loadRemote, relit, surface, terms, text]);
 
   if (html === null) {
     return (

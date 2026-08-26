@@ -20,7 +20,7 @@ import { homeScope, ROLE_LABEL } from '@/lib/scope';
 import type { FolderRole, Scope } from '@/lib/types';
 import { MobileList } from './MobileList';
 import { MobileReader } from './MobileReader';
-import { Sheet } from './Sheet';
+import { Sheet, SheetRow } from './Sheet';
 import './mobile.css';
 
 export function MobileShell() {
@@ -337,24 +337,3 @@ function FilterSheet({ open, onClose }: { open: boolean; onClose: () => void }) 
 
 /* ── Shared sheet row ────────────────────────────────────────────────────── */
 
-function SheetRow({
-  label,
-  hint,
-  on,
-  onClick,
-}: {
-  label: string;
-  hint?: string;
-  on: boolean;
-  onClick: () => void;
-}) {
-  return (
-    <button type="button" className="sheet__row" data-on={on || undefined} onClick={onClick}>
-      <span className="sheet__rowlabel truncate">
-        {label}
-        {hint && <span className="sheet__rowhint truncate">{hint}</span>}
-      </span>
-      {on && <span className="sheet__rowcheck">✓</span>}
-    </button>
-  );
-}

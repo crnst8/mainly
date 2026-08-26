@@ -58,6 +58,23 @@
   --accent-line: color-mix(in oklab, var(--accent) 42%, transparent);
   --accent-hover: color-mix(in oklab, var(--accent) 88%, var(--n-12));
 
+  /* ── Borrowed surfaces ─────────────────────────────────────────────────
+     The two surfaces a mail body can be *given* when it brought none of its
+     own and its ink was written for the opposite one to the reader's.
+
+     Literal values rather than ramp references, and that is the whole reason
+     they exist: the ramp only ever holds the current theme, so `--n-0` cannot
+     be asked for the dark surface while the app is light. Both have to be
+     reachable from either theme at once. */
+  --mail-dark-bg: oklch(16% 0 0);
+  --mail-dark-ink: oklch(93% 0 0);
+  --mail-dark-line: oklch(30% 0 0);
+  --mail-dark-sunken: oklch(21% 0 0);
+  --mail-light-bg: oklch(100% 0 0);
+  --mail-light-ink: oklch(20% 0 0);
+  --mail-light-line: oklch(88% 0 0);
+  --mail-light-sunken: oklch(97% 0 0);
+
   /* ── Status ────────────────────────────────────────────────────────────── */
   --danger: oklch(58% 0.21 25);
   --danger-soft: color-mix(in oklab, var(--danger) 12%, transparent);

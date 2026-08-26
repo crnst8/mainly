@@ -89,3 +89,30 @@ export function Sheet({
     document.body,
   );
 }
+
+/**
+ * One choice in a sheet. Lives beside `Sheet` rather than in whichever screen
+ * happened to need it first — the reader's overflow and the list's filters are
+ * the same control and have to stay the same size under the same thumb.
+ */
+export function SheetRow({
+  label,
+  hint,
+  on,
+  onClick,
+}: {
+  label: string;
+  hint?: string;
+  on: boolean;
+  onClick: () => void;
+}) {
+  return (
+    <button type="button" className="sheet__row" data-on={on || undefined} onClick={onClick}>
+      <span className="sheet__rowlabel truncate">
+        {label}
+        {hint && <span className="sheet__rowhint truncate">{hint}</span>}
+      </span>
+      {on && <span className="sheet__rowcheck">✓</span>}
+    </button>
+  );
+}

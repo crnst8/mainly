@@ -312,6 +312,36 @@ export const HELP_GUIDES: HelpGuide[] = [
         ],
         action: { label: 'Open sender settings', settingsTab: 'senders' },
       },
+      {
+        title: 'Colours and paper',
+        intro:
+          'Mail is drawn for white paper. Two places break that — a dark screen, and an actual printer — and Mainly moves the sender\u2019s colours to suit, keeping their hues and changing only how light or dark they are.',
+        items: [
+          {
+            title: 'Dark mode for message bodies',
+            body: 'In dark mode a light message is re-lit to sit on the dark surface, including the common case of a message that sets no background and hardcodes dark grey text. A message already designed dark is left alone.',
+          },
+          {
+            title: 'Messages that bring no background',
+            body: 'Most mail declares no background at all, which is not the same as declaring white \u2014 it means the message is standing on whatever is behind it. When its own text was written for the opposite kind of surface it would be white on white, so it is given the surface it was drawn for, on its own card, with every colour the sender chose left alone. A message that paints its own background is never treated this way.',
+          },
+          {
+            title: 'Back to the original, for one message',
+            body: 'The contrast button in the reader toolbar shows a message exactly as it was sent, and shows it re-lit again. It applies to that message only and is forgotten when you move on \u2014 when a colour is the content, this is how you see it.',
+            keys: ['i'],
+          },
+          {
+            title: 'Print a message',
+            body: 'Print builds a page holding the message and nothing of the mail client, titled with the subject line. Paper colours lift dark bands and pale small print to black on white; As sent prints the sender\u2019s own colours. The chevron beside the printer picks the other one.',
+            keys: ['p'],
+          },
+          {
+            title: 'Receipts that arrived in the body',
+            body: 'Shops and banks often send a receipt as the message itself, with nothing attached and no file to save. Print it and choose Save as PDF in the browser\u2019s print dialog \u2014 the subject becomes the filename, so the saved file is already named after what it is.',
+          },
+        ],
+        action: { label: 'Open appearance settings', settingsTab: 'appearance' },
+      },
     ],
   },
   {

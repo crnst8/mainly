@@ -260,6 +260,31 @@ export const Key = (p: P) => (
   </Svg>
 );
 
+/** Overflow. Three dots, horizontal — the one control every phone user has
+ *  already learned means "the rest of it". */
+export const More = (p: P) => (
+  <Svg {...p}>
+    <circle cx="3.4" cy="8" r="1.15" fill="currentColor" stroke="none" />
+    <circle cx="8" cy="8" r="1.15" fill="currentColor" stroke="none" />
+    <circle cx="12.6" cy="8" r="1.15" fill="currentColor" stroke="none" />
+  </Svg>
+);
+
+/** A printer, from the front: paper out of the top, tray at the bottom. */
+export const Printer = (p: P) => (
+  <Svg {...p}>
+    <path d="M4.5 6.5V2.6h7v3.9M4.5 11.5H3.2a1 1 0 0 1-1-1V7.5a1 1 0 0 1 1-1h9.6a1 1 0 0 1 1 1v3a1 1 0 0 1-1 1h-1.3M4.5 9.6h7v3.8h-7z" />
+  </Svg>
+);
+
+/** Half-filled disc — the universal mark for "this thing's light and dark". */
+export const Contrast = (p: P) => (
+  <Svg {...p}>
+    <circle cx="8" cy="8" r="6" />
+    <path d="M8 2v12a6 6 0 0 0 0-12z" fill="currentColor" stroke="none" />
+  </Svg>
+);
+
 export const SignOut = (p: P) => (
   <Svg {...p}>
     <path d="M6.2 2.5H3.5a1 1 0 0 0-1 1v9a1 1 0 0 0 1 1h2.7M9.6 5.2 12.4 8l-2.8 2.8M12.4 8H6.4" />

@@ -12,6 +12,7 @@ import {
   Attachment as AttachIcon,
   Chevron,
   Forward,
+  More,
   Reply,
   Star,
   Trash,
@@ -23,11 +24,12 @@ import { SenderMenu } from '@/components/SenderMenu';
 import { useContextMenu } from '@/components/context-menu';
 import { addrList, bytes, displayName, fullDate, listDate, relative } from '@/lib/format';
 import { parseSearch, searchTerms } from '@/lib/search';
-import { allowImagesFromSender, remoteImagesAllowed } from '@/lib/sender';
+import { allowImagesFromSender } from '@/lib/sender';
 import { getApi } from '@/lib/api';
-import { useAccountColor, useStore } from '@/lib/store';
-import type { Addr, Attachment as AttachmentInfo, Message } from '@/lib/types';
+import { useAccountColor, useMailDark, useShowRemote, useStore, useThemeIsDark } from '@/lib/store';
+import type { Addr, Attachment as AttachmentInfo, Message, PrintColors } from '@/lib/types';
 import { MessageBody } from '@/features/reader/MessageBody';
+import { Sheet, SheetRow } from './Sheet';
 
 export function MobileReader() {
   const message = useStore((s) => s.openMessage);
@@ -45,13 +47,15 @@ export function MobileReader() {
     [scope.kind, scope.value],
   );
 
-  const [loadRemote, setLoadRemote] = useState(false);
+  // Both per-message answers — images and colours — are held in the store and
+  // reset by `open`, so the touch shell and the desktop shell cannot disagree
+  // about a message that is open in both across a window resize.
+  const loadRemote = useShowRemote();
+  const setLoadRemote = useStore((s) => s.setMailRemote);
+  const mailDark = useMailDark();
+  const onDark = useThemeIsDark();
   const senderMenu = useContextMenu<Addr>();
   const [showDetail, setShowDetail] = useState(false);
-
-  useEffect(() => {
-    setLoadRemote(remoteImagesAllowed(prefs, message?.from));
-  }, [message?.id, prefs, message?.from]);
 
   if (!message) {
     return (
@@ -188,6 +192,8 @@ export function MobileReader() {
               html={message.bodyHtml}
               text={message.bodyText}
               loadRemote={loadRemote}
+              relit={mailDark}
+              surface={onDark ? 'dark' : 'light'}
               terms={terms}
             />
           </div>
@@ -200,7 +206,9 @@ export function MobileReader() {
             </div>
           )}
 
-          {thread && thread.messages.length > 1 && <ThreadList thread={thread} openId={message.id} />}
+          {thread && thread.messages.length > 1 && (
+            <ThreadList thread={thread} openId={message.id} relit={mailDark} surface={onDark ? 'dark' : 'light'} />
+          )}
 
           <QuickReply />
         </div>
@@ -219,6 +227,7 @@ function ReaderBar({ message, onBack }: { message: Message | null; onBack: () =>
   const trash = useStore((s) => s.trash);
   const reply = useStore((s) => s.reply);
   const forward = useStore((s) => s.forward);
+  const [more, setMore] = useState(false);
 
   return (
     <div className="mreader__bar">
@@ -246,10 +255,87 @@ function ReaderBar({ message, onBack }: { message: Message | null; onBack: () =>
             <IconButton label="Move to trash" onClick={() => void trash([message.id])}>
               <Trash size={15} />
             </IconButton>
+            {/* Colours and paper go behind one more tap rather than into the
+                bar. Five actions is already what fits across a 390px screen
+                without the targets shrinking below the thumb, and a control
+                too small to hit is worse than one behind a sheet. */}
+            <IconButton label="More" onClick={() => setMore(true)}>
+              <More size={16} />
+            </IconButton>
           </>
         )}
       </div>
+
+      <MoreSheet open={more} onClose={() => setMore(false)} hasHtml={!!message?.bodyHtml} />
     </div>
+  );
+}
+
+/* ── Overflow ─────────────────────────────────────────────────────────────── */
+
+function MoreSheet({
+  open,
+  onClose,
+  hasHtml,
+}: {
+  open: boolean;
+  onClose: () => void;
+  hasHtml: boolean;
+}) {
+  const dark = useMailDark();
+  const setOverride = useStore((s) => s.setMailOverride);
+  const printOpen = useStore((s) => s.printOpen);
+  const prefs = useStore((s) => s.prefs);
+  const savePrefs = useStore((s) => s.savePrefs);
+  const preferred = prefs?.printColors ?? 'paper';
+
+  const print = (colors: PrintColors) => {
+    onClose();
+    if (colors !== preferred) void savePrefs({ printColors: colors });
+    printOpen(colors);
+  };
+
+  return (
+    <Sheet open={open} onClose={onClose} title="This message">
+      <div className="sheet__list">
+        {hasHtml && (
+          <>
+            <div className="sheet__sectionhead label">Colours</div>
+            <SheetRow
+              label="Fit to dark mode"
+              hint="Re-light the sender's colours"
+              on={dark}
+              onClick={() => {
+                setOverride(true);
+                onClose();
+              }}
+            />
+            <SheetRow
+              label="Original"
+              hint="Exactly as it was sent"
+              on={!dark}
+              onClick={() => {
+                setOverride(false);
+                onClose();
+              }}
+            />
+          </>
+        )}
+        <div className="sheet__sectionhead label">Print</div>
+        <SheetRow
+          label="Print — paper colours"
+          hint="Black on white. Save as PDF from the print sheet."
+          on={false}
+          onClick={() => print('paper')}
+        />
+        <SheetRow
+          label="Print — as sent"
+          hint="The sender's own colours"
+          on={false}
+          onClick={() => print('original')}
+        />
+      </div>
+    </Sheet>
   );
 }
 
@@ -286,9 +372,13 @@ function Attachment({ messageId, attachment }: { messageId: string; attachment: 
 function ThreadList({
   thread,
   openId,
+  relit,
+  surface,
 }: {
   thread: NonNullable<ReturnType<typeof useStore.getState>['openThread']>;
   openId: string;
+  relit: boolean;
+  surface: 'light' | 'dark';
 }) {
   const [expanded, setExpanded] = useState<Set<string>>(new Set([openId]));
   const loadThreadBody = useStore((s) => s.loadThreadBody);
@@ -333,7 +423,13 @@ function ThreadList({
                     <span>{m.bodyError}</span>
                   </div>
                 ) : (
-                  <MessageBody html={m.bodyHtml} text={m.bodyText} loadRemote={false} />
+                  <MessageBody
+                    html={m.bodyHtml}
+                    text={m.bodyText}
+                    loadRemote={false}
+                    relit={relit}
+                    surface={surface}
+                  />
                 )}
               </div>
             )}

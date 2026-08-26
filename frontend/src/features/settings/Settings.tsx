@@ -30,7 +30,17 @@ import { senderDomains, senderImageUrl } from '@/lib/sender';
 import { DEFAULT_SEARCH_WEIGHTS, type SearchWeights } from '@/lib/search';
 import { useDomains, useStore } from '@/lib/store';
 import { MIN_APP_PASSWORD } from '@/lib/types';
-import type { Account, Density, ListColumn, Priority, SenderProfile, SwipeAction, ThemeMode } from '@/lib/types';
+import type {
+  Account,
+  Density,
+  ListColumn,
+  MailColors,
+  PrintColors,
+  Priority,
+  SenderProfile,
+  SwipeAction,
+  ThemeMode,
+} from '@/lib/types';
 import './settings.css';
 
 const TABS = [
@@ -233,7 +243,61 @@ function Appearance() {
           />
         </Row>
       </section>
+
+      <MailColourSettings />
     </>
+  );
+}
+
+/* ── Mail colours ─────────────────────────────────────────────────────────
+   Separate from the theme above it, because it is not about this app. Every
+   other control on this screen decides how *mainly* looks; these two decide
+   what happens to colours someone else chose, in two places the sender never
+   had in mind — a dark screen and a sheet of paper. */
+
+function MailColourSettings() {
+  const prefs = useStore((s) => s.prefs!);
+  const savePrefs = useStore((s) => s.savePrefs);
+
+  return (
+    <section className="settings__section">
+      <div className="settings__sectionhead">
+        <span className="label">Message bodies</span>
+      </div>
+      <p className="field__hint" style={{ marginBottom: 'var(--s-5)' }}>
+        Mail is drawn for white paper. These decide what becomes of that when the paper is a dark
+        screen, or an actual sheet. Either can be overruled for one message from the reader —
+        press <kbd className="kbd">i</kbd> — and the override never outlives the message.
+      </p>
+
+      <Row title="In the reader" desc="Follow theme re-lights a light message in dark mode, and does nothing in light mode.">
+        <Segmented<MailColors>
+          ariaLabel="Mail colours"
+          value={prefs.mailColors}
+          onChange={(mailColors) => void savePrefs({ mailColors })}
+          options={[
+            { value: 'follow', label: 'Follow theme' },
+            { value: 'dark', label: 'Always dark' },
+            { value: 'sent', label: 'As sent' },
+          ]}
+        />
+      </Row>
+
+      <Row
+        title="When printing"
+        desc="Paper lifts dark bands and greys to black on white. Save as PDF in the print dialog to keep a receipt that arrived in the body."
+      >
+        <Segmented<PrintColors>
+          ariaLabel="Print colours"
+          value={prefs.printColors}
+          onChange={(printColors) => void savePrefs({ printColors })}
+          options={[
+            { value: 'paper', label: 'Paper' },
+            { value: 'original', label: 'As sent' },
+          ]}
+        />
+      </Row>
+    </section>
   );
 }
 

@@ -11,7 +11,7 @@
 
 import { useEffect, useRef } from 'react';
 import { homeScope } from './scope';
-import { useStore } from './store';
+import { mailDarkNow, useStore } from './store';
 import type { Scope } from './types';
 
 const SEQUENCE_MS = 900;
@@ -53,6 +53,14 @@ export function useKeyboard() {
       // Let the browser handle its platform reload shortcut. A reload starts
       // the app afresh and re-fetches the mailbox data instead of replying.
       if (mod && e.key.toLowerCase() === 'r') return;
+
+      // ⌘P means "print this", and in a mail client "this" is the message —
+      // never the client. Claimed only with a message open, so ⌘P everywhere
+      // else still reaches the browser and prints whatever is on screen.
+      if (mod && e.key.toLowerCase() === 'p' && s.openMessage) {
+        e.preventDefault();
+        return s.printOpen();
+      }
 
       if (e.key === 'Escape') {
         if (s.palette) return s.setPalette(false);
@@ -151,6 +159,16 @@ export function useKeyboard() {
           e.preventDefault();
           if (s.openMessage) return s.forward();
           return;
+        case 'i':
+          e.preventDefault();
+          // Invert. One key, straight back to the message as it was sent, and
+          // the same key forward again — the toggle the toolbar button is.
+          if (s.openMessage) return s.setMailOverride(!mailDarkNow(s));
+          return;
+        case 'p':
+          e.preventDefault();
+          if (s.openMessage) return s.printOpen();
+          return;
         case '/':
           e.preventDefault();
           document.querySelector<HTMLInputElement>('[data-search-input]')?.focus();
@@ -218,6 +236,10 @@ export const SHORTCUTS: { keys: string[]; label: string; group: string }[] = [
   { keys: ['e'], label: 'Archive', group: 'Act' },
   { keys: ['#'], label: 'Move to trash', group: 'Act' },
   { keys: ['z'], label: 'Undo last action', group: 'Act' },
+
+  { keys: ['i'], label: 'Original colours / fit to dark', group: 'Act' },
+  { keys: ['p'], label: 'Print this message', group: 'Act' },
+  { keys: ['⌘', 'P'], label: 'Print this message', group: 'Act' },
 
   { keys: ['c'], label: 'Compose', group: 'Write' },
   { keys: ['r'], label: 'Reply', group: 'Write' },

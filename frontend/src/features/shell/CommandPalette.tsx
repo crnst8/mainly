@@ -12,6 +12,7 @@ import {
   Archive,
   Clock,
   Command,
+  Contrast,
   Folder as FolderIcon,
   Globe,
   Group as GroupIcon,
@@ -20,6 +21,7 @@ import {
   Layout,
   Palette,
   Plus,
+  Printer,
   Question,
   Search,
   Settings as SettingsIcon,
@@ -32,7 +34,7 @@ import {
 import { Kbd } from '@/components/ui';
 import { scopeLabel } from '@/lib/scope';
 import { sameScope } from '@/lib/url';
-import { useStore } from '@/lib/store';
+import { mailDarkNow, useStore } from '@/lib/store';
 import type { Density, GroupKey, SortKey } from '@/lib/types';
 
 interface Cmd {
@@ -178,6 +180,12 @@ function useCommands(close: () => void): Cmd[] {
   const prefs = useStore((s) => s.prefs);
   const recentScopes = useStore((s) => s.recentScopes);
   const scope = useStore((s) => s.query.scope);
+  // The message-scoped commands appear and change label with what is open, so
+  // the set has to be rebuilt when it changes — and when its colour answer
+  // does, which is what makes "show the original colours" flip to its opposite
+  // after you have run it once.
+  const openId = useStore((s) => s.openId);
+  const mailOverride = useStore((s) => s.mailOverride);
 
   return useMemo(() => {
     const s = useStore.getState();
@@ -293,6 +301,42 @@ function useCommands(close: () => void): Cmd[] {
           run: run(() => void s.toggleFlag()),
         },
       );
+    }
+
+    /* The open message. Only offered when there is one — a palette full of
+       actions that silently do nothing is worse than a shorter palette. */
+    if (s.openMessage) {
+      const dark = mailDarkNow(s);
+      cmds.push(
+        {
+          id: 'act:print',
+          label: 'Print this message',
+          group: 'Act',
+          icon: <Printer size={15} />,
+          hint: ['p'],
+          run: run(() => s.printOpen()),
+        },
+        {
+          id: 'act:print:other',
+          label:
+            (prefs?.printColors ?? 'paper') === 'paper'
+              ? 'Print with the original colours'
+              : 'Print in paper colours — black on white',
+          group: 'Act',
+          icon: <Printer size={15} />,
+          run: run(() => s.printOpen((prefs?.printColors ?? 'paper') === 'paper' ? 'original' : 'paper')),
+        },
+      );
+      if (s.openMessage.bodyHtml) {
+        cmds.push({
+          id: 'act:colors',
+          label: dark ? 'Show the original colours' : 'Fit the colours to dark mode',
+          group: 'Act',
+          icon: <Contrast size={15} />,
+          hint: ['i'],
+          run: run(() => s.setMailOverride(!dark)),
+        });
+      }
     }
 
     cmds.push({
@@ -422,7 +466,7 @@ function useCommands(close: () => void): Cmd[] {
     );
 
     return cmds;
-  }, [accounts, folders, views, prefs, recentScopes, scope, close]);
+  }, [accounts, folders, views, prefs, recentScopes, scope, openId, mailOverride, close]);
 }
 
 /* ── Ranking ──────────────────────────────────────────────────────────────── */

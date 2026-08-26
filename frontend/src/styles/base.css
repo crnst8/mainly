@@ -198,6 +198,87 @@ mark.hit {
   scrollbar-gutter: stable;
 }
 
+/* ── Paper ─────────────────────────────────────────────────────────────────
+   The app's print control builds its own document — no chrome, paper colours,
+   the subject as the filename — and that is the path worth using. This block
+   is for the other one: File → Print, or a ⌘P that landed while focus was in a
+   text field. It cannot reach inside the reader's shadow root to re-light the
+   sender's colours, so it does the part it can reach: everything that is the
+   mail *client* goes away, the message stays, and the page is white.
+
+   Keep it. Without it that route prints the rail, the sidebar, the toolbar and
+   one screenful of a clipped scroll container. */
+@media print {
+  :root {
+    color-scheme: light;
+    --bg: #fff;
+    --bg-sunken: #fff;
+    --bg-raised: #fff;
+    --bg-hover: #fff;
+    --text: #14181f;
+    --text-secondary: #14181f;
+    --text-muted: #3d4552;
+    --text-faint: #5b6472;
+    --line: #b9c0ca;
+    --line-soft: #d7dce2;
+  }
+
+  html,
+  body,
+  #root {
+    height: auto;
+    overflow: visible;
+    background: #fff;
+  }
+
+  /* Everything that frames the message rather than being it. */
+  .rail,
+  .sidebar,
+  .topbar,
+  .list-pane,
+  .listbar,
+  .reader__bar,
+  .quickreply,
+  .notice,
+  .toasts,
+  .palette,
+  .settings,
+  .demo-badge,
+  .mobile__topbar,
+  .mobile__searchrow,
+  .mobile__list,
+  .mreader__bar,
+  .mquick {
+    display: none !important;
+  }
+
+  /* The reader is a pane in a fixed-height flex layout, and a pane clips. On
+     paper there is no viewport to fit inside — let it be as long as it is. */
+  .app,
+  .app__body,
+  .mobile,
+  .reader-pane,
+  .reader__scroll,
+  .reader__inner,
+  .reader__body__scroll,
+  .mreader,
+  .mreader__scroll,
+  .mreader__inner {
+    display: block !important;
+    position: static !important;
+    max-width: none;
+    height: auto !important;
+    max-height: none !important;
+    overflow: visible !important;
+    padding: 0;
+    margin: 0;
+  }
+
+  @page {
+    margin: 14mm;
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,

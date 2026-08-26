@@ -4,24 +4,26 @@ import {
   Attachment as AttachIcon,
   Chevron,
   Clock,
+  Contrast,
   Eye,
   Forward,
+  Printer,
   Reply,
   ReplyAll,
   Star,
   Trash,
   Warning,
 } from '@/components/icons';
-import { Button, Empty, IconButton, Pill, Progress } from '@/components/ui';
+import { Button, Empty, IconButton, Pill, PopItem, PopLabel, Popover, Progress } from '@/components/ui';
 import { SenderAvatar } from '@/components/SenderAvatar';
 import { SenderMenu } from '@/components/SenderMenu';
 import { useContextMenu } from '@/components/context-menu';
 import { bytes, displayName, fullDate, listDate } from '@/lib/format';
 import { parseSearch, searchTerms } from '@/lib/search';
-import { allowImagesFromSender, remoteImagesAllowed } from '@/lib/sender';
+import { allowImagesFromSender } from '@/lib/sender';
 import { getApi } from '@/lib/api';
-import { useAccountColor, useStore } from '@/lib/store';
-import type { Addr, Attachment as AttachmentInfo, Id, Message } from '@/lib/types';
+import { useAccountColor, useMailDark, useShowRemote, useStore, useThemeIsDark } from '@/lib/store';
+import type { Addr, Attachment as AttachmentInfo, Id, Message, PrintColors } from '@/lib/types';
 import { MessageBody } from './MessageBody';
 import './reader.css';
 
@@ -39,7 +41,10 @@ export function Reader() {
   const reopen = useStore((s) => s.open);
 
   const [showHeaders, setShowHeaders] = useState(false);
-  const [loadRemote, setLoadRemote] = useState(false);
+  const loadRemote = useShowRemote();
+  const setLoadRemote = useStore((s) => s.setMailRemote);
+  const mailDark = useMailDark();
+  const onDark = useThemeIsDark();
   const senderMenu = useContextMenu<Addr>();
 
   const scope = useStore((s) => s.query.scope);
@@ -48,11 +53,10 @@ export function Reader() {
     [scope.kind, scope.value],
   );
 
-  // Reset per-message view state — otherwise "show images" leaks to the next.
-  useEffect(() => {
-    setShowHeaders(false);
-    setLoadRemote(remoteImagesAllowed(prefs, message?.from));
-  }, [openId, prefs, message?.from]);
+  // "Show original headers" is the last piece of per-message view state still
+  // held here; it has no preference behind it and nothing else reads it. The
+  // other two — images and colours — are reset by `open` itself, in the store.
+  useEffect(() => setShowHeaders(false), [openId]);
 
   if (!openId) {
     return (
@@ -164,6 +168,8 @@ export function Reader() {
               html={message.bodyHtml}
               text={message.bodyText}
               loadRemote={loadRemote}
+              relit={mailDark}
+              surface={onDark ? 'dark' : 'light'}
               terms={terms}
             />
           </div>
@@ -187,7 +193,9 @@ export function Reader() {
             </div>
           )}
 
-          {thread && thread.messages.length > 1 && <ThreadStrip thread={thread} openId={message.id} />}
+          {thread && thread.messages.length > 1 && (
+            <ThreadStrip thread={thread} openId={message.id} relit={mailDark} surface={onDark ? 'dark' : 'light'} />
+          )}
 
           <QuickReply />
 
@@ -308,6 +316,11 @@ function ReaderBar({ message }: { message: Message }) {
         <Trash size={15} />
       </IconButton>
 
+      <span className="listbar__divider" />
+
+      <MailColorsToggle />
+      <PrintButton />
+
       <span className="reader__bar__spacer" />
 
       <div className="reader__nav">
@@ -330,9 +343,123 @@ function ReaderBar({ message }: { message: Message }) {
   );
 }
 
+/* ── Colour and paper ─────────────────────────────────────────────────────────
+   Two controls that answer the same question — what should the sender's
+   colours become — for two destinations, a dark screen and a sheet of paper. */
+
+/**
+ * One click back to the message as it was sent, and one click forward again.
+ *
+ * The requirement was "quick and easy", which rules out a menu: this is a
+ * button that is either lit or not, in the toolbar, next to the message it
+ * describes. It is a per-message answer and it does not stick, so pressing it
+ * to check a colour swatch cannot quietly become a setting — the preference
+ * for that lives in Appearance.
+ */
+function MailColorsToggle() {
+  const dark = useMailDark();
+  const override = useStore((s) => s.mailOverride);
+  const setOverride = useStore((s) => s.setMailOverride);
+  const message = useStore((s) => s.openMessage);
+
+  // A plaintext body is drawn by the app in the app's own tokens. There is
+  // nothing of the sender's to re-light and nothing the button could change.
+  if (!message?.bodyHtml) return null;
+
+  return (
+    <IconButton
+      label={dark ? 'Show original colours' : 'Fit colours to dark mode'}
+      hint="i"
+      on={dark}
+      // A one-off is announced, because the row above it just changed and the
+      // reason should not be a mystery.
+      title={
+        override === null
+          ? undefined
+          : `${dark ? 'Re-lit' : 'Original colours'} — this message only`
+      }
+      onClick={() => setOverride(!dark)}
+    >
+      <Contrast size={15} />
+    </IconButton>
+  );
+}
+
+/**
+ * Print, with the colour decision attached.
+ *
+ * The button prints straight away using the stored default — one click, which
+ * is the whole point when the thing being printed is a receipt. The chevron is
+ * for the other mode, and it is a separate hit target rather than a menu that
+ * every print has to pass through.
+ */
+function PrintButton() {
+  const printOpen = useStore((s) => s.printOpen);
+  const prefs = useStore((s) => s.prefs);
+  const savePrefs = useStore((s) => s.savePrefs);
+  const preferred = prefs?.printColors ?? 'paper';
+
+  const choose = (colors: PrintColors, close: () => void) => {
+    close();
+    if (colors !== preferred) void savePrefs({ printColors: colors });
+    printOpen(colors);
+  };
+
+  return (
+    <span className="reader__print">
+      <IconButton label="Print" hint="⌘P" onClick={() => printOpen()}>
+        <Printer size={15} />
+      </IconButton>
+      <Popover
+        align="start"
+        width={264}
+        trigger={(p) => (
+          <button type="button" className="reader__print__more" aria-label="Print options" {...p}>
+            <Chevron size={11} dir="down" />
+          </button>
+        )}
+      >
+        {(close) => (
+          <>
+            <PopLabel>Print colours</PopLabel>
+            <PopItem
+              checked={preferred === 'paper'}
+              icon={<Printer size={15} />}
+              onClick={() => choose('paper', close)}
+            >
+              Paper — black on white
+            </PopItem>
+            <PopItem
+              checked={preferred === 'original'}
+              icon={<Contrast size={15} />}
+              onClick={() => choose('original', close)}
+            >
+              As sent — original colours
+            </PopItem>
+            <div className="reader__print__note">
+              Choose <strong>Save as PDF</strong> in the print dialog to keep a receipt that came
+              in the body with nothing attached.
+            </div>
+          </>
+        )}
+      </Popover>
+    </span>
+  );
+}
+
 /* ── Thread ───────────────────────────────────────────────────────────────── */
 
-function ThreadStrip({ thread, openId }: { thread: NonNullable<ReturnType<typeof useStore.getState>['openThread']>; openId: string }) {
+function ThreadStrip({
+  thread,
+  openId,
+  relit,
+  surface,
+}: {
+  thread: NonNullable<ReturnType<typeof useStore.getState>['openThread']>;
+  openId: string;
+  relit: boolean;
+  surface: 'light' | 'dark';
+}) {
   const [expanded, setExpanded] = useState<Set<string>>(new Set([openId]));
   const loadThreadBody = useStore((s) => s.loadThreadBody);
 
@@ -388,7 +515,13 @@ function ThreadStrip({ thread, openId }: { thread: NonNullable<ReturnType<typeof
                     <span>{m.bodyError}</span>
                   </div>
                 ) : (
-                  <MessageBody html={m.bodyHtml} text={m.bodyText} loadRemote={false} />
+                  <MessageBody
+                    html={m.bodyHtml}
+                    text={m.bodyText}
+                    loadRemote={false}
+                    relit={relit}
+                    surface={surface}
+                  />
                 )}
               </div>
             )}
