@@ -1,3 +1,22 @@
+## 1.2.1 — 2026-08-26
+
+fix: honour imapflow command results so read marks survive sync
+
+`imapflow` answers a refused `STORE/MOVE/COPY/EXPUNGE` with `false` rather than
+throwing. Replay ignored that and deleted the sync_ops row anyway, which also
+removed the guard in envelopes.ts that holds local flag state while a change is
+in flight, so the next envelope pass wrote the server's still-unread flag back
+over the read. Mail marked read came back unread seconds later and survived a
+reload; the sidebar counts followed it.
+
+Replay now fails the op on a falsy result, so it retries and then parks with the
+server's own words while the guard keeps what the user did. A mailbox whose
+PERMANENTFLAGS will not keep \Seen is refused up front instead of eight silent
+retries. pool.ts swaps `logger: false` for a logger that remembers only the
+refusal text, since that was the sole channel for the server's reason.
+
+Adds replay.test.ts covering the return-value handling.
+
 ## 1.2.0 — 2026-08-25
 
 **Features**:
