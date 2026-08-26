@@ -1,3 +1,9 @@
+## 1.3.0 — 2026-08-27
+
+Added a colour engine (`relight.ts`) that keeps a sender's hues and moves only lightness, driving three things: mail bodies re-lit for dark mode with a one-key toggle (i) back to the original.
+
+Also included is a print path (p / ⌘P) that builds a chrome-free document titled with the subject so Save as PDF names receipts properly, and a "borrowed surface" rule that gives a message its assumed background when it declared none, fixing white-on-white in both directions.
+
 ## 1.2.1 — 2026-08-26
 
 fix: honour imapflow command results so read marks survive sync
