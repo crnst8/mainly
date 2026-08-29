@@ -1,7 +1,7 @@
 {
   "name": "@mail/backend",
   "private": true,
-  "version": "1.2.2",
+  "version": "1.2.3",
   "type": "module",
   "scripts": {
     "dev": "node --watch --experimental-strip-types src/server.ts",
