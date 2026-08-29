@@ -1,3 +1,22 @@
+## 1.2.3 — 2026-08-29
+
+- feat: text weight setting
+
+Appearance gains a Text weight slider under Text size (Light, Regular,
+Bold).
+
+Every font-weight in the app's own CSS now resolves through a
+five-rung token ramp that [data-weight] shifts as a unit, anchored on
+body so elements that never name a weight ride it too.
+
+Three steps because three is all there is: the UI face ships three
+static files, and a list only works while emphasis outweighs body text,
+so body type can be Regular or Medium and nothing else. Paper resets the
+ramp, matching print.ts. Slider now requires an ariaLabel and announces
+its readout, as Segmented already did.
+
+Closes #2
+
 ## Unreleased
 
 feat: text weight setting
