@@ -1780,15 +1780,27 @@ export function applyTheme(theme: Preferences['theme']) {
   root.dataset.theme = mode;
   root.dataset.density = theme.density;
   root.dataset.contrast = theme.contrast;
+  root.dataset.weight = theme.fontWeight;
   root.style.setProperty('--accent', theme.accent);
   root.style.setProperty('--radius', `${theme.radius}px`);
   root.style.fontSize = `${16 * theme.fontScale}px`;
   if (theme.reduceMotion) root.dataset.motion = 'reduced';
   else delete root.dataset.motion;
 
+  // Everything the pre-paint script in index.html can act on before React
+  // exists. Type size and weight belong here for the same reason the colours
+  // do: they change how big the first frame is, and reflowing the list one
+  // frame in is the jump this cache was written to prevent.
   localStorage.setItem(
     'mail.theme',
-    JSON.stringify({ mode: theme.mode, accent: theme.accent, density: theme.density, radius: theme.radius }),
+    JSON.stringify({
+      mode: theme.mode,
+      accent: theme.accent,
+      density: theme.density,
+      radius: theme.radius,
+      scale: theme.fontScale,
+      weight: theme.fontWeight,
+    }),
   );
 }
 

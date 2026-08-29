@@ -468,6 +468,22 @@ export type ThemeMode = 'light' | 'dark' | 'system';
 export type Density = 'compact' | 'cosy' | 'relaxed';
 
 /**
+ * How heavy the interface's type is drawn.
+ *
+ * Three steps rather than a free number, and three is not a round figure — it
+ * is all there is. The UI face is three static weights, not a variable one, so
+ * body type can be drawn Regular or Medium and no third thing, and every step
+ * is a pair of (body, emphasis) taken from what remains once emphasis is
+ * required to outweigh body. `regular` is the ramp the app was drawn at.
+ *
+ * A value this build does not recognise resolves to `regular` in both places
+ * that read it — the stylesheet matches no `[data-weight]` block and falls back
+ * to the base ramp, and the settings slider parks on the same step — so a
+ * downgrade shows the default rather than disagreeing with itself.
+ */
+export type FontWeight = 'light' | 'regular' | 'bold';
+
+/**
  * What to do with the colours a sender chose.
  *
  * A message is drawn for white paper. On a dark surface that is at best a
@@ -538,6 +554,10 @@ export interface Theme {
   /** Label → colour. */
   labelColors: Record<string, string>;
   fontScale: number;
+  /** Interface type weight. Scale and weight are separate dials because they
+   *  fail separately: small type is a reach problem, thin type is a contrast
+   *  one, and a phone in daylight can have the second without the first. */
+  fontWeight: FontWeight;
 }
 
 export interface Preferences {
@@ -604,6 +624,7 @@ export const DEFAULT_PREFERENCES: Preferences = {
     folderColors: {},
     labelColors: {},
     fontScale: 1,
+    fontWeight: 'regular',
   },
   layout: 'columns',
   preview: 'right',

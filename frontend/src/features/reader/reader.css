@@ -37,7 +37,7 @@
   border-radius: var(--radius-sm);
   color: var(--text-secondary);
   font-size: var(--t-xs);
-  font-weight: 500;
+  font-weight: var(--w-medium);
   transition:
     background var(--dur-fast) var(--ease-out),
     color var(--dur-fast) var(--ease-out);
@@ -111,7 +111,7 @@
 
 .reader__print__note strong {
   color: var(--text-secondary);
-  font-weight: 500;
+  font-weight: var(--w-medium);
 }
 
 /* ── Scroll body ──────────────────────────────────────────────────────────── */
@@ -133,7 +133,7 @@
 
 .reader__subject {
   font-size: var(--t-xl);
-  font-weight: 500;
+  font-weight: var(--w-medium);
   line-height: var(--lh-tight);
   letter-spacing: -0.018em;
   margin-bottom: var(--s-6);
@@ -168,7 +168,7 @@
 
 .reader__name {
   font-size: var(--t-md);
-  font-weight: 500;
+  font-weight: var(--w-medium);
   letter-spacing: var(--tr-snug);
 }
 
@@ -378,7 +378,7 @@
 
 .thread__head__name {
   font-size: var(--t-sm);
-  font-weight: 500;
+  font-weight: var(--w-medium);
   flex-shrink: 0;
 }
 

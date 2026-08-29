@@ -1,3 +1,43 @@
+## Unreleased
+
+feat: text weight setting
+
+Appearance gains a Text weight slider under Text size — Light, Regular, Bold —
+reported from a phone, where the mail list read as too thin to scan.
+
+Every `font-weight` in the app's own CSS now resolves through a five-rung token
+ramp (`--w-light` … `--w-bold`) that `[data-weight]` shifts as a unit, anchored
+on `body` so the elements that never name a weight — preview lines, most body
+copy — ride it too rather than sitting on the user agent's 400.
+
+Three steps because three is all there is. The UI face ships three static files,
+and a list only works while emphasis outweighs body text, so body type can be
+drawn Regular or Medium and nothing else — Bold body means a read row and an
+unread row come out of the same file. That leaves exactly three honest pairs of
+(body, emphasis), and those are the three steps. A first cut had four; two of
+them rendered the message list identically, which measurement caught and the
+slider would not have.
+
+All six existing sliders were unlabelled to a screen reader and announced a bare
+number — "slider, 2" for a control whose value is "Bold" or "Never". `Slider`
+now requires an `ariaLabel`, as `Segmented` already did, and announces its
+readout as `aria-valuetext`.
+
+A message body inherits the setting only where its sender declared no weight of
+their own; an explicit weight in the mail's CSS still wins, as it already did.
+`font-synthesis-weight: none` outside the message keeps Paper Mono — one file —
+from being faux-bolded at the top of the ramp, and is turned back on inside the
+message, where a sender's `<b>` is not ours to flatten.
+
+Paper resets the ramp. `@media print` already overrules dark mode and the
+contrast setting on the grounds that paper is not a screen, and the weight
+setting answers a screen problem that three hundred dpi of black on white does
+not have. It also keeps this route agreeing with print.ts, which builds its own
+document at fixed weights.
+
+The pre-paint script in index.html now also restores text size and weight, so
+neither reflows a frame after the first.
+
 ## 1.2.2 — 2026-08-27
 
 - docs: release notes for 1.3.0

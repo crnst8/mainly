@@ -110,7 +110,7 @@
   border-color: var(--text);
   background: var(--bg-selected);
   color: var(--text);
-  font-weight: 500;
+  font-weight: var(--w-medium);
 }
 
 .mobile__chipcount {
@@ -264,7 +264,7 @@
 /* Sender labels the message; the subject gets its own stronger line beneath. */
 .mrow__sender {
   font-size: var(--t-xs);
-  font-weight: 300;
+  font-weight: var(--w-light);
   color: var(--text-secondary);
   letter-spacing: 0;
 }
@@ -273,21 +273,21 @@
   flex: 1;
   min-width: 0;
   font-size: var(--t-md);
-  font-weight: 700;
+  font-weight: var(--w-bold);
   color: var(--text);
   letter-spacing: var(--tr-snug);
 }
 
 .mrow[data-read] .mrow__subject {
   color: var(--text-secondary);
-  font-weight: 400;
+  font-weight: var(--w-normal);
 }
 
 /* Unread lifts the sender too, or the row's one strong signal is competing
    with a label that has gone quiet. */
 .mrow:not([data-read]) .mrow__sender {
   color: var(--text);
-  font-weight: 700;
+  font-weight: var(--w-bold);
 }
 
 .mrow[data-read] .mrow__preview {
@@ -318,7 +318,7 @@
   color: var(--danger);
   font-family: var(--font-mono);
   font-size: var(--t-xs);
-  font-weight: 700;
+  font-weight: var(--w-bold);
 }
 
 /* ── Pull to refresh ─────────────────────────────────────────────────────── */
@@ -426,7 +426,7 @@
   padding: 0 var(--s-5);
   border: none;
   font-size: var(--t-xs);
-  font-weight: 600;
+  font-weight: var(--w-semibold);
   letter-spacing: var(--tr-caps);
   text-transform: uppercase;
   color: var(--text-inverse);
@@ -555,7 +555,7 @@
   flex: 1;
   min-width: 0;
   font-size: var(--t-sm);
-  font-weight: 600;
+  font-weight: var(--w-semibold);
   letter-spacing: var(--tr-tight);
 }
 
@@ -572,7 +572,7 @@
   background: var(--accent);
   color: var(--accent-ink);
   font-size: var(--t-sm);
-  font-weight: 600;
+  font-weight: var(--w-semibold);
 }
 
 .mcompose__send:disabled {
@@ -831,7 +831,7 @@
 
 .sheet__row[data-on] {
   color: var(--accent);
-  font-weight: 600;
+  font-weight: var(--w-semibold);
 }
 
 .sheet__rowlabel {
@@ -844,7 +844,7 @@
   font-family: var(--font-mono);
   font-size: var(--t-2xs);
   color: var(--text-faint);
-  font-weight: 400;
+  font-weight: var(--w-normal);
 }
 
 .sheet__rowcheck {
@@ -878,7 +878,7 @@
   border-color: var(--text);
   background: var(--bg-selected);
   color: var(--text);
-  font-weight: 500;
+  font-weight: var(--w-medium);
 }
 
 /* ── Reader ──────────────────────────────────────────────────────────────── */
@@ -915,7 +915,7 @@
 .mreader__barname {
   flex: 1;
   min-width: 0;
-  font-weight: 600;
+  font-weight: var(--w-semibold);
   font-size: var(--t-sm);
 }
 
@@ -940,7 +940,7 @@
 
 .mreader__subject {
   font-size: var(--t-xl);
-  font-weight: 600;
+  font-weight: var(--w-semibold);
   letter-spacing: var(--tr-tight);
   line-height: var(--lh-snug);
   margin-bottom: var(--s-5);
@@ -963,7 +963,7 @@
   background: color-mix(in oklab, var(--tint) 14%, transparent);
   color: var(--tint);
   font-size: var(--t-xs);
-  font-weight: 600;
+  font-weight: var(--w-semibold);
 }
 
 .mreader__who {
@@ -982,7 +982,7 @@
 .mreader__name {
   flex: 1;
   min-width: 0;
-  font-weight: 600;
+  font-weight: var(--w-semibold);
 }
 
 .mreader__when {
@@ -1071,7 +1071,7 @@
 }
 
 .mthread__head__name {
-  font-weight: 600;
+  font-weight: var(--w-semibold);
   font-size: var(--t-sm);
 }
 

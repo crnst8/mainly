@@ -24,7 +24,7 @@
 .login__mark {
   font-family: var(--font-mono);
   font-size: var(--t-xl);
-  font-weight: 400;
+  font-weight: var(--w-normal);
   letter-spacing: 0.02em;
   line-height: 1;
 }

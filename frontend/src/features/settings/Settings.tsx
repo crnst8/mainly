@@ -33,6 +33,7 @@ import { MIN_APP_PASSWORD } from '@/lib/types';
 import type {
   Account,
   Density,
+  FontWeight,
   ListColumn,
   MailColors,
   PrintColors,
@@ -71,6 +72,43 @@ const ACCENTS = [
   // both themes — a black swatch on a black surface is not a choice.
   'oklch(52% 0 0)',
 ];
+
+/*
+ * Type weight, lightest first, as a slider rather than a segmented row.
+ *
+ * Three is every step the UI face can honestly draw — see `FontWeight` — and it
+ * is also what Density and Contrast use, so Segmented was the obvious match.
+ * A slider still says the truer thing about these values: one axis, ordered,
+ * and the neighbour of the step you are on is the step you probably want. It
+ * also sits directly under Text size, which is the other half of the same
+ * question and the row this was asked for.
+ */
+const FONT_WEIGHTS: FontWeight[] = ['light', 'regular', 'bold'];
+
+const WEIGHT_LABELS: Record<FontWeight, string> = {
+  light: 'Light',
+  regular: 'Regular',
+  bold: 'Bold',
+};
+
+/** Slider position → step. Clamped, so a value stored by a future version with
+ *  more steps lands on the heaviest one this build has rather than nothing. */
+const weightAt = (i: number): FontWeight =>
+  FONT_WEIGHTS[Math.min(Math.max(i, 0), FONT_WEIGHTS.length - 1)] ?? 'regular';
+
+/**
+ * Step → slider position, resolving an unrecognised one the way the stylesheet
+ * does: to regular.
+ *
+ * `indexOf` answers -1 for a step this build has never heard of, and clamping
+ * that to 0 would park the handle on Light while `[data-weight]` matched no
+ * block and drew Regular — a control disagreeing with the screen behind it,
+ * which is worse than either answer alone.
+ */
+const weightIndex = (w: FontWeight): number => {
+  const i = FONT_WEIGHTS.indexOf(w);
+  return i < 0 ? FONT_WEIGHTS.indexOf('regular') : i;
+};
 
 export function Settings() {
   const raw = useStore((s) => s.settings) ?? 'appearance';
@@ -204,6 +242,7 @@ function Appearance() {
 
         <Row title="Corner radius" desc="0 is fully flat.">
           <Slider
+            ariaLabel="Corner radius"
             min={0}
             max={12}
             value={theme.radius}
@@ -226,12 +265,24 @@ function Appearance() {
 
         <Row title="Text size" desc="Scales the whole interface.">
           <Slider
+            ariaLabel="Text size"
             min={0.85}
             max={1.25}
             step={0.05}
             value={theme.fontScale}
             format={(v) => `${Math.round(v * 100)}%`}
             onChange={(fontScale) => void saveTheme({ fontScale })}
+          />
+        </Row>
+
+        <Row title="Text weight" desc="Heavier type throughout. Worth a step up on a small or bright screen.">
+          <Slider
+            ariaLabel="Text weight"
+            min={0}
+            max={FONT_WEIGHTS.length - 1}
+            value={weightIndex(theme.fontWeight)}
+            format={(v) => WEIGHT_LABELS[weightAt(v)]}
+            onChange={(i) => void saveTheme({ fontWeight: weightAt(i) })}
           />
         </Row>
 
@@ -554,6 +605,7 @@ function ListSettings() {
       <section className="settings__section">
         <Row title="Mark read after" desc="Time a message must stay open before it counts as read.">
           <Slider
+            ariaLabel="Mark read after"
             min={-1}
             max={5000}
             step={100}
@@ -565,6 +617,7 @@ function ListSettings() {
 
         <Row title="Undo window" desc="How long archive and delete stay reversible.">
           <Slider
+            ariaLabel="Undo window"
             min={2000}
             max={20000}
             step={1000}
@@ -845,6 +898,7 @@ function SearchSettings() {
         {WEIGHT_ROWS.map((r) => (
           <Row key={r.key} title={r.title} desc={r.desc}>
             <Slider
+              ariaLabel={r.title}
               min={0}
               max={2}
               step={0.1}
@@ -1343,6 +1397,7 @@ function Keyboard() {
 /* ── Slider ───────────────────────────────────────────────────────────────── */
 
 function Slider({
+  ariaLabel,
   min,
   max,
   step = 1,
@@ -1351,6 +1406,10 @@ function Slider({
   format,
   onChange,
 }: {
+  /** Required, like `Segmented`'s. The visible name lives in the `Row` beside
+   *  this, which is a sibling and not a label, so without it a screen reader
+   *  gets "slider, 2" and no way to know what moved. */
+  ariaLabel: string;
   min: number;
   max: number;
   step?: number;
@@ -1360,11 +1419,16 @@ function Slider({
   onChange: (v: number) => void;
 }) {
   const pct = ((value - min) / (max - min)) * 100;
+  const readout = format ? format(value) : `${value}${suffix ?? ''}`;
   return (
     <div className="sliderwrap">
       <input
         type="range"
         className="slider"
+        aria-label={ariaLabel}
+        /* The raw number is rarely the value: step 3 is "Bold", -1 is "Never".
+           Announce what the reader sees rather than the index behind it. */
+        aria-valuetext={readout}
         min={min}
         max={max}
         step={step}
@@ -1372,7 +1436,7 @@ function Slider({
         style={{ '--fill': `${pct}%` } as React.CSSProperties}
         onChange={(e) => onChange(Number(e.target.value))}
       />
-      <span className="slidervalue">{format ? format(value) : `${value}${suffix ?? ''}`}</span>
+      <span className="slidervalue">{readout}</span>
     </div>
   );
 }

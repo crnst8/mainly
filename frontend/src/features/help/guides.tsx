@@ -459,6 +459,10 @@ export const HELP_GUIDES: HelpGuide[] = [
             body: 'Compact, cosy and relaxed densities change row height. Text size scales the whole interface, while corner radius controls how flat or rounded it feels.',
           },
           {
+            title: 'Text weight',
+            body: 'Light, Regular and Bold, applied to the whole interface. Worth a step up on a phone or a bright screen, where the default can read as thin. Bold is as heavy as the typeface goes while unread rows still look heavier than read ones, and printing always uses the default.',
+          },
+          {
             title: 'Contrast and motion',
             body: 'High contrast strengthens borders and secondary text. Reduce motion removes optional transitions in addition to respecting the operating-system preference.',
           },

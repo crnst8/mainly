@@ -29,6 +29,8 @@
         if (t.accent) r.style.setProperty('--accent', t.accent);
         if (t.density) r.dataset.density = t.density;
         if (t.radius != null) r.style.setProperty('--radius', t.radius + 'px');
+        if (t.weight) r.dataset.weight = t.weight;
+        if (t.scale) r.style.fontSize = 16 * t.scale + 'px';
       } catch (e) {}
     </script>
   </head>

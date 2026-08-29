@@ -94,6 +94,27 @@
   --t-2xl: 2rem; /* 32 — page titles */
   --t-3xl: 3.25rem; /* 52 — empty states, oversized editorial */
 
+  /* ── Weight — user owned, via [data-weight] ──────────────────────────────
+     Five rungs, and no rule outside this file names a number.
+
+     They are not five drawings. The UI face ships three real files — Regular,
+     Medium, Bold — so 300 renders Regular and 600 renders Bold, and two of the
+     rungs below are always a duplicate of a neighbour. They exist as five
+     anyway, because the ramp has to move as a unit: a rung that duplicates its
+     neighbour here stops duplicating it one step up.
+
+     How far it can move is arithmetic, not taste. Three files, and a list is
+     only readable while emphasis outweighs body text, so the body rung can be
+     Regular or Medium and nothing else — Bold body means a read row and an
+     unread row come out of the same file. That leaves exactly three honest
+     pairs of (body, emphasis): Regular/Medium, Regular/Bold, Medium/Bold. They
+     are the three steps below, and there is no fourth to offer. */
+  --w-light: 300;
+  --w-normal: 400;
+  --w-medium: 500;
+  --w-semibold: 600;
+  --w-bold: 700;
+
   --lh-tight: 1.15;
   --lh-snug: 1.35;
   --lh-normal: 1.55;
@@ -196,6 +217,39 @@
   --row-pad-y: var(--s-5);
   --row-gap: var(--s-2);
   --ctl-h: 32px;
+}
+
+/* ── Weight steps ─────────────────────────────────────────────────────────
+   `regular` is the ramp declared above and needs no block of its own. It is
+   also the only step with three tiers to spend; the other two have two, which
+   is what is left once the whole ramp has been dragged to one end.
+
+   Every step renders differently from its neighbour in the message list, and
+   that was measured rather than assumed — an earlier cut of this had four steps
+   and two of them drew the list identically, because a number that changes and
+   a file that does not is a control that does nothing.
+
+   Set by the reader in Appearance, under text size, because thin type on a
+   small bright screen is a legibility problem and not a preference. */
+
+/* Body Regular, emphasis Medium. Nothing gets thinner than the default — the
+   ramp closes up from the top, so what this really does is quieten emphasis. */
+:root[data-weight='light'] {
+  --w-light: 300;
+  --w-normal: 300;
+  --w-medium: 400;
+  --w-semibold: 500;
+  --w-bold: 500;
+}
+
+/* Body Medium, emphasis Bold. The heaviest the three files allow while a read
+   row and an unread row still come out of different ones. */
+:root[data-weight='bold'] {
+  --w-light: 500;
+  --w-normal: 500;
+  --w-medium: 600;
+  --w-semibold: 700;
+  --w-bold: 700;
 }
 
 /* ── Dark ────────────────────────────────────────────────────────────────

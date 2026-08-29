@@ -28,9 +28,20 @@ body {
   color: var(--text);
   font-family: var(--font-ui);
   font-size: var(--t-sm);
+  /* The ramp's entry point. Without it every element that never names a weight
+     — a preview line, a body paragraph, most of the app — inherits the user
+     agent's 400 and sits out the setting entirely, which is the half of the
+     screen the reader was complaining about. */
+  font-weight: var(--w-normal);
   line-height: var(--lh-normal);
   letter-spacing: var(--tr-snug);
   font-feature-settings: 'kern' 1, 'liga' 1, 'calt' 1;
+  /* Never let the browser draw a weight the font does not have. Paper Mono is
+     one file, so the top of the weight ramp would ask it for 600 and get a
+     smeared approximation at eleven pixels; Neue Haas has a real Bold and never
+     needed the offer. Turned back on inside a message body, where the type is
+     the sender's and their <b> is not ours to flatten. */
+  font-synthesis-weight: none;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
   text-rendering: optimizeLegibility;
@@ -211,6 +222,18 @@ mark.hit {
 @media print {
   :root {
     color-scheme: light;
+    /* Back to the default ramp. This block already overrules dark mode and the
+       contrast setting on the grounds that paper is not a screen, and the
+       weight setting exists for a screen problem — thin type on a small bright
+       one — that three hundred dpi of black on white does not have. It also
+       makes this route agree with print.ts, which builds its own document at
+       fixed weights; two print paths that disagree about how heavy a message is
+       would be the actual bug. */
+    --w-light: 300;
+    --w-normal: 400;
+    --w-medium: 500;
+    --w-semibold: 600;
+    --w-bold: 700;
     --bg: #fff;
     --bg-sunken: #fff;
     --bg-raised: #fff;

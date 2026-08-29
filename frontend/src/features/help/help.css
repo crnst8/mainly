@@ -92,7 +92,7 @@
 .help__sectionhead h2,
 .help__empty h2 {
   font-size: var(--t-md);
-  font-weight: 600;
+  font-weight: var(--w-semibold);
   letter-spacing: var(--tr-tight);
 }
 
@@ -120,7 +120,7 @@
 .help__item h3 {
   margin-bottom: var(--s-2);
   font-size: var(--t-sm);
-  font-weight: 600;
+  font-weight: var(--w-semibold);
   color: var(--text);
 }
 
@@ -214,7 +214,7 @@
 .help__result strong {
   margin-bottom: var(--s-1);
   font-size: var(--t-sm);
-  font-weight: 600;
+  font-weight: var(--w-semibold);
 }
 
 .help__result small {

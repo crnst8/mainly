@@ -321,7 +321,7 @@
 
 .tally__n {
   font-size: var(--t-xl);
-  font-weight: 500;
+  font-weight: var(--w-medium);
   letter-spacing: var(--tr-tight);
   line-height: 1;
 }

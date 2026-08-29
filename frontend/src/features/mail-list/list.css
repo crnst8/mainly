@@ -34,7 +34,7 @@
 
 .listbar__title {
   font-size: var(--t-sm);
-  font-weight: 500;
+  font-weight: var(--w-medium);
   letter-spacing: var(--tr-snug);
 }
 
@@ -94,7 +94,7 @@
 
 .crumbs__here {
   padding: 0 var(--s-2);
-  font-weight: 500;
+  font-weight: var(--w-medium);
   color: var(--text);
   min-width: 0;
 }
@@ -418,7 +418,7 @@
 
 .row-msg[data-read='false'] .row-msg__sender {
   color: var(--text);
-  font-weight: 700;
+  font-weight: var(--w-bold);
 }
 
 .row-msg__subject {
@@ -433,7 +433,7 @@
 
 .row-msg[data-read='false'] .row-msg__subject {
   color: var(--text);
-  font-weight: 700;
+  font-weight: var(--w-bold);
 }
 
 .row-msg__preview {
@@ -544,7 +544,7 @@
   color: color-mix(in oklab, var(--tint, var(--n-6)) 72%, var(--text));
   font-size: var(--t-2xs);
   line-height: 15px;
-  font-weight: 500;
+  font-weight: var(--w-medium);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;

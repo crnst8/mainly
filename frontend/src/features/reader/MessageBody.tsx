@@ -27,7 +27,10 @@ const EMPTY_TERMS: string[] = [];
 /** Styles applied *inside* the shadow root. The mail's own CSS still wins for
  *  its own elements; this only sets a sane baseline. */
 const SHADOW_CSS = `
-  :host { display: block; }
+  /* The app turns synthetic weights off so its own one-file mono face is never
+     smeared. A message is not ours to make that call about: whatever the sender
+     asked for in a <b>, the browser gets to draw it. */
+  :host { display: block; font-synthesis-weight: auto; }
   * { max-width: 100%; }
   body, div, p, td, span, li { font-family: inherit; }
   p { margin: 0 0 1em; }
@@ -44,7 +47,7 @@ const SHADOW_CSS = `
     border-left: 2px solid var(--line);
     color: var(--text-muted);
   }
-  pre, code { font-family: var(--font-mono); font-size: 0.92em; }
+  pre, code { font-family: var(--font-mono); font-size: 0.92em; font-synthesis-weight: none; }
   pre { overflow-x: auto; padding: 12px; background: var(--bg-sunken); border-radius: 4px; }
   table { border-collapse: collapse; max-width: 100%; }
   td, th { padding: 4px 8px; }

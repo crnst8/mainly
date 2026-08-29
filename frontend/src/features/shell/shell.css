@@ -550,7 +550,7 @@
 
 .sidebar__title {
   font-size: var(--t-sm);
-  font-weight: 500;
+  font-weight: var(--w-medium);
   letter-spacing: var(--tr-snug);
   min-width: 0;
 }
@@ -611,7 +611,7 @@
 .nav[aria-current='true'] {
   background: var(--bg-selected);
   color: var(--text);
-  font-weight: 500;
+  font-weight: var(--w-medium);
 }
 
 .nav__icon {
@@ -644,13 +644,13 @@
 }
 
 .nav[data-unread='true'] .nav__label {
-  font-weight: 500;
+  font-weight: var(--w-medium);
   color: var(--text);
 }
 
 .nav[data-unread='true'] .nav__count {
   color: var(--accent);
-  font-weight: 500;
+  font-weight: var(--w-medium);
 }
 
 .nav__twisty {
@@ -866,7 +866,7 @@
   padding: 0 var(--s-4);
   border-radius: var(--radius-sm);
   color: var(--text-inverse);
-  font-weight: 500;
+  font-weight: var(--w-medium);
   font-size: var(--t-xs);
   opacity: 0.75;
   transition: opacity var(--dur-fast), background var(--dur-fast);
@@ -969,7 +969,7 @@
 .nav--group {
   position: relative;
   padding-left: var(--s-5);
-  font-weight: 500;
+  font-weight: var(--w-medium);
   color: var(--text);
 }
 

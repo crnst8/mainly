@@ -46,7 +46,7 @@
   flex: 1;
   min-width: 0;
   font-size: var(--t-sm);
-  font-weight: 500;
+  font-weight: var(--w-medium);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;

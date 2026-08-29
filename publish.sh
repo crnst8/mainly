@@ -15,6 +15,9 @@
 # is ignored by git. CLOUDFLARE_ACCOUNT_ID / CLOUDFLARE_API_TOKEN in the
 # environment win over it, and an interactive `wrangler login` covers neither.
 #
+# The release runs the full check suite, which needs docker. On macOS OrbStack
+# is started for you if it is not already running.
+#
 # This workflow assumes the work already happened in this public checkout. It
 # needs no copy, sync base or second commit: changes are reviewed here,
 # committed here, and released from here.
@@ -163,6 +166,48 @@ check_fork_invariants() {
   return "$lost"
 }
 
+# ── docker ──────────────────────────────────────────────────────────────────
+#
+# The check suite the release runs brings postgres up with docker compose, so
+# the daemon has to be answering before the release starts. On macOS that
+# daemon is OrbStack, and OrbStack is an app: if nobody opened it there is no
+# docker to talk to. Open it and wait here, rather than failing three prompts
+# and a point of no return later.
+
+docker_ready() { command -v docker >/dev/null 2>&1 && docker info >/dev/null 2>&1; }
+
+orbstack_present() {
+  command -v orb >/dev/null 2>&1 \
+    || [[ -d /Applications/OrbStack.app || -d "$HOME/Applications/OrbStack.app" ]]
+}
+
+start_orbstack() {
+  command -v orb >/dev/null 2>&1 && orb start >/dev/null 2>&1 && return 0
+  open -ga OrbStack >/dev/null 2>&1
+}
+
+ensure_docker() {
+  docker_ready && return 0
+
+  [[ "$(uname -s)" == "Darwin" ]] || die "docker is not running — start it and try again"
+  orbstack_present || die "docker is not running, and OrbStack is not installed here"
+
+  info "docker is not answering — starting OrbStack"
+  start_orbstack || die "could not start OrbStack"
+
+  local waited=0
+  while (( waited < 120 )); do
+    if docker_ready; then
+      ok "docker is up"
+      return 0
+    fi
+    sleep 2
+    waited=$(( waited + 2 ))
+    (( waited % 20 == 0 )) && info "still waiting for docker — ${waited}s"
+  done
+  die "OrbStack did not come up within 120s"
+}
+
 # ── step 1: review ──────────────────────────────────────────────────────────
 
 step_review() {
@@ -307,6 +352,7 @@ step_release() {
     yes_no "Release without it anyway?" "n" || return 0
   fi
   assert_public_identity
+  ensure_docker
 
   git fetch --tags --quiet origin 2>/dev/null || warn "could not reach origin for tags"
 

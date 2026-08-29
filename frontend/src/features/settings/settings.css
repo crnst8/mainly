@@ -58,7 +58,7 @@
 .settings__brand {
   padding: 0 var(--s-3) var(--s-6);
   font-size: var(--t-lg);
-  font-weight: 500;
+  font-weight: var(--w-medium);
   letter-spacing: var(--tr-tight);
 }
 
@@ -83,7 +83,7 @@
 .settings__navitem[aria-current='true'] {
   background: var(--bg-active);
   color: var(--text);
-  font-weight: 500;
+  font-weight: var(--w-medium);
 }
 
 .settings__main {
@@ -104,7 +104,7 @@
 
 .settings__title {
   font-size: var(--t-lg);
-  font-weight: 600;
+  font-weight: var(--w-semibold);
   letter-spacing: var(--tr-tight);
 }
 
@@ -191,7 +191,7 @@
 
 .sender-profile__name {
   font-size: var(--t-sm);
-  font-weight: 500;
+  font-weight: var(--w-medium);
 }
 
 .sender-profile__domains {
@@ -227,7 +227,7 @@
 
 .intents__name {
   font-size: var(--t-sm);
-  font-weight: 550;
+  font-weight: var(--w-semibold);
   color: var(--text);
 }
 
@@ -417,6 +417,16 @@
   min-width: 34px;
   text-align: right;
   font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+/* The readouts are mostly four characters wide — "4px", "100%" — and one of
+   them is a word. Give the track back the difference rather than let the label
+   beside it lose another line. */
+@media (max-width: 620px) {
+  .slider {
+    width: 116px;
+  }
 }
 
 /* ── Account list ─────────────────────────────────────────────────────────── */
@@ -506,7 +516,7 @@
 
 .acctrow__label {
   font-size: var(--t-sm);
-  font-weight: 500;
+  font-weight: var(--w-medium);
 }
 
 .acctrow__addr {
@@ -767,13 +777,13 @@
 }
 
 .mprev__sender {
-  font-weight: 700;
+  font-weight: var(--w-bold);
   color: var(--text-secondary);
   flex-shrink: 0;
 }
 
 .mprev__subject {
-  font-weight: 700;
+  font-weight: var(--w-bold);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
