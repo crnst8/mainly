@@ -25,8 +25,8 @@ export interface VerifyInput {
 }
 
 export async function verify(input: VerifyInput): Promise<VerifyResult> {
-  assertHostAllowed(input.imap.host);
-  assertHostAllowed(input.smtp.host);
+  await assertHostAllowed(input.imap.host);
+  await assertHostAllowed(input.smtp.host);
 
   // Run both in parallel — they are independent, and the wizard waits on the
   // slower of the two rather than their sum.

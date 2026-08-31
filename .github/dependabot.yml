@@ -1,0 +1,78 @@
+# Two jobs, one file.
+#
+# Security updates are the point: Dependabot opens those the moment an advisory
+# lands, ungrouped and off-schedule, which is what closes the window that
+# scripts/audit-check.mjs only reports on.
+#
+# The weekly version updates are the maintenance half. They are grouped hard on
+# purpose - one PR per workspace for the routine bumps, majors on their own -
+# because ci.yml is a real gate and every PR here costs a full Postgres run.
+version: 2
+updates:
+  - package-ecosystem: npm
+    directory: /backend
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 5
+    groups:
+      backend-minor-patch:
+        patterns: ['*']
+        update-types: [minor, patch]
+    # Majors land alone: @fastify/static 8 -> 10 moved setHeaders from a Node
+    # response to a FastifyReply, and that is not a diff to read in a bundle.
+    ignore:
+      - dependency-name: '*'
+        update-types: [version-update:semver-major]
+    labels: [dependencies, backend]
+
+  - package-ecosystem: npm
+    directory: /frontend
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 5
+    groups:
+      frontend-minor-patch:
+        patterns: ['*']
+        update-types: [minor, patch]
+    ignore:
+      - dependency-name: '*'
+        update-types: [version-update:semver-major]
+    labels: [dependencies, frontend]
+
+  - package-ecosystem: npm
+    directory: /mcp
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 5
+    groups:
+      mcp-minor-patch:
+        patterns: ['*']
+        update-types: [minor, patch]
+    ignore:
+      - dependency-name: '*'
+        update-types: [version-update:semver-major]
+    labels: [dependencies, mcp]
+
+  # The Dockerfile pins its base by digest, which is the only way the build is
+  # reproducible — and also the way a base image quietly stops getting Alpine and
+  # Node security patches. This is the half that keeps the pin fresh; without it
+  # the pin is strictly worse than the floating tag it replaced.
+  - package-ecosystem: docker
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+    labels: [dependencies, docker]
+
+  # The workflows pin actions by major tag; this keeps those from rotting.
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: monthly
+    groups:
+      actions:
+        patterns: ['*']
+    labels: [dependencies, ci]

@@ -4,7 +4,7 @@
 # both reload on save.
 #
 #   ./dev.sh start            database + backend + frontend
-#   ./dev.sh check            typecheck, contract, url, search, smoke, query
+#   ./dev.sh check            typecheck, audit, contract, url, search, static, auth, smoke, query
 #
 # To run without Docker or a backend at all — the whole UI against seeded
 # in-memory data:
@@ -232,11 +232,21 @@ case "${1:-start}" in
   check)
     install_deps
     (cd frontend && npx tsc -b --noEmit && node scripts/url-check.mjs && node scripts/search-check.mjs)
-    (cd backend && npx tsc -b --noEmit && npm test && node scripts/check-contract.mjs)
+    (cd backend && npx tsc -b --noEmit && npm test && node scripts/check-contract.mjs \
+      && node --experimental-strip-types scripts/static-check.mjs \
+      && node --experimental-strip-types scripts/auth-check.mjs)
     # The MCP server is a third workspace and typechecks with the rest. It has
     # no runtime checks of its own: everything it does is an HTTP call the smoke
     # and query suites already exercise from the other side.
     (cd mcp && npx tsc -b --noEmit)
+    # Known advisories across all three lockfiles. Needs the registry, so it is
+    # skipped when offline rather than failing a check run that is otherwise
+    # fine: CI is the copy of this gate that always has a network.
+    if curl -fsS --max-time 5 https://registry.npmjs.org/ >/dev/null 2>&1; then
+      node scripts/audit-check.mjs
+    else
+      echo "audit-check: skipped, no registry reachable"
+    fi
     db_up
     (cd backend && npm run migrate >/dev/null)
     # Reseed first. The query checks assert absolute counts, and the smoke run

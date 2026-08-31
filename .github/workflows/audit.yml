@@ -1,0 +1,70 @@
+name: audit
+
+# ci.yml runs the same gate, but only when someone pushes. Advisories are
+# published on their own schedule, so a repo with no open PRs can sit on a known
+# high for weeks. This is the sweep that notices, and it files one issue and
+# keeps editing it rather than opening a new one every Monday.
+on:
+  schedule:
+    - cron: '17 6 * * 1'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      # No npm ci: `npm audit` resolves against the lockfile and the registry,
+      # and installing 300-odd packages to read three lockfiles is wasted time.
+      - name: Audit
+        id: audit
+        run: |
+          set +e
+          node scripts/audit-check.mjs 2>&1 | tee "$RUNNER_TEMP/audit.txt"
+          echo "status=${PIPESTATUS[0]}" >> "$GITHUB_OUTPUT"
+
+      - name: Open or update the tracking issue
+        if: steps.audit.outputs.status != '0'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          body="$(
+            printf 'The weekly dependency audit is failing.\n\n```\n'
+            cat "$RUNNER_TEMP/audit.txt"
+            printf '```\n\nRun: %s\n\n' "$RUN_URL"
+            printf 'Fix by bumping the dependency, or waive it with a reason and an\n'
+            printf 'expiry in `.github/audit-allowlist.json`. Dependabot may already\n'
+            printf 'have a PR open for it.\n'
+          )"
+          existing="$(gh issue list --label audit --state open \
+            --json number --jq '.[0].number // empty')"
+          if [ -n "$existing" ]; then
+            gh issue edit "$existing" --body "$body"
+            echo "Updated issue #$existing"
+          else
+            gh issue create --title 'Dependency audit is failing' \
+              --label audit --body "$body"
+          fi
+
+      # A green run closes the issue, so the label is a live signal rather than
+      # a pile of stale reports someone has to read to find out it is fixed.
+      - name: Close the tracking issue
+        if: steps.audit.outputs.status == '0'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          existing="$(gh issue list --label audit --state open \
+            --json number --jq '.[0].number // empty')"
+          if [ -n "$existing" ]; then
+            gh issue close "$existing" --comment 'Audit is clean again.'
+          fi

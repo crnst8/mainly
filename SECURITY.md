@@ -27,7 +27,15 @@ created from the host. Every query is scoped by user id, but the design goal is
    outbound connection to a hostname you type in, so that endpoint is a
    request-forgery surface. Private, loopback, link-local and reserved
    destinations are refused unless you turn this on, which self-hosted setups
-   reaching a mail server over a LAN or a VPN legitimately need to do.
+   reaching a mail server over a LAN or a VPN legitimately need to do. The
+   refusal resolves the name first and compares addresses as bytes, so
+   `localtest.me`, `2130706433` and `::ffff:7f00:1` are refused for the same
+   reason `127.0.0.1` is — see `backend/src/lib/ip.ts`.
+3. **`TRUST_PROXY` defaults to unset, meaning nothing.** `X-Forwarded-For` is a
+   header anyone can send, so the client address is only as trustworthy as
+   whatever is allowed to assert it — and the rate limits are keyed on it. Set
+   it to the number of proxies in front (usually `1`) when you put one there;
+   the app warns at boot if `APP_ORIGIN` is https and this is unset.
 
 ---
 
@@ -41,7 +49,10 @@ them, and logs redact cookies, authorization headers and anything named
 be rotated with a dual-read pass.
 
 **Application sessions** are argon2id-hashed passwords and an httpOnly,
-SameSite cookie, marked `Secure` when `APP_ORIGIN` is an `https://` URL. A
+SameSite cookie, marked `Secure` when `APP_ORIGIN` is an `https://` URL. The
+session id is stored as its sha256, never as the cookie value, so a database
+dump records that sessions existed rather than handing over usable ones — the
+rule `api_tokens` has always followed. Expired rows are swept hourly. A
 plaintext install on a private network cannot use `Secure` — browsers discard
 such a cookie — which is the cost of running one without TLS: anything on that
 network path can read the session. There is deliberately no JWT in `localStorage`: this
@@ -59,8 +70,12 @@ shadow root on top of that.
 non-GET request. **CORS** is locked to `APP_ORIGIN` — never a wildcard, because
 credentials ride on cookies.
 
-**Rate limits** apply to login per IP and to the account-verify endpoint per
-user, that being the endpoint that makes outbound connections on user input.
+**Rate limits** on login are keyed on the *account*, not the caller: there is no
+lockout behind them, so the one thing that must hold is that five attempts a
+minute stays five however many addresses they arrive from. The account-verify
+endpoint — the one that makes outbound connections on user input — is limited
+per user, and everything address-keyed depends on `TRUST_PROXY` being set
+honestly.
 
 **Agent tokens** are scoped (`read`, `write`, `unsubscribe`) and mintable only
 from a shell on the host — a credential granting API access must not be
@@ -72,6 +87,30 @@ capped at 200 messages per call and support `dryRun`.
 one-click (RFC 8058). Anything else comes back as a link for you to open.
 Targets resolving to private or loopback addresses are refused. Every attempt is
 recorded.
+
+## Dependencies
+
+The runtime image is the part that matters — a vulnerable package in `backend`
+is reachable by anything that reaches the app, and `mailparser` in particular
+runs against attacker-supplied bytes on every incoming message.
+
+Three things keep that current, and none of them need anyone to remember:
+
+- **`scripts/audit-check.mjs`** audits all three lockfiles and fails the build on
+  a high in the runtime tree. Build-time-only advisories warn instead of
+  blocking, because a gate that fails every open PR over a transitive dev
+  dependency is a gate someone eventually deletes. It runs in `ci.yml` on every
+  push and in `./dev.sh check` locally.
+- **A weekly sweep** (`.github/workflows/audit.yml`) runs the same script on a
+  schedule and files one issue, because advisories are published whether or not
+  anyone has opened a PR that week. A clean run closes it again.
+- **Dependabot** opens security PRs the moment an advisory lands, and grouped
+  version PRs weekly. Majors come one at a time, since those need a changelog
+  read rather than a rubber stamp.
+
+Waiving one is deliberate: an entry in `.github/audit-allowlist.json` needs a
+reason and an expiry, and the gate fails again once that date passes. There is
+no way to permanently silence an advisory without saying why in the repo.
 
 ## What it does not defend against
 

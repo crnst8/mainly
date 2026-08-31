@@ -1,5 +1,11 @@
 # One image: the API, the sync worker, and the built web UI.
 #
+# The base is pinned by digest, not just by tag. `node:22-alpine` is a moving
+# target — it is rebuilt whenever Alpine or Node ships a patch — so a build from
+# this file last month and one today were not the same image, which is most of
+# what "reproducible" is supposed to mean. The tag is kept alongside the digest
+# because it is the half a human can read; Dependabot updates both together.
+#
 # Self-hosting is the whole reason this file exists. Splitting the frontend onto
 # a CDN and the API behind nginx is a better shape at scale and a worse one for
 # the person who wants mail working before dinner, so the default is a single
@@ -8,7 +14,7 @@
 # an API-only image.
 
 # ── The web UI ───────────────────────────────────────────────────────────────
-FROM node:22-alpine AS web
+FROM node:22-alpine@sha256:c610fcdfb1d5b4740dd70c284ed3cb16bb857e0f7166196e36a5501df7a3aa32 AS web
 WORKDIR /web
 
 COPY frontend/package.json frontend/package-lock.json ./
@@ -25,7 +31,7 @@ ENV VITE_API_MODE=http
 RUN npm run build
 
 # ── The server ───────────────────────────────────────────────────────────────
-FROM node:22-alpine AS server-build
+FROM node:22-alpine@sha256:c610fcdfb1d5b4740dd70c284ed3cb16bb857e0f7166196e36a5501df7a3aa32 AS server-build
 WORKDIR /app
 # argon2 compiles a native module. The toolchain stays in this stage.
 RUN apk add --no-cache python3 make g++
@@ -35,14 +41,14 @@ COPY backend/tsconfig.json ./
 COPY backend/src ./src
 RUN npm run build
 
-FROM node:22-alpine AS deps
+FROM node:22-alpine@sha256:c610fcdfb1d5b4740dd70c284ed3cb16bb857e0f7166196e36a5501df7a3aa32 AS deps
 WORKDIR /app
 RUN apk add --no-cache python3 make g++
 COPY backend/package.json backend/package-lock.json ./
 RUN npm ci --omit=dev --no-audit --no-fund
 
 # ── Runtime ──────────────────────────────────────────────────────────────────
-FROM node:22-alpine AS runtime
+FROM node:22-alpine@sha256:c610fcdfb1d5b4740dd70c284ed3cb16bb857e0f7166196e36a5501df7a3aa32 AS runtime
 WORKDIR /app
 
 ENV NODE_ENV=production \

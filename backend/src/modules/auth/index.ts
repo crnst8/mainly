@@ -12,7 +12,7 @@
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import argon2 from 'argon2';
 import { one, query } from '../../db/index.ts';
-import { randomToken, safeEqual } from '../../lib/crypto.ts';
+import { randomToken, safeEqual, sessionDigest } from '../../lib/crypto.ts';
 import { badRequest, forbidden, unauthorized } from '../../lib/errors.ts';
 import { MIN_APP_PASSWORD } from '../../contract/types.ts';
 import { resolveToken, TOKEN_SCOPES, type TokenScope } from './tokens.ts';
@@ -64,7 +64,29 @@ const cookieOptions = (req: FastifyRequest) => ({
 export async function authRoutes(app: FastifyInstance): Promise<void> {
   app.post<{ Body: { email: string; password: string } }>(
     '/auth/login',
-    { config: { rateLimit: { max: 5, timeWindow: '1 minute' } } },
+    {
+      config: {
+        rateLimit: {
+          max: 5,
+          timeWindow: '1 minute',
+          /* Keyed on the account, not the caller.
+             `req.ip` is only as trustworthy as the proxy configuration behind
+             it, and an IP-keyed limit protects nothing once a caller can pick
+             their own address. The account being attacked cannot be spoofed, so
+             five attempts a minute is five attempts a minute however many
+             sources they arrive from. Lowercased so case rotation is not five
+             more attempts, and falls back to the address for a body with no
+             email in it to key on. */
+          hook: 'preValidation' as const,
+          keyGenerator: (req: FastifyRequest) => {
+            const email = (req.body as { email?: unknown } | undefined)?.email;
+            return typeof email === 'string' && email.trim()
+              ? `login:${email.trim().toLowerCase()}`
+              : `login-ip:${req.ip}`;
+          },
+        },
+      },
+    },
     async (req, reply) => {
       const { email, password } = req.body ?? {};
       if (!email || !password) throw badRequest('Email and password are required');
@@ -84,11 +106,14 @@ export async function authRoutes(app: FastifyInstance): Promise<void> {
 
       if (!user || !ok) throw unauthorized('Wrong email or password');
 
+      /* The cookie value never reaches the database. What is stored is its
+         sha256, so a dump of this table is a list of sessions rather than a set
+         of usable credentials — the same rule api_tokens has always followed. */
       const sessionId = randomToken();
       const csrf = randomToken(24);
       await query(
         'INSERT INTO sessions (id, user_id, csrf_token, expires_at) VALUES ($1, $2, $3, now() + $4::interval)',
-        [sessionId, user.id, csrf, `${SESSION_TTL_MS} milliseconds`],
+        [sessionDigest(sessionId), user.id, csrf, `${SESSION_TTL_MS} milliseconds`],
       );
 
       const cookie = cookieOptions(req);
@@ -105,7 +130,7 @@ export async function authRoutes(app: FastifyInstance): Promise<void> {
 
   app.post('/auth/logout', async (req, reply) => {
     const sid = req.cookies[SESSION_COOKIE];
-    if (sid) await query('DELETE FROM sessions WHERE id = $1', [sid]);
+    if (sid) await query('DELETE FROM sessions WHERE id = $1', [sessionDigest(sid)]);
     reply.clearCookie(SESSION_COOKIE, { path: '/' }).clearCookie(CSRF_COOKIE, { path: '/' });
     return reply.code(204).send();
   });
@@ -172,7 +197,10 @@ export async function sessionRoutes(app: FastifyInstance): Promise<void> {
 
       // Revoke other sessions; API tokens have an independent lifecycle.
       const sid = req.cookies[SESSION_COOKIE] ?? '';
-      await query('DELETE FROM sessions WHERE user_id = $1 AND id <> $2', [req.userId, sid]);
+      await query('DELETE FROM sessions WHERE user_id = $1 AND id <> $2', [
+        req.userId,
+        sessionDigest(sid),
+      ]);
 
       return reply.code(204).send();
     },
@@ -213,7 +241,7 @@ export async function requireAuth(req: FastifyRequest, reply: FastifyReply): Pro
 
   const session = await one<{ user_id: string; csrf_token: string }>(
     'SELECT user_id, csrf_token FROM sessions WHERE id = $1 AND expires_at > now()',
-    [sid],
+    [sessionDigest(sid)],
   );
   if (!session) throw unauthorized('Session expired');
 

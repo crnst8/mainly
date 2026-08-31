@@ -115,6 +115,20 @@ const SANITISE: sanitizeHtml.IOptions = {
       tagName,
       attribs: { ...attribs, target: '_blank', rel: 'noopener noreferrer nofollow' },
     }),
+    /* `data:` has to stay allowed for img — inlineCidImages produces exactly
+       that — but allowedSchemesByTag is scheme-level and cannot say which media
+       types are acceptable. So the narrowing happens here: an image is an image.
+       A browser will not execute `data:text/html` out of an `<img src>` anyway,
+       which is why this is tidiness rather than a hole; the point is that
+       SECURITY.md says "data: URIs except data:image/*" and now that is true. */
+    img: (tagName, attribs) => {
+      const src = attribs.src ?? '';
+      if (/^data:/i.test(src) && !/^data:image\//i.test(src)) {
+        const { src: _dropped, ...rest } = attribs;
+        return { tagName, attribs: rest };
+      }
+      return { tagName, attribs };
+    },
   },
   nonTextTags: ['script', 'style', 'textarea', 'option', 'noscript'],
 };

@@ -4,16 +4,15 @@
  * redirects; record every outcome in `unsubscribe_attempts`.
  */
 
-import { lookup } from 'node:dns/promises';
-import { isIP } from 'node:net';
 import nodemailer from 'nodemailer';
 
 import { config } from '../../config.ts';
 import { one, query } from '../../db/index.ts';
 import { open } from '../../lib/crypto.ts';
 import { badRequest, notFound, upstream } from '../../lib/errors.ts';
+import { assertPublicHost } from '../../lib/net-guard.ts';
 import { ensureBody } from '../../sync/bodies.ts';
-import { isOneClick, isPrivateAddress, parseListUnsubscribe } from './parse.ts';
+import { isOneClick, parseListUnsubscribe } from './parse.ts';
 import type {
   UnsubscribeAttempt,
   UnsubscribeOption,
@@ -152,22 +151,7 @@ export async function assertPublicHttpsUrl(raw: string): Promise<URL> {
   if (url.protocol !== 'https:') {
     throw badRequest('Only HTTPS unsubscribe links are followed.');
   }
-  if (config.imap.allowPrivateHosts) return url;
-
-  const host = url.hostname.replace(/^\[|\]$/g, '');
-  const addresses = isIP(host)
-    ? [{ address: host }]
-    : await lookup(host, { all: true }).catch(() => {
-        throw upstream(`Could not resolve ${host}.`);
-      });
-
-  for (const { address } of addresses) {
-    if (isPrivateAddress(address)) {
-      throw badRequest(
-        `That unsubscribe link points at a private address (${address}). Refusing to follow it.`,
-      );
-    }
-  }
+  await assertPublicHost(url.hostname, 'That unsubscribe link');
   return url;
 }
 

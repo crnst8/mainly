@@ -11,6 +11,7 @@ import { ImapFlow, type Logger } from 'imapflow';
 import { config } from '../config.ts';
 import { open } from '../lib/crypto.ts';
 import { upstream } from '../lib/errors.ts';
+import { assertPublicHost } from '../lib/net-guard.ts';
 
 export interface AccountCredentials {
   id: string;
@@ -40,21 +41,15 @@ function resolveHost(host: string): { host: string; servername: string } {
   return override ? { host: override, servername: host } : { host, servername: host };
 }
 
-/** Guards the verify endpoint, which takes a user-supplied host. */
-export function assertHostAllowed(host: string): void {
-  if (config.imap.allowPrivateHosts) return;
-  const isPrivate =
-    /^(10\.|127\.|0\.|169\.254\.|192\.168\.|100\.(6[4-9]|[7-9]\d|1[01]\d|12[0-7])\.)/.test(host) ||
-    /^172\.(1[6-9]|2\d|3[01])\./.test(host) ||
-    /^(localhost|::1|\[?::1\]?)$/i.test(host) ||
-    host.endsWith('.local') ||
-    host.endsWith('.internal');
-  if (isPrivate) {
-    throw upstream(
-      `Refusing to connect to a private address (${host}). ` +
-        'Set ALLOW_PRIVATE_IMAP_HOSTS=true if this is a self-hosted server on your own network.',
-    );
-  }
+/**
+ * Guards every path that connects to a user-supplied mail server.
+ *
+ * Async because it resolves the name first. It used to be a synchronous match
+ * against the *string*, which meant `2130706433`, `0x7f000001` and any public
+ * DNS record pointing at 127.0.0.1 walked straight through it. See net-guard.ts.
+ */
+export async function assertHostAllowed(host: string): Promise<void> {
+  await assertPublicHost(host, `The mail server ${host}`);
 }
 
 /* ── What the server said no to ────────────────────────────────────────────── */

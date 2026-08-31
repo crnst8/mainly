@@ -19,6 +19,89 @@ Closes #2
 
 ## Unreleased
 
+fix(security): close an SSRF, a rate-limit bypass, and plaintext session ids
+
+A follow-up audit of the code rather than the dependency tree. Nine findings,
+each reproduced before it was changed and re-run after.
+
+**Rate limits were bypassable with one header.** `trustProxy: true` made `req.ip`
+the leftmost `X-Forwarded-For` value — which anyone can set — and every limiter
+keys on `req.ip`. Eight login attempts with a rotating header drew zero 429s.
+There is no account lockout behind that limiter, so it was the only thing
+bounding password guessing. Two changes: `TRUST_PROXY` now says who may assert a
+client address and defaults to nobody, and the login limiter keys on the
+*account* rather than the caller, lowercased, because the account is the thing
+that cannot be spoofed. An https `APP_ORIGIN` with no `TRUST_PROXY` warns at boot.
+
+**`/onboarding/autoconfig` fetched anything it was pointed at.** The domain came
+from `address.split('@')[1]` unvalidated, so `you@127.0.0.1:9200` reached an
+internal port and `you@localtest.me` reached loopback through an ordinary public
+DNS record — with `redirect: 'follow'` on top. Authenticated, but reachable with
+a read-scoped agent token and rate limited by nothing.
+
+**The two SSRF guards disagreed, and the weaker one covered mail servers.** The
+unsubscribe path resolved a name and checked every answer; `assertHostAllowed`
+pattern-matched the string, so `2130706433`, `0x7f000001`, `017700000001` and
+`localtest.me` all walked through it to loopback. There is now one guard,
+`lib/ip.ts` plus `lib/net-guard.ts`: addresses are compared as bytes so no
+spelling helps, and names are resolved before they are judged. It also picks up
+the ranges the old v4 list omitted (198.18/15, 224/4, 192.0.0/24, broadcast) and
+the v6 spellings of loopback the old regex missed — `0:0:0:0:0:0:0:1`,
+`::ffff:7f00:1`, `::127.0.0.1`. Unparseable input is now private rather than
+public, because failing open on input you did not understand is a hole shaped
+like that input.
+
+**Session ids were stored in the clear.** `sessions.id` *was* the cookie, so any
+read of that table — a `pg_dump` in `./backups`, a replica, a support copy — was
+a set of live credentials rather than a record that sessions existed.
+`api_tokens` has always hashed; sessions now do the same, sha256, for the same
+reason (32 random bytes have no dictionary to defend against). Existing sessions
+end at migration `011`: everyone signs in once more. Backups are written 600 into
+a 700 directory instead of inheriting umask 022, and expired rows are swept
+hourly rather than kept forever.
+
+Smaller: `ci.yml` had no `permissions` block while `release.yml` scoped all three
+of its jobs; the Docker base is pinned by digest, with Dependabot watching it so
+the pin cannot rot into a stale base; and `<img src="data:...">` is narrowed to
+`data:image/*`, which is what SECURITY.md already claimed.
+
+Regression cover for all of it: `lib/ip.test.ts` is the table of spellings,
+`lib/crypto.test.ts` covers what must not be recoverable from storage, and
+`scripts/auth-check.mjs` drives the real app and fails if either half of the
+rate-limit fix is reverted. Unit tests 21 → 31.
+
+fix(security): patch three upstream advisories, and stop finding them by hand
+
+Reported from an external security review. `npm audit` was clean on integrity —
+every one of the 355 packages resolved to `registry.npmjs.org` with a matching
+hash — so this was dependency freshness, not anything malicious.
+
+`@fastify/static` 8.3.0 → 10.1.3 closes a path-traversal and two route-guard
+bypasses via non-canonical and percent-encoded paths (GHSA-83w8-p2f5-377r high,
+plus three moderates). This one is only load-bearing when `WEB_ROOT` is set and
+the API also serves the SPA, which is the default single-container install. The
+v10 `setHeaders` callback takes a `FastifyReply` rather than a Node response, so
+the immutable-asset and no-cache-index rules in `server.ts` now go through
+`reply.header`.
+
+`mailparser` 3.9.14 → 3.9.17 pulls `html-to-text` 10.0.1 and `deepmerge-ts` 8,
+closing a stack exhaustion when merging recursive object graphs
+(GHSA-ggr8-5vv4-36mx). This is the one worth having: `simpleParser` runs on
+bytes a stranger mailed you, so a crafted message could stall the sync worker.
+A parser DoS, not RCE and not disclosure.
+
+`nanoid` → 3.3.18 in backend and frontend, transitive through postcss
+(GHSA-2v37-7h3g-55p8). An infinite loop that needs a custom generator and size
+0, which nothing here does — taken because it costs a lockfile bump.
+
+The part that matters more than the three bumps: `scripts/audit-check.mjs` now
+gates all three lockfiles in `ci.yml` and `./dev.sh check`, a weekly workflow
+runs the same script and files one issue when nobody has opened a PR, and
+Dependabot watches all three workspaces. Runtime advisories block; build-time
+ones warn, because a gate that fails every PR over a dev-tree transitive is a
+gate that gets deleted. Waivers live in `.github/audit-allowlist.json` and need
+a reason and an expiry.
+
 feat: text weight setting
 
 Appearance gains a Text weight slider under Text size — Light, Regular, Bold —

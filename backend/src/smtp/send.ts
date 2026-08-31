@@ -100,7 +100,7 @@ export async function sendDraft(userId: string, draftId: string): Promise<SendRe
     throw badRequest('This message has no recipients.');
   }
 
-  assertHostAllowed(row.smtp_host);
+  await assertHostAllowed(row.smtp_host);
 
   // The reply headers come off the message being answered, not off the draft:
   // In-Reply-To and References are what make the recipient's client thread the

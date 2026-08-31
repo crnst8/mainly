@@ -16,6 +16,7 @@
 import { Resolver } from 'node:dns/promises';
 import { one } from '../../db/index.ts';
 import type { Autoconfig } from '../../contract/types.ts';
+import { assertPublicHost } from '../../lib/net-guard.ts';
 
 const resolver = new Resolver({ timeout: 3000, tries: 2 });
 
@@ -23,6 +24,12 @@ export async function discover(address: string, userId: string): Promise<Autocon
   const domain = address.split('@')[1]?.toLowerCase();
   if (!domain) {
     throw new Error('Address has no domain part');
+  }
+  /* Everything below builds hostnames out of this, so it has to be one. Left
+     unchecked, `you@127.0.0.1:9200` became a URL to fetch and `mail.127.0.0.1:9200`
+     a server to suggest. */
+  if (!/^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)+$/.test(domain)) {
+    throw new Error(`${domain} is not a valid mail domain`);
   }
 
   const known = await fromExistingAccount(domain, address, userId);
@@ -98,15 +105,37 @@ async function fromSrv(domain: string, address: string): Promise<Autoconfig | nu
   };
 }
 
+/**
+ * Discovery fetches a host the caller chose, which makes it an SSRF surface and
+ * not merely a convenience.
+ *
+ * Two things keep it one:
+ *
+ *  - Each host is checked before it is dialled, by the same guard the account
+ *    wizard and the unsubscribe path use. Without it, `you@127.0.0.1:9200`
+ *    reached an internal port, and `you@localtest.me` reached loopback through
+ *    a perfectly ordinary public DNS record.
+ *  - Redirects are **not** followed. A public host that answers 302 to
+ *    `http://169.254.169.254/` is the same attack wearing a hat, and the
+ *    unsubscribe path already refuses on these grounds.
+ */
 async function fromMozillaAutoconfig(domain: string, address: string): Promise<Autoconfig | null> {
-  const urls = [
-    `https://autoconfig.${domain}/mail/config-v1.1.xml`,
-    `https://${domain}/.well-known/autoconfig/mail/config-v1.1.xml`,
-  ];
+  const hosts = [`autoconfig.${domain}`, domain];
 
-  for (const url of urls) {
+  for (const host of hosts) {
+    // A host we will not contact is not an error worth reporting: discovery is
+    // best-effort, and the wizard falls through to `guess` either way.
     try {
-      const res = await fetch(url, { signal: AbortSignal.timeout(3000), redirect: 'follow' });
+      await assertPublicHost(host, `The autoconfig host ${host}`);
+    } catch {
+      continue;
+    }
+    const url =
+      host === domain
+        ? `https://${host}/.well-known/autoconfig/mail/config-v1.1.xml`
+        : `https://${host}/mail/config-v1.1.xml`;
+    try {
+      const res = await fetch(url, { signal: AbortSignal.timeout(3000), redirect: 'manual' });
       if (!res.ok) continue;
       const xml = await res.text();
       const parsed = parseAutoconfigXml(xml, address);

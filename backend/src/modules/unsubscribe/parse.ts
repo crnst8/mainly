@@ -5,8 +5,6 @@
  * or an environment. Everything here is a function of its arguments.
  */
 
-import { isIP } from 'node:net';
-
 /**
  * `List-Unsubscribe: <https://x/u/1>, <mailto:stop@x?subject=unsub>`
  *
@@ -45,29 +43,11 @@ export const isOneClick = (raw: string | undefined): boolean =>
   /list-unsubscribe\s*=\s*one-click/i.test(raw ?? '');
 
 /**
- * RFC 1918, loopback, link-local, CGNAT, and the v6 equivalents.
+ * Re-exported, not reimplemented.
  *
- * Used to decide whether an unsubscribe URL out of a stranger's mail is
- * allowed to be contacted at all. Wrong answers here are the whole SSRF story,
- * which is why it is a plain function with its own tests rather than a regex
- * inline at the call site.
+ * This lived here first, as a v4/v6 pattern match with its own tests. It now
+ * comes from lib/ip.ts, which compares bytes rather than text — the two copies
+ * had already drifted, and the one over in sync/pool.ts was the weaker. One
+ * classifier, one set of answers, tested in one place.
  */
-export function isPrivateAddress(ip: string): boolean {
-  if (isIP(ip) === 6) {
-    const v6 = ip.toLowerCase();
-    if (v6 === '::1' || v6 === '::') return true;
-    // fc00::/7 unique-local, fe80::/10 link-local.
-    if (/^f[cd]/.test(v6) || /^fe[89ab]/.test(v6)) return true;
-    const mapped = /^::ffff:(\d+\.\d+\.\d+\.\d+)$/.exec(v6);
-    return mapped ? isPrivateAddress(mapped[1]!) : false;
-  }
-  if (isIP(ip) !== 4) return false;
-  const [a, b] = ip.split('.').map(Number) as [number, number];
-  if (a === 10 || a === 127 || a === 0) return true;
-  if (a === 172 && b >= 16 && b <= 31) return true;
-  if (a === 192 && b === 168) return true;
-  if (a === 169 && b === 254) return true;
-  // 100.64.0.0/10 — carrier-grade NAT, and what Tailscale hands out.
-  if (a === 100 && b >= 64 && b <= 127) return true;
-  return false;
-}
+export { isPrivateAddress } from '../../lib/ip.ts';

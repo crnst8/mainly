@@ -1,0 +1,11 @@
+{
+  "$comment": [
+    "Advisories scripts/audit-check.mjs should not block on.",
+    "Every entry needs a reason and an expiry: a waiver is a decision to revisit,",
+    "not a decision to forget. Past the expiry the gate fails again on purpose.",
+    "id      GHSA identifier, exactly as it appears in the advisory URL.",
+    "reason  Why this one cannot reach us, or what we are waiting on upstream.",
+    "expires YYYY-MM-DD. Keep it short - a quarter is usually plenty."
+  ],
+  "allow": []
+}

@@ -52,7 +52,10 @@ export async function build() {
         '*.newPassword',
       ],
     },
-    trustProxy: true,
+    /* Not `true`. See config.ts — `true` lets any caller pick their own
+       `req.ip`, which turns every rate limit into one bucket per forged
+       header. `TRUST_PROXY` opts in when a proxy really is in front. */
+    trustProxy: config.trustProxy,
     bodyLimit: 25 * 1024 * 1024, // attachments
   });
 
@@ -65,6 +68,17 @@ export async function build() {
     app.log.warn(
       `WEB_ROOT=${config.webRoot} has no index.html — serving the API only. ` +
         'Build the frontend (npm run build in frontend/) or unset WEB_ROOT.',
+    );
+  }
+
+  /* An https origin with no proxy declared is the shape that silently loses the
+     client's IP: every request looks like it came from the proxy, so the login
+     limiter throttles everyone as one caller. Worth one line at boot. */
+  if (config.appOrigin.startsWith('https://') && config.trustProxy === false) {
+    app.log.warn(
+      'APP_ORIGIN is https but TRUST_PROXY is unset, so rate limits key on the ' +
+        "proxy's address rather than the client's. Set TRUST_PROXY=1 if exactly " +
+        'one reverse proxy sits in front of this process.',
     );
   }
 
@@ -187,10 +201,10 @@ export async function build() {
       // Vite hashes asset filenames, so those are immutable. index.html is not
       // hashed and must never be cached, or a deploy is invisible until the
       // browser feels like revalidating.
-      setHeaders(res, path) {
-        if (path.endsWith('index.html')) res.setHeader('cache-control', 'no-cache');
+      setHeaders(reply, path) {
+        if (path.endsWith('index.html')) reply.header('cache-control', 'no-cache');
         else if (path.includes('/assets/')) {
-          res.setHeader('cache-control', 'public, max-age=31536000, immutable');
+          reply.header('cache-control', 'public, max-age=31536000, immutable');
         }
       },
     });
@@ -234,6 +248,29 @@ export async function build() {
   return app;
 }
 
+/**
+ * Expired sessions are deleted, not merely ignored.
+ *
+ * Every lookup already filters on `expires_at > now()`, so leaving them costs
+ * nothing at read time — but they are rows about who signed in and when, kept
+ * forever, and they end up in every backup taken from here on. An hour is far
+ * more often than the table needs and still nothing next to a sync tick.
+ */
+const SESSION_SWEEP_MS = 3600_000;
+
+function startSessionSweep(): NodeJS.Timeout {
+  const sweep = () => {
+    void pool
+      .query('DELETE FROM sessions WHERE expires_at <= now()')
+      .catch((err: Error) => console.error({ err: err.message }, 'session sweep failed'));
+  };
+  sweep();
+  const timer = setInterval(sweep, SESSION_SWEEP_MS);
+  // Never the reason the process stays alive.
+  timer.unref();
+  return timer;
+}
+
 async function main() {
   await migrate();
 
@@ -245,6 +282,9 @@ async function main() {
     );
   }
 
+  // Sessions belong to the API, so the role that serves it owns the sweep.
+  const sessionSweep = servesHttp ? startSessionSweep() : null;
+
   if (runsSync) {
     startSyncLoop();
     // Push, on top of the poll. The poll is the floor — IDLE is bounded and not
@@ -255,6 +295,7 @@ async function main() {
 
   const shutdown = async (signal: string) => {
     console.log(`${signal} received, shutting down`);
+    if (sessionSweep) clearInterval(sessionSweep);
     await stopSyncLoop();
     await stopIdle();
     // Drain in-flight requests before closing the pool underneath them.

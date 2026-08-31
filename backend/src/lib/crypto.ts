@@ -9,7 +9,13 @@
  * They are never logged, never serialised, and never returned by any endpoint.
  */
 
-import { createCipheriv, createDecipheriv, randomBytes, timingSafeEqual } from 'node:crypto';
+import {
+  createCipheriv,
+  createDecipheriv,
+  createHash,
+  randomBytes,
+  timingSafeEqual,
+} from 'node:crypto';
 import { config } from '../config.ts';
 
 const ALGO = 'aes-256-gcm';
@@ -54,3 +60,14 @@ export function safeEqual(a: string, b: string): boolean {
 }
 
 export const randomToken = (bytes = 32): string => randomBytes(bytes).toString('base64url');
+
+/**
+ * What goes in `sessions.id`.
+ *
+ * sha256 and not argon2, for the reason api_tokens hashes the same way: the
+ * input is 32 bytes from `randomBytes`, so there is no dictionary to defend
+ * against and a slow hash would only be slow. It runs on every authenticated
+ * request, which is the other half of that argument.
+ */
+export const sessionDigest = (cookieValue: string): string =>
+  createHash('sha256').update(cookieValue, 'utf8').digest('hex');

@@ -16,6 +16,19 @@ const num = (key: string, fallback: number): number => {
   return n;
 };
 
+/**
+ * `TRUST_PROXY`: unset/`false` → trust nobody. A number → that many hops. `true`
+ * → the whole chain. Anything else → a comma-separated list of proxy addresses
+ * or CIDRs, which is what Fastify hands to proxy-addr.
+ */
+const trustProxy = (): boolean | number | string[] => {
+  const v = process.env.TRUST_PROXY?.trim();
+  if (!v || v === 'false' || v === '0') return false;
+  if (v === 'true') return true;
+  if (/^\d+$/.test(v)) return Number(v);
+  return v.split(',').map((s) => s.trim()).filter(Boolean);
+};
+
 const bool = (key: string, fallback: boolean): boolean => {
   const v = process.env[key];
   return v === undefined ? fallback : v === 'true' || v === '1';
@@ -61,6 +74,18 @@ export const config = {
   logLevel: process.env.LOG_LEVEL ?? 'info',
 
   appOrigin: process.env.APP_ORIGIN ?? 'http://localhost:5273',
+
+  /* Who is allowed to tell us the client's IP.
+     `X-Forwarded-For` is a header anyone can send. Trusting it unconditionally
+     — which is what `trustProxy: true` does — makes `req.ip` attacker-chosen,
+     and every rate limit keyed on it becomes one bucket per forged header. The
+     login limiter is the one that matters: five attempts a minute is no limit
+     at all if a new header is a new client.
+     So: trust nothing by default, and let a deployment that really is behind a
+     proxy say so. `1` is right for one reverse proxy; a CIDR list is right when
+     the proxy's address is known. `true` is available and is only correct when
+     nothing can reach the port except the proxy. */
+  trustProxy: trustProxy(),
 
   /* Serve the built frontend from this process.
      Set, the API and the SPA are one origin and one container, which is the

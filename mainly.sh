@@ -682,9 +682,14 @@ cmd_backup() {
   load_env
   local dir="${1:-./backups}"
   mkdir -p "$dir"
+  # A dump holds account rows, preferences and drafts. Under the usual umask it
+  # would land 644 — readable by every account on the host — so the directory and
+  # the file are narrowed before anything is written into them.
+  chmod 700 "$dir"
   local file="$dir/mainly-$(date -u +%Y%m%d-%H%M%S).sql.gz"
   step "Dumping the database to $file"
-  compose exec -T db pg_dump -U mainly mainly | gzip > "$file"
+  ( umask 077; compose exec -T db pg_dump -U mainly mainly | gzip > "$file" )
+  chmod 600 "$file"
   ok "Wrote $file ($(du -h "$file" | cut -f1))"
   say ""
   say "${DIM}  Message metadata is a cache — your mail server still holds the mail.${RESET}"

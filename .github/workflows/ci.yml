@@ -1,13 +1,18 @@
 name: ci
 
 # The same gate ./dev.sh check runs locally: typecheck across three workspaces,
-# the contract hash, the two executable-spec suites, unit tests, then smoke and
-# query correctness against a real Postgres.
+# the dependency audit, the contract hash, the two executable-spec suites, unit
+# tests, then smoke and query correctness against a real Postgres.
 on:
   push:
     branches: [main]
   pull_request:
   workflow_dispatch:
+
+# Reads the repo and nothing else. release.yml scopes each of its jobs already;
+# without this one, CI ran on whatever the repository default happens to be.
+permissions:
+  contents: read
 
 jobs:
   check:
@@ -60,6 +65,11 @@ jobs:
           (cd backend  && npx tsc -b --noEmit)
           (cd mcp      && npx tsc -b --noEmit)
 
+      # Advisories, not freshness: high in the runtime tree fails, dev-only warns.
+      # Waivers live in .github/audit-allowlist.json.
+      - name: Audit
+        run: node scripts/audit-check.mjs
+
       # The one thing that makes the duplicated contract safe.
       - name: Contract
         run: node scripts/check-contract.mjs
@@ -70,6 +80,14 @@ jobs:
           node scripts/url-check.mjs
           node scripts/search-check.mjs
         working-directory: frontend
+
+      # No Postgres needed: these build the app and inject, so they belong with
+      # the fast checks rather than behind the service container.
+      - name: SPA serving and login limits
+        run: |
+          node --experimental-strip-types scripts/static-check.mjs
+          node --experimental-strip-types scripts/auth-check.mjs
+        working-directory: backend
 
       - name: Unit tests
         run: npm test
