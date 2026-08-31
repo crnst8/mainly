@@ -1,3 +1,15 @@
+## 1.2.4 — 2026-08-31
+
+- Closed the three reported upstream advisories (@fastify/static 8.3.0→10.1.3, which needed a setHeaders migration to the v10 FastifyReply API; mailparser 3.9.14→3.9.17; nanoid→3.3.18 in both trees)
+- Automated via scripts/audit-check.mjs gates all three lockfiles in CI and dev.sh check, blocking on runtime highs and warning on build-time ones, backed by a weekly sweep, Dependabot across four ecosystems, and waivers that require a reason and an expiry.
+- TRUST_PROXY now defaults to trusting nobody and the login limiter keys on the account
+- One byte-comparing guard (lib/ip.ts + lib/net-guard.ts) replaced both old ones
+- Sessions are sha256 at rest via migration 011, plus CI permissions
+- Digest-pinned base image Dependabot watches
+- 600-mode backups
+- Hourly session sweeps
+- Narrowed data: image URIs
+
 ## 1.2.3 — 2026-08-29
 
 - feat: text weight setting
