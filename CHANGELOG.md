@@ -1,3 +1,18 @@
+## 1.3.0 — 2026-09-03
+
+**Create & modify inboxes server-side from the app**
+
+This is an optional feature where you may create and remove addresses on your own mail server from mainly.
+
+- Permission lives on the mail server in /etc/mainly-provision.conf, which mainly cannot write.
+- An SSH key pinned to one forced command runs `scripts/mainly-provision` there, so nothing in mainly's database can widen
+what that file allows.
+- Six grants per domain, none granted by default. Deleting the stored mail is a separate grant from removing an address.
+- Writes are locked, atomic, and rolled back if the Postfix and Dovecot files fall out of parity.
+
+Usable from Settings → Mail server, ./mainly.sh domain, or an MCP agentwith the new provision scope.
+Adds migration 012 and a domain_ops audit trail.
+
 ## Unreleased
 
 - **Domain control**: optional, per-domain, opt-in mailbox provisioning. Create and remove addresses on your own Postfix + Dovecot server from Settings → Mail server, the `./mainly.sh domain` CLI, or an MCP agent. Off unless a domain is connected, which requires shell access on the host.
