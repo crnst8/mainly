@@ -488,6 +488,151 @@ server.registerTool(
     }),
 );
 
+/* ── Domain control ─────────────────────────────────────────────────────────*/
+
+/*
+ * These exist only when someone has connected a domain from a shell on the
+ * host, and they do only what that domain was granted. On most installs
+ * `mail_domains` returns nothing, which is the correct and complete answer —
+ * the tools are still registered so the reason is a sentence rather than an
+ * unknown-tool error.
+ */
+
+server.registerTool(
+  'mail_domains',
+  {
+    title: 'List domains this install can change',
+    description:
+      'Domains whose mail server this install may write to, and what it may do to each. ' +
+      'Empty on any install that has not deliberately opted in, which is most of them. ' +
+      'Call this first: the `effective` list is what will actually work, and the id it ' +
+      'returns is what the other domain tools take.',
+    inputSchema: {},
+    annotations: { readOnlyHint: true, idempotentHint: true },
+  },
+  async () =>
+    guard(async () => {
+      const domains = await client.domains();
+      if (!domains.length) {
+        return text(
+          'No domains are connected, so no address can be created or removed from here.\n' +
+            'Connecting one needs shell access on the host:\n' +
+            '  ./mainly.sh domain add you@example.com example.com --host mail.example.com --key ~/.ssh/id_ed25519',
+        );
+      }
+      return text(
+        domains
+          .map(
+            (d) =>
+              `${d.domain}  [${d.status}]  id: ${d.id}\n` +
+              `  can: ${d.effective.join(', ') || 'nothing — nothing has been granted'}`,
+          )
+          .join('\n'),
+      );
+    }),
+);
+
+server.registerTool(
+  'mail_addresses',
+  {
+    title: 'List addresses on a connected domain',
+    description:
+      'The addresses the mail server actually has for a domain, which is not the same as the ' +
+      'mailboxes this app syncs — an address can exist on the server with no account here. ' +
+      'Needs the `list` grant. Get the domain id from mail_domains.',
+    inputSchema: {
+      domainId: z.string().describe('From mail_domains.'),
+    },
+    annotations: { readOnlyHint: true, idempotentHint: true },
+  },
+  async ({ domainId }) =>
+    guard(async () => {
+      const boxes = await client.domainMailboxes(domainId);
+      if (!boxes.length) return text('No addresses on that domain.');
+      return text(
+        boxes.map((b) => `${b.address}${b.linked ? '  (synced here)' : ''}`).join('\n'),
+      );
+    }),
+);
+
+server.registerTool(
+  'mail_create_address',
+  {
+    title: 'Create an address on the mail server',
+    description:
+      'Creates a real mailbox on your mail server. Needs a token with the `provision` scope ' +
+      'and the `create` grant on that domain. The password is shown once in the reply and is ' +
+      'not recoverable — the server stores only a hash — so pass it on to whoever needs it. ' +
+      'Every attempt is recorded.',
+    inputSchema: {
+      domainId: z.string().describe('From mail_domains.'),
+      localpart: z
+        .string()
+        .describe('The part before the @. Lowercase letters, digits, dot, underscore, plus, hyphen.'),
+      password: z
+        .string()
+        .optional()
+        .describe('Omit to have a strong one generated, which is the better default.'),
+    },
+    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: true },
+  },
+  async ({ domainId, localpart, password }) =>
+    guard(async () => {
+      const secret = password ?? generatePassword();
+      const created = await client.createMailbox(domainId, { localpart, password: secret });
+      return text(
+        `Created ${created.address}.\n\npassword: ${secret}\n\n` +
+          'Shown once. The server keeps only a hash of it.',
+      );
+    }),
+);
+
+server.registerTool(
+  'mail_delete_address',
+  {
+    title: 'Remove an address from the mail server',
+    description:
+      'Stops an address receiving mail. By default the delivered mail stays on disk and ' +
+      'recreating the address brings it back. `purge: true` also destroys that mail, cannot be ' +
+      'undone, and needs its own grant — so it also needs `confirm: true`. ' +
+      'Needs a token with the `provision` scope.',
+    inputSchema: {
+      domainId: z.string().describe('From mail_domains.'),
+      localpart: z.string().describe('The part before the @.'),
+      purge: z
+        .boolean()
+        .default(false)
+        .describe('Also delete every message already delivered. Permanent.'),
+      confirm: z.boolean().default(false).describe('Required when `purge` is true.'),
+    },
+    annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: false, openWorldHint: true },
+  },
+  async ({ domainId, localpart, purge, confirm }) =>
+    guard(async () => {
+      if (purge && !confirm) {
+        return failure(
+          'Purging destroys every message ever delivered to that address and cannot be undone. ' +
+            'Re-run with confirm: true, or drop `purge` to retire the address and keep the mail.',
+        );
+      }
+      await client.deleteMailbox(domainId, localpart, purge);
+      return text(
+        purge
+          ? `Removed ${localpart} and destroyed its stored mail.`
+          : `Removed ${localpart}. Its mail is still on the server.`,
+      );
+    }),
+);
+
+/** Unambiguous alphabet: no l/I/1, no O/0. This gets read off a screen and
+ *  typed into a phone's mail settings. */
+function generatePassword(): string {
+  const alphabet = 'abcdefghijkmnopqrstuvwxyzABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+  const bytes = new Uint8Array(20);
+  crypto.getRandomValues(bytes);
+  return Array.from(bytes, (b) => alphabet[b % alphabet.length]).join('');
+}
+
 /* ── Go ─────────────────────────────────────────────────────────────────────*/
 
 await server.connect(new StdioServerTransport());

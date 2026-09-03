@@ -12,7 +12,6 @@
 <img src="site/sc.png#gh-light-mode-only" width="820" alt="Twelve mailboxes across seven domains in one message list">
 <img src="site/sc-dark.png#gh-dark-mode-only" width="820" alt="Twelve mailboxes across seven domains in one message list">
 
-[Mainly isn't a mail server, but you can get started with the stack I use here.](https://github.com/crnst8/mailstack)
 
 </div>
 
@@ -87,7 +86,7 @@ This is a **webmail client** specifically built for those that self-host multipl
 - makes sort, grouping, density and the row contents **yours to set**
 - is **keyboard-first**, with `⌘K` for anything you have not memorised
 
- **It does not run a mail server, and it never changes one**
+
 
  The backend mirrors message *metadata* into Postgres and serves every read from
 that index. IMAP is used only to sync in, sync out, and fetch a body on demand.
@@ -96,10 +95,7 @@ that index. IMAP is used only to sync in, sync out, and fetch a body on demand.
 - Labels, snooze and saved views are implemented in the app precisely so that nothing has to be reconfigured on the mail host.
 - A unified query across twelve mailboxes is 5–20ms of SQL instead of 3–8 seconds of sequential `SELECT`/`SEARCH`/`FETCH`.
 
-Everything else follows from that: cross-account search, faceting, grouping and
-priority sort are all just SQL, and the list still answers when the mail server
-is unreachable. The reasoning, the costs and the rejected alternatives are in
-**[docs/architecture.md](docs/architecture.md)**.
+
 
 ---
 
@@ -190,6 +186,23 @@ and is not required to use the app in a browser tab.
 ### MCP
 An MCP server exposing the same mailbox over the same HTTP API with scoped
 tokens. See [docs/mcp.md](docs/mcp.md).
+
+### Domain control
+Optional, and off unless you turn it on. If you run your own Postfix + Dovecot
+server, mainly can create and remove addresses on it — per domain, and only the
+operations you allow.
+
+```sh
+./mainly.sh domain add   you@example.com example.com --host mail.example.com --key ~/.ssh/k
+./mainly.sh domain grant you@example.com example.com list,create
+```
+
+The permission that decides lives on the mail server, in a file mainly cannot
+write, so connecting a domain never grants more than you set there. Setup takes
+about 15 minutes per server and is written out step by step in
+**[docs/domain-control.md](docs/domain-control.md)**; the server-side script has
+its own reference in
+[scripts/mainly-provision.md](scripts/mainly-provision.md).
 
 ---
 

@@ -666,6 +666,13 @@ cmd_token() {
   compose exec app node dist/cli/token.js "$@"
 }
 
+# Connecting a domain hands this install an SSH key to a mail server, so it is
+# done from a shell here rather than through the API. Same bar as `token`.
+cmd_domain() {
+  require_docker
+  compose exec -T app node dist/cli/domain.js "$@"
+}
+
 cmd_update() {
   require_docker
   load_env
@@ -742,6 +749,9 @@ ${BOLD}mainly${RESET} — self-hosted multi-domain mail client
   ./mainly.sh backup [dir]       pg_dump to ./backups by default.
   ./mainly.sh restore <file>     Replace the database from a backup. Asks first.
   ./mainly.sh token <args>       Mint or revoke an API token for an agent.
+  ./mainly.sh domain <args>      Optional: let this install create and remove
+                                 addresses on your mail server. Off until you
+                                 connect a domain and grant something.
   ./mainly.sh reset              Delete the database volume. Asks twice.
 
   ${BOLD}./mainly.sh start --build${RESET}      Build from this checkout instead of pulling.
@@ -761,6 +771,7 @@ case "${1:-}" in
   logs)    shift; cmd_logs "$@" ;;
   user)    shift; cmd_user "$@" ;;
   token)   shift; cmd_token "$@" ;;
+  domain)  shift; cmd_domain "$@" ;;
   update)  cmd_update ;;
   backup)  shift; cmd_backup "$@" ;;
   restore) shift; cmd_restore "$@" ;;

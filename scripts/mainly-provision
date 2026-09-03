@@ -1,0 +1,640 @@
+#!/bin/sh
+#
+# mainly-provision — the server half of domain control.
+#
+# Creates and removes virtual mailboxes on a flat-file Postfix + Dovecot host,
+# on behalf of a mainly install that reaches this machine over SSH.
+#
+# It is the only thing that key is allowed to run:
+#
+#   # ~mailprov/.ssh/authorized_keys
+#   command="sudo /usr/local/sbin/mainly-provision --stdin",restrict ssh-ed25519 AAAA… mainly
+#
+# `restrict` denies port forwarding, agent forwarding, a PTY, X11 and ~/.ssh/rc,
+# so the key cannot open a shell or tunnel — it can only cause this script to
+# run. What the script will then do is decided here and in /etc/mainly-provision.conf,
+# neither of which the calling application can write.
+#
+# That separation is the point. If the application's database is compromised and
+# every domain in it is flipped to full access, this script still refuses any
+# domain or verb its own config does not list. Authority does not live where the
+# application can reach it.
+#
+# ── Design notes ────────────────────────────────────────────────────────────
+#
+# POSIX sh, and no dependencies beyond coreutils, flock, and the mail server's
+# own tools. This runs as root and edits root-owned files, so a bug here is a
+# root bug: it is kept small enough to audit in one sitting, which is the whole
+# reason for putting it on the server rather than letting the client send
+# arbitrary commands.
+#
+# Every token is validated against a character class before it reaches a file
+# or a command line. Nothing is ever interpolated into a shell.
+#
+# Secrets arrive on stdin, never in argv — /proc/*/cmdline is world-readable.
+#
+# ── Invocation ──────────────────────────────────────────────────────────────
+#
+#   mainly-provision --stdin      verb line on stdin, then any secret     (SSH)
+#   mainly-provision <verb…>      verb in argv                    (testing, cron)
+#
+# --stdin is what the forced command uses, because `sudo` resets the
+# environment and would drop $SSH_ORIGINAL_COMMAND. $SSH_ORIGINAL_COMMAND is
+# still honoured when it survives, for operators who prefer to keep it with
+# `Defaults:mailprov env_keep += "SSH_ORIGINAL_COMMAND"`.
+#
+# ── Grammar ─────────────────────────────────────────────────────────────────
+#
+#   probe
+#   list        <domain>
+#   create      <localpart> <domain>            password on stdin
+#   delete      <localpart> <domain> [--purge]
+#   password    <localpart> <domain>            password on stdin
+#   alias-list  <domain>
+#   alias-add   <alias> <domain> <target@domain>
+#   alias-del   <alias> <domain>
+#
+# Output is one JSON object on stdout, always, success or failure.
+
+set -eu
+
+VERSION=1
+
+# ── Exit codes ──────────────────────────────────────────────────────────────
+EX_OK=0
+EX_GRAMMAR=64      # malformed request, or a token that failed validation
+EX_DOMAIN=65       # domain is not in this host's allowlist
+EX_VERB=66         # verb is not granted for that domain
+EX_STATE=67        # already exists, or does not exist
+EX_BUSY=69         # another operation holds the lock
+EX_INTERNAL=70     # something failed; state was rolled back
+
+# ── Defaults, overridable in the config file ────────────────────────────────
+CONF=${MAINLY_PROVISION_CONF:-/etc/mainly-provision.conf}
+VMAPS=/etc/postfix/vmaps
+USERS=/etc/dovecot/users
+ALIASES=/etc/postfix/virtual_aliases
+MAILROOT=/var/mail
+SCHEME=SHA512-CRYPT
+# `postfix` runs `postfix reload`; `none` skips it; anything else must be the
+# absolute path of an executable, run with no arguments. Not a shell string — a
+# host where Postfix runs in a container needs a different command, not a
+# different language. Only root can write the config, so this grants nothing
+# the script does not already have.
+RELOAD=postfix
+LOCKFILE=/run/lock/mainly-provision.lock
+BACKUP_KEEP=20
+
+STAMP=$(date +%Y%m%d%H%M%S)
+ROLLBACK_ARMED=
+
+# ── JSON ────────────────────────────────────────────────────────────────────
+#
+# Values are either fixed strings from this file or tokens that have already
+# passed validation, so escaping only has to survive the diagnostic text in
+# `detail` — which can contain a mail server's own error message.
+
+json_escape() {
+  # Backslash and quote escaped; control characters dropped rather than encoded,
+  # because nothing downstream needs them and \u00xx is more code to get wrong.
+  printf '%s' "$1" | tr -d '\000-\010\013\014\016-\037' | sed -e 's/\\/\\\\/g' -e 's/"/\\"/g' -e ':a' -e 'N' -e '$!ba' -e 's/\n/\\n/g'
+}
+
+fail() {
+  # fail <exit-code> <error> [detail]
+  code=$1; err=$2; detail=${3:-}
+  printf '{"ok":false,"version":%s,"error":"%s","detail":"%s"}\n' \
+    "$VERSION" "$(json_escape "$err")" "$(json_escape "$detail")"
+  exit "$code"
+}
+
+# ── Validation ──────────────────────────────────────────────────────────────
+#
+# Deliberately narrower than RFC 5321. An address this refuses can still be
+# created by hand; an address this accepts is one that cannot surprise a shell,
+# a Postfix map, or a passwd-file's colon-separated fields.
+
+valid_localpart() {
+  case "$1" in
+    '' | *[!a-z0-9._+-]* ) return 1 ;;
+    [!a-z0-9]* | *[!a-z0-9] ) return 1 ;;
+  esac
+  [ "${#1}" -le 64 ] || return 1
+  return 0
+}
+
+valid_domain() {
+  case "$1" in
+    '' | *[!a-z0-9.-]* ) return 1 ;;
+    [!a-z0-9]* | *[!a-z0-9] ) return 1 ;;
+    *..* | *.-* | *-.* ) return 1 ;;
+    *.* ) ;;
+    * ) return 1 ;;
+  esac
+  [ "${#1}" -le 253 ] || return 1
+  return 0
+}
+
+valid_address() {
+  case "$1" in
+    *@* ) ;;
+    * ) return 1 ;;
+  esac
+  valid_localpart "${1%%@*}" || return 1
+  valid_domain "${1#*@}" || return 1
+  return 0
+}
+
+# ── Config ──────────────────────────────────────────────────────────────────
+#
+# Read with awk rather than sourced. Sourcing a config file as shell is how a
+# config file becomes an execution path.
+
+# The config decides which domains may be touched, and `reload` in it names a
+# program this script runs as root. Anyone who can write it therefore owns this
+# script. `sudo` refuses a group-writable sudoers file and sshd refuses a
+# group-writable authorized_keys for exactly this reason; so does this.
+#
+# Skipped when MAINLY_PROVISION_CONF points somewhere else, which is the
+# documented way to exercise the script against scratch copies as an ordinary
+# user — that path is a test fixture and grants nothing.
+assert_config_trustworthy() {
+  [ -n "${MAINLY_PROVISION_CONF:-}" ] && return 0
+
+  owner=$(stat -c %u "$CONF" 2>/dev/null || stat -f %u "$CONF" 2>/dev/null || echo unknown)
+  mode=$(stat -c %a "$CONF" 2>/dev/null || stat -f %Lp "$CONF" 2>/dev/null || echo unknown)
+  case "$owner" in
+    0 ) ;;
+    * ) fail $EX_INTERNAL untrusted_config "$CONF must be owned by root" ;;
+  esac
+  # Group and other are the last two octal digits, and either write bit is
+  # fatal. Both are tested: `*[2367]` alone looks only at the final digit, so
+  # 0664 — group-writable, the likelier mistake — would have gone through.
+  case "$mode" in
+    *[2367] | *[2367][0-7] )
+      fail $EX_INTERNAL untrusted_config "$CONF is writable by more than root (mode $mode)" ;;
+  esac
+  return 0
+}
+
+load_config() {
+  [ -r "$CONF" ] || fail $EX_INTERNAL no_config "$CONF is missing or unreadable"
+  assert_config_trustworthy
+
+  for key in vmaps users aliases mailroot scheme reload lock backup_keep; do
+    value=$(awk -v k="$key" '$1==k { print $2; exit }' "$CONF")
+    [ -n "$value" ] || continue
+    case "$key" in
+      vmaps)       VMAPS=$value ;;
+      users)       USERS=$value ;;
+      aliases)     ALIASES=$value ;;
+      mailroot)    MAILROOT=$value ;;
+      scheme)      SCHEME=$value ;;
+      reload)      RELOAD=$value ;;
+      lock)        LOCKFILE=$value ;;
+      backup_keep) BACKUP_KEEP=$value ;;
+    esac
+  done
+
+  case "$RELOAD" in
+    postfix | none ) ;;
+    /* ) [ -x "$RELOAD" ] || fail $EX_INTERNAL bad_reload "$RELOAD is not executable" ;;
+    * ) fail $EX_INTERNAL bad_reload 'reload must be "postfix", "none", or an absolute path' ;;
+  esac
+}
+
+# Long-running Postfix processes cache their maps, so a changed vmaps needs
+# this. Dovecot re-reads a passwd-file from its mtime and needs nothing.
+reload_mta() {
+  case "$RELOAD" in
+    none ) return 0 ;;
+    postfix ) postfix reload >/dev/null 2>&1 ;;
+    * ) "$RELOAD" >/dev/null 2>&1 ;;
+  esac
+}
+
+# Grants for a domain, comma separated. Empty output and status 1 when the
+# domain is not listed at all — the two are different answers and the caller
+# reports them differently.
+grants_for() {
+  awk -v d="$1" '$1=="domain" && $2==d { print $3; f=1; exit } END { exit !f }' "$CONF"
+}
+
+require_grant() {
+  # require_grant <domain> <verb>
+  granted=$(grants_for "$1") \
+    || fail $EX_DOMAIN domain_not_allowed "$1 is not listed in $CONF"
+  case ",$granted," in
+    *",$2,"* ) return 0 ;;
+  esac
+  fail $EX_VERB verb_not_granted "$1 grants: ${granted:-none}"
+}
+
+# ── The write transaction ───────────────────────────────────────────────────
+
+take_lock() {
+  # Non-blocking. A queue of provisioning requests is a queue of surprises;
+  # "try again" is a better answer than "eventually, in an order nobody chose".
+  exec 9>"$LOCKFILE" 2>/dev/null || fail $EX_INTERNAL lock_unavailable "cannot open $LOCKFILE"
+  flock -n 9 || fail $EX_BUSY lock_busy 'another provisioning operation is in progress'
+}
+
+backup_one() {
+  [ -f "$1" ] || return 0
+  cp -p "$1" "$1.bak.$STAMP"
+}
+
+prune_backups() {
+  [ "$BACKUP_KEEP" -gt 0 ] 2>/dev/null || return 0
+  ls -1t "$1".bak.* 2>/dev/null | tail -n +$((BACKUP_KEEP + 1)) | while IFS= read -r old; do
+    rm -f "$old"
+  done
+}
+
+arm_rollback() {
+  backup_one "$VMAPS"
+  backup_one "$USERS"
+  backup_one "$ALIASES"
+  ROLLBACK_ARMED=1
+}
+
+# Always returns 0. It is called immediately before `fail`, and under `set -e` a
+# non-zero return here would end the script before the error JSON was printed —
+# leaving the caller with an exit code and no explanation of what was restored.
+rollback() {
+  [ -n "$ROLLBACK_ARMED" ] || return 0
+  for f in "$VMAPS" "$USERS" "$ALIASES"; do
+    if [ -f "$f.bak.$STAMP" ]; then
+      cp -p "$f.bak.$STAMP" "$f" || true
+    fi
+  done
+  postmap "hash:$VMAPS" 2>/dev/null || true
+  if [ -f "$ALIASES" ]; then
+    postmap "hash:$ALIASES" 2>/dev/null || true
+  fi
+  reload_mta || true
+  return 0
+}
+
+# Replace a file's contents from stdin without ever leaving it half-written.
+# `cp -p` first so the temp file inherits owner and mode; the redirect then
+# truncates and fills it, and `mv` within the same directory is atomic.
+write_atomic() {
+  target=$1
+  tmp="$target.tmp.$$"
+  cp -p "$target" "$tmp"
+  cat > "$tmp"
+  mv -f "$tmp" "$target"
+}
+
+# The invariant. An address in vmaps but not in users accepts mail nobody can
+# read; an address in users but not in vmaps is a login to a mailbox that will
+# never receive. Either is worse than the change not happening.
+parity_ok() {
+  left=$(awk 'NF && $1 !~ /^#/ { print $1 }' "$VMAPS" | sort)
+  right=$(awk -F: 'NF && $1 !~ /^#/ { print $1 }' "$USERS" | sort)
+  [ "$left" = "$right" ]
+}
+
+commit_maps() {
+  # commit_maps <reload-postfix?>
+  postmap "hash:$VMAPS" || { rollback; fail $EX_INTERNAL postmap_failed "postmap rejected $VMAPS"; }
+  parity_ok || { rollback; fail $EX_INTERNAL parity_broken "$VMAPS and $USERS disagree; both restored"; }
+  if [ "${1:-yes}" = yes ]; then
+    reload_mta || { rollback; fail $EX_INTERNAL reload_failed 'the mail server would not reload'; }
+  fi
+  prune_backups "$VMAPS"
+  prune_backups "$USERS"
+  prune_backups "$ALIASES"
+}
+
+# ── Lookups ─────────────────────────────────────────────────────────────────
+
+in_vmaps() { awk -v a="$1" 'NF && $1==a { f=1; exit } END { exit !f }' "$VMAPS"; }
+in_users() { awk -F: -v a="$1" 'NF && $1==a { f=1; exit } END { exit !f }' "$USERS"; }
+in_aliases() { awk -v a="$1" 'NF && $1==a { f=1; exit } END { exit !f }' "$ALIASES"; }
+
+# ── Password on stdin ───────────────────────────────────────────────────────
+
+read_password() {
+  # One line, IFS emptied so leading and trailing spaces survive. `read` returns
+  # non-zero on a final line with no newline, which is a normal way for a client
+  # to send this, so the status is ignored and the value is what is checked.
+  PASSWORD=''
+  IFS= read -r PASSWORD || true
+  [ -n "$PASSWORD" ] || fail $EX_GRAMMAR no_password 'this verb reads a password on stdin'
+  [ "${#PASSWORD}" -ge 8 ] || fail $EX_GRAMMAR password_too_short 'at least 8 characters'
+  [ "${#PASSWORD}" -le 1024 ] || fail $EX_GRAMMAR password_too_long 'at most 1024 characters'
+}
+
+# Sets $HASHED rather than printing it. A function that prints its result cannot
+# also call `fail`: the caller's `$( )` would capture the error JSON instead of
+# emitting it, and `exit` inside a command substitution only ends the subshell.
+hash_password() {
+  # Fed twice because `doveadm pw` prompts for confirmation. On stdin, so it
+  # never appears in argv where any user on this host could read it.
+  HASHED=$(printf '%s\n%s\n' "$PASSWORD" "$PASSWORD" | doveadm pw -s "$SCHEME" 2>/dev/null) \
+    || fail $EX_INTERNAL hash_failed "doveadm pw -s $SCHEME failed"
+  # A colon would split the passwd-file's fields; an empty result would create a
+  # passwordless mailbox. Neither has ever been seen from doveadm, and neither
+  # is survivable, so both are checked.
+  case "$HASHED" in
+    '' | *:* ) fail $EX_INTERNAL hash_failed 'doveadm pw returned something unusable' ;;
+  esac
+}
+
+# ── Verbs ───────────────────────────────────────────────────────────────────
+
+do_probe() {
+  domains=$(awk '$1=="domain" { printf "%s{\"domain\":\"%s\",\"grants\":[", sep, $2;
+                                n=split($3, g, ",");
+                                for (i=1; i<=n; i++) printf "%s\"%s\"", (i>1?",":""), g[i];
+                                printf "]}"; sep="," }' "$CONF")
+  pf=$(postconf -h mail_version 2>/dev/null || echo unknown)
+  dc=$(dovecot --version 2>/dev/null | awk '{print $1}' || echo unknown)
+
+  # Reported here because a host whose maps are already out of parity cannot be
+  # provisioned at all — every write would roll itself back at the commit check.
+  # Better learned from a probe than from a failed create.
+  if parity_ok; then parity=true; else parity=false; fi
+
+  printf '{"ok":true,"version":%s,"action":"probe","postfix":"%s","dovecot":"%s","scheme":"%s","parity":%s,"domains":[%s]}\n' \
+    "$VERSION" "$(json_escape "$pf")" "$(json_escape "$dc")" "$(json_escape "$SCHEME")" "$parity" "$domains"
+}
+
+do_list() {
+  domain=$1
+  valid_domain "$domain" || fail $EX_GRAMMAR bad_domain "$domain"
+  require_grant "$domain" list
+
+  boxes=$(awk -F'[ \t]+' -v d="@$domain" '
+    NF && $1 !~ /^#/ && index($1, d) == length($1) - length(d) + 1 {
+      printf "%s\"%s\"", sep, substr($1, 1, index($1, "@") - 1); sep=","
+    }' "$VMAPS")
+
+  printf '{"ok":true,"version":%s,"action":"list","domain":"%s","mailboxes":[%s]}\n' \
+    "$VERSION" "$domain" "$boxes"
+}
+
+do_create() {
+  local_part=$1; domain=$2
+  valid_localpart "$local_part" || fail $EX_GRAMMAR bad_localpart "$local_part"
+  valid_domain "$domain" || fail $EX_GRAMMAR bad_domain "$domain"
+  require_grant "$domain" create
+  address="$local_part@$domain"
+
+  read_password
+  take_lock
+
+  if in_vmaps "$address"; then fail $EX_STATE already_exists "$address is already in $VMAPS"; fi
+  if in_users "$address"; then fail $EX_STATE already_exists "$address is already in $USERS"; fi
+
+  hash_password
+  arm_rollback
+
+  # The right-hand side is a formality: virtual_transport hands delivery to
+  # Dovecot's LMTP, which resolves the path from mail_location, so vmaps is a
+  # recipient-validity check and nothing else. It is written in the shape the
+  # rest of the file already uses.
+  { cat "$VMAPS"; printf '%s %s/\n' "$address" "$local_part"; } | write_atomic "$VMAPS"
+  { cat "$USERS"; printf '%s:%s:::::\n' "$address" "$HASHED"; } | write_atomic "$USERS"
+
+  commit_maps yes
+
+  printf '{"ok":true,"version":%s,"action":"create","address":"%s"}\n' "$VERSION" "$address"
+}
+
+do_delete() {
+  local_part=$1; domain=$2; purge=$3
+  valid_localpart "$local_part" || fail $EX_GRAMMAR bad_localpart "$local_part"
+  valid_domain "$domain" || fail $EX_GRAMMAR bad_domain "$domain"
+  require_grant "$domain" delete
+  if [ "$purge" = yes ]; then require_grant "$domain" purge; fi
+  address="$local_part@$domain"
+
+  take_lock
+
+  if ! in_vmaps "$address" && ! in_users "$address"; then
+    fail $EX_STATE not_found "$address is not configured on this host"
+  fi
+
+  # Everything that could refuse the purge is settled *before* the address is
+  # removed. The purge itself has to come last — mail is not destroyed until
+  # the address is definitely retired — but a check that runs down there turns
+  # a refusal into a half-done operation: address gone, mail kept, caller told
+  # it failed. Decide first, act later.
+  maildir=
+  if [ "$purge" = yes ]; then
+    maildir="$MAILROOT/$domain/$local_part"
+    case "$maildir" in
+      "$MAILROOT"/*/* ) ;;
+      * ) fail $EX_INTERNAL bad_maildir "$maildir is not under $MAILROOT" ;;
+    esac
+    # `rm -rf` on a symlink removes the link and not its target, so this is
+    # already safe from deleting anything else — but a Maildir that is a
+    # symlink is not one this script created, and quietly discarding somebody's
+    # deliberate arrangement is worse than refusing to.
+    if [ -L "$maildir" ]; then
+      fail $EX_INTERNAL bad_maildir "$maildir is a symlink; remove it by hand"
+    fi
+  fi
+
+  arm_rollback
+
+  awk -v a="$address" '!(NF && $1==a)' "$VMAPS" | write_atomic "$VMAPS"
+  awk -F: -v a="$address" '!(NF && $1==a)' "$USERS" | write_atomic "$USERS"
+
+  commit_maps yes
+
+  # Only after the address is gone, and only when asked. Retiring an address and
+  # destroying its mail are different decisions, so they are different grants.
+  # Checked above, before anything was written.
+  purged=false
+  if [ "$purge" = yes ] && [ -d "$maildir" ]; then
+    rm -rf -- "$maildir"
+    purged=true
+  fi
+
+  printf '{"ok":true,"version":%s,"action":"delete","address":"%s","purged":%s}\n' \
+    "$VERSION" "$address" "$purged"
+}
+
+do_password() {
+  local_part=$1; domain=$2
+  valid_localpart "$local_part" || fail $EX_GRAMMAR bad_localpart "$local_part"
+  valid_domain "$domain" || fail $EX_GRAMMAR bad_domain "$domain"
+  require_grant "$domain" password
+  address="$local_part@$domain"
+
+  read_password
+  take_lock
+
+  in_users "$address" || fail $EX_STATE not_found "$address is not in $USERS"
+
+  hash_password
+  arm_rollback
+
+  # awk rather than sed: the replacement contains $ and / from the crypt hash,
+  # and getting those past sed's replacement syntax is a bug waiting to be
+  # written. awk treats it as data.
+  awk -F: -v a="$address" -v h="$HASHED" \
+    '{ if (NF && $1==a) print a ":" h ":::::"; else print }' "$USERS" | write_atomic "$USERS"
+
+  # vmaps did not change, so Postfix has nothing to re-read. Dovecot notices
+  # the passwd-file's new mtime by itself.
+  parity_ok || { rollback; fail $EX_INTERNAL parity_broken "$VMAPS and $USERS disagree; both restored"; }
+  prune_backups "$USERS"
+
+  printf '{"ok":true,"version":%s,"action":"password","address":"%s"}\n' "$VERSION" "$address"
+}
+
+do_alias_list() {
+  domain=$1
+  valid_domain "$domain" || fail $EX_GRAMMAR bad_domain "$domain"
+  require_grant "$domain" alias
+  [ -f "$ALIASES" ] || fail $EX_INTERNAL no_alias_file "$ALIASES does not exist"
+
+  rows=$(awk -v d="@$domain" '
+    NF && $1 !~ /^#/ && index($1, d) == length($1) - length(d) + 1 {
+      printf "%s{\"alias\":\"%s\",\"target\":\"%s\"}", sep, $1, $2; sep=","
+    }' "$ALIASES")
+
+  printf '{"ok":true,"version":%s,"action":"alias-list","domain":"%s","aliases":[%s]}\n' \
+    "$VERSION" "$domain" "$rows"
+}
+
+do_alias_add() {
+  local_part=$1; domain=$2; target=$3
+  valid_localpart "$local_part" || fail $EX_GRAMMAR bad_localpart "$local_part"
+  valid_domain "$domain" || fail $EX_GRAMMAR bad_domain "$domain"
+  valid_address "$target" || fail $EX_GRAMMAR bad_target "$target"
+  require_grant "$domain" alias
+  address="$local_part@$domain"
+
+  take_lock
+  if in_aliases "$address"; then fail $EX_STATE already_exists "$address is already an alias"; fi
+
+  arm_rollback
+  { cat "$ALIASES"; printf '%s %s\n' "$address" "$target"; } | write_atomic "$ALIASES"
+
+  postmap "hash:$ALIASES" || { rollback; fail $EX_INTERNAL postmap_failed "postmap rejected $ALIASES"; }
+  reload_mta || { rollback; fail $EX_INTERNAL reload_failed 'the mail server would not reload'; }
+  prune_backups "$ALIASES"
+
+  printf '{"ok":true,"version":%s,"action":"alias-add","address":"%s","target":"%s"}\n' \
+    "$VERSION" "$address" "$target"
+}
+
+do_alias_del() {
+  local_part=$1; domain=$2
+  valid_localpart "$local_part" || fail $EX_GRAMMAR bad_localpart "$local_part"
+  valid_domain "$domain" || fail $EX_GRAMMAR bad_domain "$domain"
+  require_grant "$domain" alias
+  address="$local_part@$domain"
+
+  take_lock
+  if ! in_aliases "$address"; then fail $EX_STATE not_found "$address is not an alias"; fi
+
+  arm_rollback
+  awk -v a="$address" '!(NF && $1==a)' "$ALIASES" | write_atomic "$ALIASES"
+
+  postmap "hash:$ALIASES" || { rollback; fail $EX_INTERNAL postmap_failed "postmap rejected $ALIASES"; }
+  reload_mta || { rollback; fail $EX_INTERNAL reload_failed 'the mail server would not reload'; }
+  prune_backups "$ALIASES"
+
+  printf '{"ok":true,"version":%s,"action":"alias-del","address":"%s"}\n' "$VERSION" "$address"
+}
+
+# ── Request parsing ─────────────────────────────────────────────────────────
+#
+# The verb comes from argv, from $SSH_ORIGINAL_COMMAND, or from the first line
+# of stdin — in that order. Whichever it is, every token is validated below
+# before it reaches anything, so the source of the request changes nothing
+# about how much it is trusted.
+
+if [ $# -gt 0 ] && [ "$1" != --stdin ]; then
+  :
+elif [ -n "${SSH_ORIGINAL_COMMAND:-}" ]; then
+  # Word splitting with globbing disabled. No expansion happens on the result
+  # of an expansion in POSIX sh, so this cannot execute anything.
+  set -f
+  IFS=' 	
+'
+  # shellcheck disable=SC2086
+  set -- $SSH_ORIGINAL_COMMAND
+  set +f
+  unset IFS
+else
+  line=''
+  IFS= read -r line || true
+  [ -n "$line" ] || fail $EX_GRAMMAR no_command 'no verb in argv, $SSH_ORIGINAL_COMMAND, or on stdin'
+  set -f
+  IFS=' 	'
+  # shellcheck disable=SC2086
+  set -- $line
+  set +f
+  unset IFS
+fi
+
+[ $# -gt 0 ] || fail $EX_GRAMMAR no_command 'empty request'
+
+# Reject anything outside the character class before the grammar is even
+# considered. After this loop no argument can contain a shell metacharacter, a
+# newline, a colon, or a space.
+for arg in "$@"; do
+  case "$arg" in
+    *[!a-zA-Z0-9._+@-]* ) fail $EX_GRAMMAR bad_token 'a token contained a character that is never valid here' ;;
+  esac
+done
+
+verb=$1
+shift
+
+load_config
+
+case "$verb" in
+  probe)
+    [ $# -eq 0 ] || fail $EX_GRAMMAR bad_arity 'probe takes no arguments'
+    do_probe ;;
+
+  list)
+    [ $# -eq 1 ] || fail $EX_GRAMMAR bad_arity 'list <domain>'
+    do_list "$1" ;;
+
+  create)
+    [ $# -eq 2 ] || fail $EX_GRAMMAR bad_arity 'create <localpart> <domain>'
+    do_create "$1" "$2" ;;
+
+  delete)
+    purge=no
+    case "${3:-}" in
+      # `--purge` never reaches the validation loop above — it is stripped from
+      # SSH_ORIGINAL_COMMAND's split as a plain token, and `-` is in the class.
+      --purge | purge ) purge=yes ;;
+      '' ) ;;
+      * ) fail $EX_GRAMMAR bad_arity 'delete <localpart> <domain> [--purge]' ;;
+    esac
+    [ $# -ge 2 ] && [ $# -le 3 ] || fail $EX_GRAMMAR bad_arity 'delete <localpart> <domain> [--purge]'
+    do_delete "$1" "$2" "$purge" ;;
+
+  password)
+    [ $# -eq 2 ] || fail $EX_GRAMMAR bad_arity 'password <localpart> <domain>'
+    do_password "$1" "$2" ;;
+
+  alias-list)
+    [ $# -eq 1 ] || fail $EX_GRAMMAR bad_arity 'alias-list <domain>'
+    do_alias_list "$1" ;;
+
+  alias-add)
+    [ $# -eq 3 ] || fail $EX_GRAMMAR bad_arity 'alias-add <alias> <domain> <target@domain>'
+    do_alias_add "$1" "$2" "$3" ;;
+
+  alias-del)
+    [ $# -eq 2 ] || fail $EX_GRAMMAR bad_arity 'alias-del <alias> <domain>'
+    do_alias_del "$1" "$2" ;;
+
+  * )
+    fail $EX_GRAMMAR unknown_verb "$verb" ;;
+esac
+
+exit $EX_OK

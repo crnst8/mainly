@@ -13,12 +13,7 @@ and pull requests are welcome; so are forks, if the opinions do not suit you.
   "clone, one command" is a bug.
 - **Small, focused fixes** with a clear before and after.
 
-## Things that probably will not land
 
-A mail server. Calendar, contacts or chat. Open registration. Multi-tenancy.
-Read receipts or tracking of any kind. A rewrite in another framework. Anything
-requiring the mail server to be reconfigured — labels, snooze and rules are
-app-side precisely so that they do not.
 
 ---
 

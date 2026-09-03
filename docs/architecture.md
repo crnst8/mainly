@@ -51,7 +51,7 @@ It is not an optimisation; it is the only way the product works.
 
 | Constraint | Consequence |
 | --- | --- |
-| The mail server is **read-only infrastructure**. No config changes, no plugins, no Sieve, no ManageSieve. | Labels, snooze, rules and saved views are implemented app-side. Labels are the app's own, not IMAP keywords, unless you opt in. |
+| The mail server is **read-only infrastructure by default**. No config changes, no plugins, no Sieve, no ManageSieve. | Labels, snooze, rules and saved views are implemented app-side. Labels are the app's own, not IMAP keywords, unless you opt in. One deliberate exception: [domain control](domain-control.md) can create and remove addresses, per domain, off unless connected, and gated by an allowlist on the mail server that this application cannot write. |
 | No admin API and no master user on a typical Dovecot install. | One credential is held per mailbox, encrypted at rest. |
 | The app host is usually not the mail host. | Mail traffic crosses a network, which is why `MAIL_HOST_OVERRIDE` exists — see [self-hosting](self-hosting.md#mail-servers-on-a-private-network). |
 | Small shared hardware is the normal case. | Sync is bounded: a connection pool cap, a global concurrency cap and backpressure. Never "one always-on worker per account". |

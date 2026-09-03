@@ -28,12 +28,21 @@ import { one, query } from '../../db/index.ts';
 /**
  * What a token is allowed to do.
  *
- * Three, not thirty. A scope nobody can explain in one line is a scope nobody
- * sets correctly.
+ * Four, not thirty. A scope nobody can explain in one line is a scope nobody
+ * sets correctly, so each of these gets one:
+ *
+ *   read         search and read mail
+ *   write        flag, label, move, archive, trash
+ *   unsubscribe  act on List-Unsubscribe
+ *   provision    create and remove addresses on the mail server
+ *
+ * `provision` is deliberately not folded into `write`. Filing mail and minting
+ * an address are not the same authority, and an agent that does the first has
+ * no reason to hold the second.
  */
-export type TokenScope = 'read' | 'write' | 'unsubscribe';
+export type TokenScope = 'read' | 'write' | 'unsubscribe' | 'provision';
 
-export const TOKEN_SCOPES: TokenScope[] = ['read', 'write', 'unsubscribe'];
+export const TOKEN_SCOPES: TokenScope[] = ['read', 'write', 'unsubscribe', 'provision'];
 
 export const isTokenScope = (v: string): v is TokenScope =>
   (TOKEN_SCOPES as string[]).includes(v);

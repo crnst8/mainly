@@ -21,6 +21,11 @@ import type {
   MessageAction,
   Preferences,
   SavedView,
+  DomainGrant,
+  DomainOp,
+  DomainProbe,
+  ManagedDomain,
+  ManagedMailbox,
   ServerConfig,
   ServerEvent,
   Session,
@@ -145,6 +150,27 @@ export class HttpApi implements MailApi {
     method: 'PUT',
     body: JSON.stringify(prefs),
   });
+
+  /* Domain control */
+  listDomains = () => this.req<ManagedDomain[]>('/domains');
+  probeDomain = (id: Id) => this.post<DomainProbe>(`/domains/${id}/probe`);
+  updateDomainGrants = (id: Id, grants: DomainGrant[]) =>
+    this.patch<ManagedDomain>(`/domains/${id}`, { grants });
+  listDomainMailboxes = (id: Id) => this.req<ManagedMailbox[]>(`/domains/${id}/mailboxes`);
+  createDomainMailbox = (id: Id, input: { localpart: string; password: string }) =>
+    this.post<ManagedMailbox>(`/domains/${id}/mailboxes`, input);
+  deleteDomainMailbox = (id: Id, localpart: string, purge: boolean) =>
+    this.req<void>(
+      // Spelled out in the query rather than assumed from a body, so a request
+      // that loses its body cannot become the destructive version of itself.
+      `/domains/${id}/mailboxes/${encodeURIComponent(localpart)}?purge=${purge ? 'true' : 'false'}`,
+      { method: 'DELETE' },
+    );
+  setDomainMailboxPassword = (id: Id, localpart: string, password: string) =>
+    this.post<void>(`/domains/${id}/mailboxes/${encodeURIComponent(localpart)}/password`, {
+      password,
+    });
+  listDomainOps = (limit = 100) => this.req<DomainOp[]>(`/domain-ops?limit=${limit}`);
 
   /* Sync */
   syncState = () => this.req<SyncState>('/sync');

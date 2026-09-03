@@ -229,6 +229,9 @@ case "${1:-start}" in
   # credential that grants API access must not be mintable through the API.
   token) db_up; shift; (cd backend && node --experimental-strip-types src/cli/token.ts "$@") ;;
 
+# Domain control. Same reasoning as `token`: it installs a credential.
+domain) db_up; shift; (cd backend && node --experimental-strip-types src/cli/domain.ts "$@") ;;
+
   check)
     install_deps
     (cd frontend && npx tsc -b --noEmit && node scripts/url-check.mjs && node scripts/search-check.mjs)
@@ -309,6 +312,7 @@ usage: ./dev.sh <command>
   user <email>       create a login
   seed               (re)create the fixture ./dev.sh check asserts against
   token <args>       mint or revoke an agent token
+  domain <args>      connect a mail server domain, and grant what it may do
   check              typecheck + contract + url + search + smoke + query
   logs [api|db|web]
 EOF

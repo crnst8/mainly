@@ -813,3 +813,195 @@
   color: var(--text-muted);
   background: var(--bg-sunken);
 }
+
+/* ── Mail server ─────────────────────────────────────────────────────────────
+   Domain control. One card per connected domain: identity and reachability at
+   the top, the grant switches under it, then the addresses those grants make
+   reachable. The order is the decision order — you cannot sensibly look at the
+   address list before deciding whether this install may touch it. */
+
+.settings__note--error {
+  color: var(--danger);
+}
+
+.settings__code {
+  font-family: var(--font-mono);
+  font-size: var(--t-sm);
+  line-height: 1.6;
+  padding: var(--s-4);
+  margin: var(--s-3) 0;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--bg-sunken);
+  /* A command someone will copy, so it must not be reflowed into something
+     that no longer runs. */
+  white-space: pre;
+  overflow-x: auto;
+}
+
+.mailsrv {
+  border: 1px solid var(--line);
+  border-radius: var(--radius-lg);
+  padding: var(--s-5);
+}
+
+.mailsrv__head {
+  display: flex;
+  align-items: center;
+  gap: var(--s-3);
+  padding-bottom: var(--s-4);
+  border-bottom: 1px solid var(--line);
+  margin-bottom: var(--s-2);
+}
+
+.mailsrv__id {
+  flex: 1;
+  min-width: 0;
+}
+
+.mailsrv__domain {
+  font-weight: 600;
+}
+
+.mailsrv__host {
+  font-family: var(--font-mono);
+  font-size: var(--t-xs);
+  color: var(--text-muted);
+  /* Long user@host on a narrow pane must not push the status and Check button
+     off the card. */
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.mailsrv__status {
+  font-size: var(--t-xs);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  padding: 2px var(--s-2);
+  border-radius: var(--radius-sm);
+  background: var(--bg-sunken);
+  color: var(--text-muted);
+}
+
+.mailsrv__status[data-status='ok'] {
+  color: var(--accent);
+  background: var(--accent-soft);
+}
+
+.mailsrv__status[data-status='unreachable'],
+.mailsrv__status[data-status='error'] {
+  color: var(--danger);
+}
+
+/* A grant the mail server will not permit. Shown, and shown off — a switch
+   that silently vanished would leave someone hunting for a setting that is
+   working exactly as intended. */
+.mailsrv__blocked {
+  display: grid;
+  place-items: center;
+  width: var(--ctl-h);
+  height: var(--ctl-h);
+  color: var(--text-muted);
+  opacity: 0.5;
+}
+
+.mailsrv__boxes {
+  margin-top: var(--s-5);
+  padding-top: var(--s-4);
+  border-top: 1px solid var(--line);
+}
+
+.mailsrv__boxhead {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--s-4);
+  margin-bottom: var(--s-3);
+}
+
+.mailsrv__box {
+  display: flex;
+  align-items: center;
+  gap: var(--s-3);
+  padding: var(--s-2) 0;
+  border-bottom: 1px solid var(--line-soft);
+}
+
+.mailsrv__box:last-child {
+  border-bottom: 0;
+}
+
+.mailsrv__boxaddr {
+  flex: 1;
+  min-width: 0;
+  font-family: var(--font-mono);
+  font-size: var(--t-sm);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.mailsrv__linked {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: var(--t-xs);
+  color: var(--text-muted);
+}
+
+.mailsrv__pwrow {
+  display: flex;
+  gap: var(--s-2);
+}
+
+.mailsrv__pwrow .input {
+  flex: 1;
+  font-family: var(--font-mono);
+}
+
+/* ── History ─────────────────────────────────────────────────────────────── */
+
+.mailsrv__op {
+  display: grid;
+  grid-template-columns: 7rem 1fr auto;
+  gap: var(--s-2) var(--s-3);
+  padding: var(--s-2) 0;
+  font-size: var(--t-sm);
+  border-bottom: 1px solid var(--line-soft);
+}
+
+.mailsrv__opwhen,
+.mailsrv__opwho {
+  color: var(--text-muted);
+  font-size: var(--t-xs);
+}
+
+.mailsrv__opwhat {
+  font-family: var(--font-mono);
+  overflow-wrap: anywhere;
+}
+
+.mailsrv__op[data-failed] .mailsrv__opwhat {
+  color: var(--danger);
+}
+
+/* The reason it failed, spanning all three columns — it is a sentence, not a
+   field, and truncating it into a cell would hide the only useful part. */
+.mailsrv__opdetail {
+  grid-column: 1 / -1;
+  font-size: var(--t-xs);
+  color: var(--text-muted);
+  overflow-wrap: anywhere;
+}
+
+@media (max-width: 560px) {
+  .mailsrv__op {
+    grid-template-columns: 1fr auto;
+  }
+
+  .mailsrv__opwhat {
+    grid-column: 1 / -1;
+    order: 3;
+  }
+}

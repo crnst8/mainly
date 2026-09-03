@@ -20,14 +20,15 @@ import { createToken, isTokenScope, listTokens, revokeToken, TOKEN_SCOPES } from
 import type { TokenScope } from '../modules/auth/tokens.ts';
 
 const USAGE = `usage:
-  token create <email> <name> [--scopes read,write,unsubscribe] [--days 90]
+  token create <email> <name> [--scopes read,write,unsubscribe,provision] [--days 90]
   token list   <email>
   token revoke <email> <token-id>
 
 scopes:
   read         search, read messages, list accounts and folders
   write        flag, label, move, archive, trash, snooze
-  unsubscribe  act on List-Unsubscribe (implies nothing else)`;
+  unsubscribe  act on List-Unsubscribe (implies nothing else)
+  provision    create and remove addresses on a connected mail server`;
 
 /** `--key value` and `--key=value`, both. Positionals come back in order. */
 function parseArgs(argv: string[]): { positional: string[]; flags: Map<string, string> } {

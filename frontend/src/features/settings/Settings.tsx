@@ -24,6 +24,7 @@ import {
   User,
 } from '@/components/icons';
 import { Button, Field, IconButton, Row, Segmented, Spinner, Toggle } from '@/components/ui';
+import { MailServer } from './MailServer';
 import { SHORTCUTS } from '@/lib/keyboard';
 import { relative } from '@/lib/format';
 import { senderDomains, senderImageUrl } from '@/lib/sender';
@@ -51,6 +52,10 @@ const TABS = [
   { id: 'senders', label: 'Senders', icon: <User size={15} /> },
   { id: 'search', label: 'Search', icon: <SearchIcon size={15} /> },
   { id: 'accounts', label: 'Accounts', icon: <User size={15} /> },
+  // Distinct from Accounts above: that is the forty-five mailboxes this app
+  // reads, this is the one machine it may write to. Named for the machine
+  // because "Domains" already means the sidebar grouping.
+  { id: 'mailserver', label: 'Mail server', icon: <Globe size={15} /> },
   { id: 'mobile', label: 'Mobile', icon: <Phone size={15} /> },
   { id: 'keyboard', label: 'Keyboard', icon: <Command size={15} /> },
   // Last, and named for the screen it maps to rather than "Account" — in this
@@ -171,6 +176,7 @@ export function Settings() {
             {tab === 'senders' && <SenderSettings />}
             {tab === 'search' && <SearchSettings />}
             {tab === 'accounts' && <Accounts focus={raw.startsWith('account:') ? raw.slice(8) : null} />}
+            {tab === 'mailserver' && <MailServer />}
             {tab === 'mobile' && <MobileSettings />}
             {tab === 'keyboard' && <Keyboard />}
             {tab === 'signin' && <SignIn />}

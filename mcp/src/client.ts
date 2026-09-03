@@ -72,6 +72,24 @@ export interface Folder {
   total: number;
 }
 
+/** A domain this install may write to. Only present when someone has opted in;
+ *  most installs have none. */
+export interface ManagedDomain {
+  id: string;
+  domain: string;
+  status: string;
+  /** What will actually work — this install's grants intersected with what the
+   *  mail server itself permits. The only field worth branching on. */
+  effective: string[];
+}
+
+export interface ManagedMailbox {
+  localpart: string;
+  address: string;
+  /** True when this install already syncs the address. */
+  linked: boolean;
+}
+
 export interface ListResult {
   messages: MessageSummary[];
   nextCursor: string | null;
@@ -219,6 +237,31 @@ export class MailClient {
   folders(accountId?: string): Promise<Folder[]> {
     const qs = accountId ? `?accountId=${encodeURIComponent(accountId)}` : '';
     return this.request<Folder[]>(`/folders${qs}`);
+  }
+
+  /* ── Domain control ─────────────────────────────────────────────────────── */
+
+  domains(): Promise<ManagedDomain[]> {
+    return this.request<ManagedDomain[]>('/domains');
+  }
+
+  domainMailboxes(id: string): Promise<ManagedMailbox[]> {
+    return this.request<ManagedMailbox[]>(`/domains/${encodeURIComponent(id)}/mailboxes`);
+  }
+
+  createMailbox(id: string, body: { localpart: string; password: string }): Promise<ManagedMailbox> {
+    return this.request<ManagedMailbox>(`/domains/${encodeURIComponent(id)}/mailboxes`, {
+      method: 'POST',
+      body: JSON.stringify(body),
+    });
+  }
+
+  deleteMailbox(id: string, localpart: string, purge: boolean): Promise<void> {
+    return this.request<void>(
+      `/domains/${encodeURIComponent(id)}/mailboxes/${encodeURIComponent(localpart)}` +
+        `?purge=${purge ? 'true' : 'false'}`,
+      { method: 'DELETE' },
+    );
   }
 
   /* ── Writes ─────────────────────────────────────────────────────────────── */

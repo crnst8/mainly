@@ -34,10 +34,13 @@ through the API.
 | `read` | Search, read messages, list accounts and folders. |
 | `write` | Mark, flag, label, move, archive, trash, snooze. |
 | `unsubscribe` | Act on `List-Unsubscribe`. Deliberately separate from `write`. |
+| `provision` | Create and remove addresses on a connected mail server. Deliberately separate from `write`: filing mail and minting an address are not the same authority. Does nothing unless a domain has been connected — see [domain control](domain-control.md). |
 
-**Adding an account, changing a mailbox password and deleting an account are
-closed to tokens at any scope.** Those handle credentials, so a person has to be
-present.
+**Adding an account, changing a mailbox password, deleting an account, and
+connecting a domain are closed to tokens at any scope.** Those handle
+credentials, so a person has to be present — and in the last case, a credential
+that widens what the application can do must not be installable by something
+that already holds API access.
 
 ---
 

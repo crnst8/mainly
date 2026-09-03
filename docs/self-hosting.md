@@ -92,6 +92,23 @@ inherits a colour from its domain. Both are what make a twelve-account unified
 list readable, and both are worth setting deliberately rather than leaving at
 the default.
 
+### Creating the address itself
+
+Everything above assumes the address already exists on your mail server. If you
+run that server, mainly can optionally create and remove addresses on it too —
+per domain, off unless you connect one, and only the operations you allow.
+
+The permission that matters lives on the mail server, in a file this application
+cannot write, so connecting a domain never hands mainly more than you granted
+there. Setup is about fifteen minutes per server, written out step by step in
+[domain control](domain-control.md).
+
+```sh
+./mainly.sh domain list you@yourdomain.com
+```
+
+If you do not run your own mail server, skip it. Nothing else depends on it.
+
 ---
 
 ## Installing it as an app

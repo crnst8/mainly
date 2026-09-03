@@ -22,9 +22,14 @@ import type {
   BulkOnboardInput,
   BulkOnboardResult,
   BulkOnboardRow,
+  DomainGrant,
+  DomainOp,
+  DomainProbe,
   Draft,
   Folder,
   Id,
+  ManagedDomain,
+  ManagedMailbox,
   ListQuery,
   ListResult,
 
@@ -715,6 +720,92 @@ export class MockApi implements MailApi {
     this.prefs = structuredClone(prefs);
     localStorage.setItem('mail.prefs', JSON.stringify(prefs));
     return structuredClone(prefs);
+  }
+
+  /* ── Domain control ─────────────────────────────────────────────────────── */
+
+  /**
+   * One connected domain, so the screen can be explored, and every write
+   * refused, because there is no mail server behind this.
+   *
+   * The alternative — an empty list — hides the feature from the demo
+   * entirely. Faking a successful create would be worse: someone would believe
+   * an address exists. Reads are shaped like the real thing; writes say plainly
+   * what they are.
+   */
+  private demoDomain: ManagedDomain = {
+    id: 'domain-demo',
+    domain: 'example.com',
+    driver: 'ssh',
+    config: { host: 'mail.example.com', port: 22, user: 'mailprov', hostKey: 'sha256:demo' },
+    grants: ['list', 'create', 'delete'],
+    serverGrants: ['list', 'create'],
+    effective: ['list', 'create'],
+    status: 'ok',
+    error: null,
+    lastCheckedAt: new Date().toISOString(),
+  };
+
+  private noServer(): never {
+    throw new Error('The demo has no mail server behind it, so nothing can be changed here.');
+  }
+
+  async listDomains(): Promise<ManagedDomain[]> {
+    await sleep(LATENCY.fast);
+    return [structuredClone(this.demoDomain)];
+  }
+
+  async probeDomain(): Promise<DomainProbe> {
+    await sleep(LATENCY.slow);
+    return {
+      status: 'ok',
+      error: null,
+      postfix: '3.8.6',
+      dovecot: '2.3.21',
+      parity: true,
+      serverGrants: ['list', 'create'],
+    };
+  }
+
+  async updateDomainGrants(_id: Id, grants: DomainGrant[]): Promise<ManagedDomain> {
+    await sleep(LATENCY.fast);
+    // Granting is local state, so it works here — it changes nothing outside
+    // this browser, which is exactly what it does in the real thing too.
+    this.demoDomain = {
+      ...this.demoDomain,
+      grants,
+      effective: grants.filter((g) => this.demoDomain.serverGrants.includes(g)),
+    };
+    return structuredClone(this.demoDomain);
+  }
+
+  async listDomainMailboxes(): Promise<ManagedMailbox[]> {
+    await sleep(LATENCY.fast);
+    return ['hello', 'billing', 'noreply'].map((localpart) => ({
+      localpart,
+      address: `${localpart}@example.com`,
+      linked: localpart === 'hello',
+    }));
+  }
+
+  async createDomainMailbox(): Promise<ManagedMailbox> {
+    await sleep(LATENCY.slow);
+    return this.noServer();
+  }
+
+  async deleteDomainMailbox(): Promise<void> {
+    await sleep(LATENCY.slow);
+    return this.noServer();
+  }
+
+  async setDomainMailboxPassword(): Promise<void> {
+    await sleep(LATENCY.slow);
+    return this.noServer();
+  }
+
+  async listDomainOps(): Promise<DomainOp[]> {
+    await sleep(LATENCY.fast);
+    return [];
   }
 
   /* ── Sync ───────────────────────────────────────────────────────────────── */

@@ -801,6 +801,113 @@ export type ServerEvent =
     }
   | { type: 'account:changed'; account: Account };
 
+/* ── Domain control ───────────────────────────────────────────────────────── */
+
+/**
+ * What may be done to a domain on the mail server.
+ *
+ * `DomainConfig` above is a domain's *presentation* — its label and colour in
+ * the sidebar. This is a different axis entirely: whether this install may
+ * write to the mail server that hosts the domain, and how far.
+ *
+ * The default for every one of these is off. Connecting a domain grants
+ * nothing; each verb is turned on deliberately, and `purge` is separate from
+ * `delete` because retiring an address and destroying its mail are different
+ * decisions that happen to share a button.
+ */
+export type DomainGrant = 'list' | 'create' | 'delete' | 'password' | 'alias' | 'purge';
+
+export const DOMAIN_GRANTS: DomainGrant[] = [
+  'list',
+  'create',
+  'delete',
+  'password',
+  'alias',
+  'purge',
+];
+
+export const isDomainGrant = (v: string): v is DomainGrant =>
+  (DOMAIN_GRANTS as string[]).includes(v);
+
+/** One line each, in the operator's words, for the settings screen. */
+export const DOMAIN_GRANT_LABELS: Record<DomainGrant, string> = {
+  list: 'See which addresses exist',
+  create: 'Create new addresses',
+  delete: 'Remove addresses (mail is kept on disk)',
+  password: 'Change a mailbox password',
+  alias: 'Add and remove aliases',
+  purge: 'Also delete the stored mail when removing an address',
+};
+
+export type DomainStatus = 'pending' | 'ok' | 'unreachable' | 'error';
+
+export interface ManagedDomain {
+  id: Id;
+  domain: string;
+  /** Only 'ssh' today. See docs/domain-control.md. */
+  driver: string;
+  /** Non-secret connection detail. Never contains the key. */
+  config: { host: string; port: number; user: string; hostKey: string | null };
+  /** What this install has been told it may do. */
+  grants: DomainGrant[];
+  /**
+   * What the mail server said it would allow, at the last probe.
+   *
+   * Held separately from `grants` because the two are independent, and the
+   * server is the one that decides. A grant set here but absent there is shown
+   * as unavailable rather than offered as a button that fails.
+   */
+  serverGrants: DomainGrant[];
+  /** `grants` ∩ `serverGrants` — what will actually work. */
+  effective: DomainGrant[];
+  status: DomainStatus;
+  error: string | null;
+  lastCheckedAt: IsoDate | null;
+}
+
+/** A mailbox as the mail server reports it, not as this app has indexed it. */
+export interface ManagedMailbox {
+  localpart: string;
+  address: string;
+  /** True when an account in this install already syncs this address. */
+  linked: boolean;
+}
+
+export interface ManagedAlias {
+  alias: string;
+  target: string;
+}
+
+export interface DomainProbe {
+  status: DomainStatus;
+  error: string | null;
+  /** Mail server versions, when the helper could report them. */
+  postfix: string | null;
+  dovecot: string | null;
+  /**
+   * False when the server's own maps disagree with each other. Reported because
+   * a host in that state cannot be provisioned at all — every write rolls
+   * itself back at the commit check — and finding out here beats finding out
+   * from a failed create.
+   */
+  parity: boolean;
+  serverGrants: DomainGrant[];
+}
+
+/** One attempt to change something on a mail server. Written whether it worked
+ *  or not, and kept after the domain is disconnected. */
+export interface DomainOp {
+  id: number;
+  domain: string;
+  action: string;
+  target: string;
+  status: 'ok' | 'failed';
+  detail: string | null;
+  /** 'session' when a person did it, otherwise the API token's name. */
+  actor: string;
+  createdAt: IsoDate;
+}
+
 export interface ApiError {
   error: { code: string; message: string; detail?: unknown };
 }

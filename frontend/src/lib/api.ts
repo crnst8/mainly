@@ -22,6 +22,11 @@ import type {
   Preferences,
   SavedView,
   ServerEvent,
+  DomainGrant,
+  DomainOp,
+  DomainProbe,
+  ManagedDomain,
+  ManagedMailbox,
   ServerConfig,
   Session,
   SyncState,
@@ -103,6 +108,27 @@ export interface MailApi {
   deleteView(id: Id): Promise<void>;
   getPreferences(): Promise<Preferences>;
   savePreferences(prefs: Preferences): Promise<Preferences>;
+
+
+  /* Domain control — optional, off unless a domain has been connected from a
+     shell on the host. See docs/domain-control.md. */
+
+  /** Connected domains, with what this install may do and what the mail server
+   *  actually permits. Empty on every install that has not opted in. */
+  listDomains(): Promise<ManagedDomain[]>;
+  /** Ask the mail server what it is and what it allows, and cache the answer. */
+  probeDomain(id: Id): Promise<DomainProbe>;
+  /** Change which operations are permitted. Replaces the whole set. */
+  updateDomainGrants(id: Id, grants: DomainGrant[]): Promise<ManagedDomain>;
+  /** The addresses the mail server has, not the ones this app has indexed. */
+  listDomainMailboxes(id: Id): Promise<ManagedMailbox[]>;
+  createDomainMailbox(id: Id, input: { localpart: string; password: string }): Promise<ManagedMailbox>;
+  /** `purge` also destroys the stored mail, and needs its own grant. Without it
+   *  the address stops receiving and the Maildir stays on disk. */
+  deleteDomainMailbox(id: Id, localpart: string, purge: boolean): Promise<void>;
+  setDomainMailboxPassword(id: Id, localpart: string, password: string): Promise<void>;
+  /** Every attempt to change something on a mail server, successful or not. */
+  listDomainOps(limit?: number): Promise<DomainOp[]>;
 
   /* Sync */
   syncState(): Promise<SyncState>;

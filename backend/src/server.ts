@@ -23,6 +23,7 @@ import { migrate } from './db/migrate.ts';
 import { AppError } from './lib/errors.ts';
 import { authRoutes, requireAuth, sessionRoutes } from './modules/auth/index.ts';
 import { accountRoutes } from './modules/accounts/routes.ts';
+import { domainRoutes } from './modules/domains/routes.ts';
 import { messageRoutes } from './modules/messages/routes.ts';
 import {
   draftRoutes,
@@ -50,6 +51,10 @@ export async function build() {
         '*.password',
         '*.currentPassword',
         '*.newPassword',
+        // The SSH key a domain is connected with. Same reasoning as the
+        // passwords above, and easier to miss because it arrives on one
+        // endpoint rather than three.
+        '*.privateKey',
       ],
     },
     /* Not `true`. See config.ts — `true` lets any caller pick their own
@@ -233,6 +238,7 @@ export async function build() {
       authed.addHook('preHandler', requireAuth);
       await sessionRoutes(authed);
       await accountRoutes(authed);
+      await domainRoutes(authed);
       await folderRoutes(authed);
       await messageRoutes(authed);
       await unsubscribeRoutes(authed);
