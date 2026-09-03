@@ -1,29 +1,3 @@
-## 1.3.0 — 2026-09-03
-
-**Create & modify inboxes server-side from the app**
-
-This is an optional feature where you may create and remove addresses on your own mail server from mainly.
-
-- Permission lives on the mail server in /etc/mainly-provision.conf, which mainly cannot write.
-- An SSH key pinned to one forced command runs `scripts/mainly-provision` there, so nothing in mainly's database can widen
-what that file allows.
-- Six grants per domain, none granted by default. Deleting the stored mail is a separate grant from removing an address.
-- Writes are locked, atomic, and rolled back if the Postfix and Dovecot files fall out of parity.
-
-Usable from Settings → Mail server, ./mainly.sh domain, or an MCP agentwith the new provision scope.
-Adds migration 012 and a domain_ops audit trail.
-
-## Unreleased
-
-- **Domain control**: optional, per-domain, opt-in mailbox provisioning. Create and remove addresses on your own Postfix + Dovecot server from Settings → Mail server, the `./mainly.sh domain` CLI, or an MCP agent. Off unless a domain is connected, which requires shell access on the host.
-- Authorization lives on the mail server, in `/etc/mainly-provision.conf`, reached through an SSH key pinned to one forced command (`scripts/mainly-provision`). Nothing mainly stores can widen what that file permits.
-- Six grants per domain, none by default; `purge` (destroy the stored mail) is separate from `delete` (retire the address).
-- Writes are atomic, locked, backed up, and rolled back if Postfix's address list and Dovecot's passwd-file fall out of parity.
-- New `provision` token scope, deliberately separate from `write`. New `domain_ops` audit trail, kept after a domain is disconnected.
-- The mail server host goes through the same SSRF guard as every other outbound host (`ALLOW_PRIVATE_IMAP_HOSTS` is the opt-out, and a mail server on a LAN or tailnet is the normal case). SSH host keys are pinned, never trusted on first use. The stored key is sealed with `SECRET_KEY` and redacted from logs.
-- The helper refuses a config file that anyone but root can write, and refuses to purge a Maildir that is a symlink.
-- Migration 012.
-
 ## 1.2.4 — 2026-08-31
 
 - Closed the three reported upstream advisories (@fastify/static 8.3.0→10.1.3, which needed a setHeaders migration to the v10 FastifyReply API; mailparser 3.9.14→3.9.17; nanoid→3.3.18 in both trees)
