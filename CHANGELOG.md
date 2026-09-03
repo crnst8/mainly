@@ -1,3 +1,43 @@
+## Unreleased
+
+Domain control setup is now two commands instead of two pages.
+
+- `mainly-provision setup` on the mail server is an interactive wizard: it reads
+  Postfix and Dovecot's own configuration rather than asking you to recite it,
+  refuses to start on a host whose maps are out of parity, offers the domains
+  that host already serves, asks for a scope, installs the account, the sudoers
+  line, the config and the key, tests itself end to end, and prints one line to
+  paste on the mainly host. The private key is handed over in that line and not
+  left on the mail server.
+- `./mainly.sh domain connect <that line>` is the whole of the setup on this
+  side. The host key is verified against the fingerprints the server reported
+  for itself rather than trusted on first use, every domain is connected, and
+  each is granted exactly what that server permits.
+- **No staged widening.** `connect` grants what the mail server allows, because
+  the mail server is the gate that decides and re-entering its answer here was
+  only a chance to get it wrong. The scope is chosen once, on the machine that
+  enforces it.
+- **Your login address is no longer an argument.** `./mainly.sh domain probe
+  you@example.com example.com` is now `./mainly.sh domain doctor`. The account is
+  inferred, the domain is inferred when only one is connected, and `--as` says
+  which only when it is genuinely ambiguous.
+- New on both halves: `status`, `doctor` and `uninstall`. Each diagnoses its own
+  side and points at the other one by name, so "which half is broken" stops being
+  something you have to work out. `uninstall` removes no address and no mail.
+- `domain add <domain>` connects a second domain on a mail server already
+  connected, reusing its key, and refuses a domain that server has no addresses
+  for — the helper's `probe` now reports what a host serves as well as what it
+  permits, which are the same refusal and opposite fixes.
+- Renamed for what they do: `mailboxes` → `addresses`, `create` → `new`,
+  `delete` → `rm`, `grant` → `scope`, `ops` → `history`, `list` → `status`. The
+  old names still work.
+- Fixed: `list` and `alias-list` returned addresses from other domains whenever
+  the queried domain was longer than the address — `index()` returns 0 for no
+  match, and the suffix arithmetic it was compared against is also 0 in that
+  case. Listing `other.example` returned `a@example.com`.
+- Fixed: `mainly-provision uninstall` reported removing the `mailprov` account on
+  hosts where `deluser --remove-home` had failed for want of perl.
+
 ## 1.3.0 — 2026-09-03
 
 - chore: bump deps & screenshots refresh

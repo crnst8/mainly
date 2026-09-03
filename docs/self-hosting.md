@@ -99,12 +99,17 @@ run that server, mainly can optionally create and remove addresses on it too —
 per domain, off unless you connect one, and only the operations you allow.
 
 The permission that matters lives on the mail server, in a file this application
-cannot write, so connecting a domain never hands mainly more than you granted
-there. Setup is about fifteen minutes per server, written out step by step in
+cannot write, so connecting never hands mainly more than that machine agreed to.
+Setup is two commands, one on each machine — see
 [domain control](domain-control.md).
 
 ```sh
-./mainly.sh domain list you@yourdomain.com
+# on the mail server
+sudo mainly-provision setup
+
+# here
+./mainly.sh domain connect <the string it printed>
+./mainly.sh domain status
 ```
 
 If you do not run your own mail server, skip it. Nothing else depends on it.

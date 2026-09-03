@@ -189,17 +189,24 @@ tokens. See [docs/mcp.md](docs/mcp.md).
 
 ### Domain control
 Optional, and off unless you turn it on. If you run your own Postfix + Dovecot
-server, mainly can create and remove addresses on it — per domain, and only the
-operations you allow.
+server, mainly can create and remove addresses on it — and only the operations
+you allow.
+
+Two commands, one on each machine. The first is a wizard: it finds your mail
+server's own paths, asks which domains and how much access, installs the key,
+checks its work, and prints the second command for you to paste.
 
 ```sh
-./mainly.sh domain add   you@example.com example.com --host mail.example.com --key ~/.ssh/k
-./mainly.sh domain grant you@example.com example.com list,create
+# on the mail server
+sudo mainly-provision setup
+
+# on the machine running mainly
+./mainly.sh domain connect <the string it printed>
 ```
 
 The permission that decides lives on the mail server, in a file mainly cannot
-write, so connecting a domain never grants more than you set there. Setup takes
-about 15 minutes per server and is written out step by step in
+write, so connecting never grants more than that machine agreed to. Both halves
+have `status`, `doctor` and `uninstall`. See
 **[docs/domain-control.md](docs/domain-control.md)**; the server-side script has
 its own reference in
 [scripts/mainly-provision.md](scripts/mainly-provision.md).

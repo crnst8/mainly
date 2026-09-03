@@ -289,6 +289,7 @@ export async function probeDomain(
       dovecot: null,
       parity: true,
       serverGrants: asGrants(row.server_grants),
+      serves: [],
     };
   }
 }
@@ -503,9 +504,63 @@ export async function connectDomain(
       sealed.keyVersion,
     ],
   );
-  // `grants` is left at its default of none. Connecting a domain is not
-  // granting anything, and making that a separate deliberate step is the point.
+  // `grants` is left at its default of none, and it is not this function's job
+  // to fill it: a credential being stored is not a decision about what may be
+  // done with it. The caller probes and then writes what the mail server said it
+  // permits — which is why nothing here has to guess.
   return toDomain(row!);
+}
+
+/**
+ * Connect another domain on a mail server that is already connected.
+ *
+ * The row shape is one domain per credential, which is right — two domains on
+ * two servers must not share a key. But two domains on *one* server sharing one
+ * key is the common case, and making the operator paste a key again to say so
+ * is how a second domain ends up on a second, needless credential.
+ *
+ * The credential is copied, not re-entered: the plaintext is opened and sealed
+ * again rather than the ciphertext being duplicated, so the new row is written
+ * under the current SECRET_KEY version and rotation has nothing special to
+ * handle.
+ */
+export async function attachDomain(
+  userId: string,
+  fromId: string,
+  domain: string,
+): Promise<ManagedDomain> {
+  const wanted = domain.trim().toLowerCase();
+  if (!DOMAIN_RE.test(wanted)) throw badRequest(`'${domain}' is not a domain name`);
+
+  const existing = await one<{ id: string }>(
+    'SELECT id FROM mail_domains WHERE user_id = $1 AND domain = $2',
+    [userId, wanted],
+  );
+  if (existing) throw badRequest(`${wanted} is already connected`);
+
+  // `null` rather than a grant: attaching is not one of the six verbs, and it
+  // reaches the mail server only through the probe the caller runs afterwards.
+  const { row, ctx } = await load(userId, fromId, null);
+
+  const sealed = seal(ctx.secret);
+  const created = await one<DomainRow>(
+    `INSERT INTO mail_domains
+       (user_id, domain, driver, config,
+        secret_ciphertext, secret_nonce, secret_tag, secret_key_version)
+     VALUES ($1, $2, $3, $4::jsonb, $5, $6, $7, $8)
+     RETURNING ${PUBLIC_COLUMNS}`,
+    [
+      userId,
+      wanted,
+      row.driver,
+      JSON.stringify(row.config),
+      sealed.ciphertext,
+      sealed.nonce,
+      sealed.tag,
+      sealed.keyVersion,
+    ],
+  );
+  return toDomain(created!);
 }
 
 export async function updateDomain(

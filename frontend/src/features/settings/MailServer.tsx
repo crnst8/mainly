@@ -65,22 +65,26 @@ export function MailServer() {
           title="No mail server connected"
           body={
             'This install can read your mail but not change what exists on the server. ' +
-            'Connecting a domain lets it create and remove addresses — for one domain ' +
-            'at a time, and only the operations you allow.'
+            'Connecting one lets it create and remove addresses — and only the ' +
+            'operations that server agrees to.'
           }
         />
         <section className="settings__section">
           <p className="settings__note">
-            Connecting installs an SSH key, so it is done from a shell on this machine rather
-            than from a browser:
+            Connecting installs an SSH key, so it is done from a shell rather than from a
+            browser. Two commands, one on each machine — the first is a wizard that does
+            everything on the mail server and prints the second:
           </p>
           <pre className="settings__code">
-            ./mainly.sh domain add you@example.com example.com \{'\n'}
-            {'  '}--host mail.example.com --key ~/.ssh/mainly_provision
+            {'# on the mail server'}
+            {'\n'}sudo mainly-provision setup
+            {'\n\n'}
+            {'# on the machine running mainly'}
+            {'\n'}./mainly.sh domain connect &lt;the string it printed&gt;
           </pre>
           <p className="settings__note">
-            The mail server needs <code>scripts/mainly-provision</code> installed first. See
-            docs/domain-control.md — it takes about ten minutes, once per server.
+            Copy <code>scripts/mainly-provision</code> to the mail server first. See
+            docs/domain-control.md.
           </p>
         </section>
       </>

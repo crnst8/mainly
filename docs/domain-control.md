@@ -2,29 +2,38 @@
 
 **Let mainly create and remove email addresses on your own mail server.**
 
-Optional, off by default, and turned on one domain at a time. An install that
-connects no domain behaves exactly as it always has: it holds one credential per
-mailbox and never writes to the mail server.
+Optional, and off by default. An install that connects no mail server behaves
+exactly as it always has: it holds one credential per mailbox and never writes
+back.
 
-- **Setting it up?** Start at [Before you start](#before-you-start) and work
-  down. About 15 minutes, once per mail server.
-- **Already set up?** [Using it](#using-it).
-- **Writing the server side?** [`scripts/mainly-provision.md`](../scripts/mainly-provision.md).
+Two machines, two commands.
+
+```sh
+# 1. on the mail server
+sudo mainly-provision setup
+
+# 2. on the machine running mainly — it prints this line for you
+./mainly.sh domain connect <the string it printed>
+```
+
+The first is a wizard. It reads your mail server's own configuration rather than
+asking you to recite it, checks that the server is in a state it can safely
+write to, asks two questions, installs everything, tests itself end to end, and
+hands you the second command. Nothing is copied between machines by hand except
+that one line.
 
 ---
 
 ## Contents
 
 1. [Is this for you](#is-this-for-you)
-2. [How it works](#how-it-works)
-3. [Before you start](#before-you-start)
-4. [Part 1 — the mail server](#part-1--the-mail-server)
-5. [Part 2 — mainly](#part-2--mainly)
-6. [Using it](#using-it)
-7. [The audit trail](#the-audit-trail)
-8. [Troubleshooting](#troubleshooting)
-9. [Turning it off](#turning-it-off)
-10. [Supporting another mail server](#supporting-another-mail-server)
+2. [Setting it up](#setting-it-up)
+3. [Using it](#using-it)
+4. [What decides what](#what-decides-what)
+5. [When something is wrong](#when-something-is-wrong)
+6. [Turning it off](#turning-it-off)
+7. [Doing it by hand](#doing-it-by-hand)
+8. [Supporting another mail server](#supporting-another-mail-server)
 
 ---
 
@@ -41,296 +50,85 @@ this, and skipping it costs you nothing.
 **What it changes.** [architecture.md](architecture.md) lists *"the mail server
 is read-only infrastructure"* as a founding constraint — it is why mainly runs
 against anything. This makes that the **default** rather than the only mode. The
-constraint is not removed; it is opted out of, per domain, deliberately.
+constraint is not removed; it is opted out of, per mail server, deliberately.
 
 ---
 
-## How it works
+## Setting it up
 
-Three gates. An operation has to pass all three, and they are deliberately not
-stored in the same place.
+You need root on the mail server, a shell on the machine running mainly, and a
+mail server of the shape [mailstack](https://github.com/crnst8/mailstack)
+produces: Postfix with `virtual_mailbox_maps` as a hash map, delivering over
+LMTP to Dovecot, with Dovecot authenticating from a `passwd-file`. The wizard
+checks all of that and says so if it is not what it finds.
 
-| Gate | Lives in | Decides |
-| --- | --- | --- |
-| Driver capability | This codebase | What this kind of mail server can do at all |
-| App grants | `mail_domains.grants`, in mainly's Postgres | What this install has been told it may do |
-| **Server allowlist** | `/etc/mainly-provision.conf`, on the mail server | What the mail server will actually agree to |
+### 1. On the mail server
 
-**The third gate is the one that matters**, because it is the one mainly cannot
-write. If mainly's database were compromised and every grant in it switched on,
-the mail server would still refuse every domain and verb its own file does not
-name.
+Copy [`scripts/mainly-provision`](../scripts/mainly-provision) from this
+repository to that machine, then:
 
-```
-mainly                          your mail server
-  │                                │
-  │  ssh — key pinned to           │  ~mailprov/.ssh/authorized_keys
-  │  one forced command            │    command="sudo mainly-provision --stdin",restrict
-  ├───────────────────────────────►│      │
-  │  verb on stdin                 │      ▼
-  │  password on the next line     │  /usr/local/sbin/mainly-provision
-  │                                │      │  validates every token
-  │◄───────────────────────────────┤      │  checks /etc/mainly-provision.conf
-        one JSON object            │      ▼
-                                   │  vmaps + dovecot users, under flock,
-                                   │  atomic, rolled back if they disagree
+```sh
+sudo sh mainly-provision setup
 ```
 
-### The grants
+It works through eight steps and shows you each one:
 
-| Grant | Allows |
+| | |
 | --- | --- |
-| `list` | See which addresses exist |
-| `create` | Create new addresses |
-| `delete` | Remove addresses — the delivered mail stays on disk |
-| `password` | Change a mailbox password |
-| `alias` | Add and remove aliases |
-| `purge` | *Also* delete the stored mail when removing an address |
+| 1 | **What is here** — Postfix and Dovecot versions, the four file paths it found, the hashing scheme it will use. Every path can be typed over. |
+| 2 | **Are the two files in agreement** — an address in one map and not the other is a broken host, and it stops rather than starting on one. |
+| 3 | **Which domains** — it lists the ones this server already has addresses for, and offers all of them. |
+| 4 | **What may it do** — `full`, `keep`, `read`, or a list. Default is `full`. |
+| 5 | **Installing** — itself into `/usr/local/sbin`, the config, the `mailprov` account, one sudoers line. |
+| 6 | **The key** — generated here, installed here, pinned to one command. |
+| 7 | **Checking it works** — it calls itself over the same path mainly will use. |
+| 8 | **Where mainly reaches this machine** — an address (an IP is fine, and usual) and a port. |
 
-Connecting a domain grants **none** of these.
+Then it prints the command for step 2.
 
-`purge` is separate from `delete` because retiring an address and destroying
-years of mail are different decisions that happen to share a button. `delete`
-alone stops the address receiving and leaves the Maildir untouched, so
-recreating the address brings everything back.
+**Choosing a scope.** `full` is everything; `keep` is everything except
+destroying stored mail; `read` only sees which addresses exist. The difference
+between `full` and `keep` is one grant, `purge`: with it, removing an address
+may also delete its Maildir. Without it, a removed address stops receiving and
+its mail stays on disk, so recreating the address brings everything back.
 
----
+**The string it prints carries a private key.** Paste it into that other
+terminal and nowhere else — not a chat, not an issue, not a paste service. It is
+not kept on the mail server; if you lose it, run `setup` again, which issues a
+new key and revokes the old one in the same step.
 
-## Before you start
-
-You will need:
-
-- **Root on the mail server**, and the mail server running Postfix with
-  `virtual_mailbox_maps` (a hash map), delivering over LMTP to Dovecot, with
-  Dovecot authenticating from a `passwd-file`. This is what
-  [mailstack](https://github.com/crnst8/mailstack) produces.
-- **A shell on the machine running mainly.** Connecting a domain installs an SSH
-  key, so it cannot be done from a browser.
-
-Confirm the mail server is the right shape:
+### 2. On the machine running mainly
 
 ```sh
-postconf -h virtual_mailbox_maps virtual_transport
-# hash:/etc/postfix/vmaps
-# lmtp:unix:private/dovecot-lmtp
-
-doveconf -n passdb
-# passdb {
-#   args = scheme=PLAIN username_format=%u /etc/dovecot/users
-#   driver = passwd-file          ← this is the line that matters
-# }
+./mainly.sh domain connect <the string>
 ```
 
-Different paths are fine — they are configurable. A different *shape* (SQL or
-LDAP backed) is not supported by the `ssh` driver; see
-[Supporting another mail server](#supporting-another-mail-server).
-
-Check the two files agree with each other before you begin. If they do not,
-fix that first — provisioning refuses to run on a host in that state, for
-[good reason](#parity):
+Or with no argument, which prompts for it:
 
 ```sh
-diff <(awk 'NF{print $1}' /etc/postfix/vmaps | sort) \
-     <(awk -F: 'NF{print $1}' /etc/dovecot/users | sort) && echo "in parity"
+./mainly.sh domain connect
 ```
 
----
+This checks the mail server's host key against the fingerprints that machine
+reported for itself, connects every domain the string names, asks each one what
+the server permits, and grants exactly that. There is no second step and no
+staged widening: the server already decided, and asking you to re-enter its
+answer here would only be a chance to get it wrong.
 
-## Part 1 — the mail server
-
-Every command in this part runs **on the mail server**, as a user with sudo.
-
-### 1.1 Install the helper
-
-Copy `scripts/mainly-provision` from this repository to the mail server, then:
+Then:
 
 ```sh
-sudo install -m 0755 -o root -g root mainly-provision /usr/local/sbin/
-```
-
-### 1.2 Say what it may do
-
-```sh
-sudo tee /etc/mainly-provision.conf >/dev/null <<'EOF'
-# Paths only need a line when they differ from these defaults:
-# vmaps    /etc/postfix/vmaps
-# users    /etc/dovecot/users
-# aliases  /etc/postfix/virtual_aliases
-# mailroot /var/mail
-# scheme   SHA512-CRYPT
-# reload   postfix
-
-# domain <name> <comma-separated grants>
-domain example.com  list
-EOF
-sudo chmod 0644 /etc/mainly-provision.conf
-```
-
-**Start with `list` alone.** It proves the whole path works while nothing is
-able to change anything. Widen it in [step 2.5](#25-grant-something), once you
-have seen it work.
-
-**Choosing `scheme`.** It applies only to passwords set from now on; existing
-entries keep whatever they were hashed with, and a passwd-file holding a mix is
-normal and works fine. So pick the strongest your Dovecot supports rather than
-matching the majority:
-
-```sh
-doveadm pw -l                     # what this Dovecot can do
-sudo awk -F: '{print $2}' /etc/dovecot/users \
-  | grep -o '^{[^}]*}' | sort | uniq -c     # what is in use now
-#   7 {ARGON2ID}
-#  31 {SHA512-CRYPT}
-```
-
-`ARGON2ID` if it is listed, `SHA512-CRYPT` otherwise. Both are verified against
-this helper.
-
-**Verify:**
-
-```sh
-echo probe | sudo /usr/local/sbin/mainly-provision --stdin
-```
-
-You should get one line of JSON naming your Postfix and Dovecot versions,
-`"parity":true`, and your domain with its grants.
-
-### 1.3 Create the account it runs as
-
-```sh
-sudo adduser --system --group --shell /bin/sh \
-     --home /home/mailprov --disabled-password mailprov
-```
-
-> ### ⚠ `--shell /bin/sh`, not `/usr/sbin/nologin`
->
-> sshd runs a forced command **through the account's login shell**. With
-> `nologin` the connection is accepted, the shell prints `This account is
-> currently not available.`, and the script never runs — so everything looks
-> correctly configured and every call fails with *"did not answer with a
-> provisioning reply"*.
->
-> The account is still locked down. `--disabled-password` means no password
-> login, and the forced command below means the only thing its key can do is run
-> one script.
-
-### 1.4 Give it sudo for exactly one path
-
-```sh
-echo 'mailprov ALL=(root) NOPASSWD: /usr/local/sbin/mainly-provision' \
-  | sudo tee /etc/sudoers.d/mainly-provision
-sudo chmod 0440 /etc/sudoers.d/mainly-provision
-```
-
-**Verify** — this must print `parsed OK` before you log out, or you risk a
-broken sudoers file:
-
-```sh
-sudo visudo -c
-```
-
----
-
-## Part 2 — mainly
-
-Every command in this part runs **on the machine running mainly**.
-
-### 2.1 Make a key for it
-
-```sh
-ssh-keygen -t ed25519 -f ~/.ssh/mainly_provision -N '' -C mainly-provision
-```
-
-No passphrase: mainly uses this unattended. Its power is bounded by the forced
-command and the server's allowlist, not by a passphrase nobody is present to
-type.
-
-### 2.2 Pin it to the command
-
-Copy `~/.ssh/mainly_provision.pub` to the mail server, then **on the mail
-server**:
-
-```sh
-sudo mkdir -p /home/mailprov/.ssh
-printf 'command="sudo /usr/local/sbin/mainly-provision --stdin",restrict %s\n' \
-  "$(cat mainly_provision.pub)" | sudo tee /home/mailprov/.ssh/authorized_keys
-sudo chown -R mailprov:mailprov /home/mailprov/.ssh
-sudo chmod 700 /home/mailprov/.ssh
-sudo chmod 600 /home/mailprov/.ssh/authorized_keys
-```
-
-`restrict` denies port forwarding, agent forwarding, a PTY, X11 and
-`~/.ssh/rc`, so the key cannot open a shell or tunnel — only cause that one
-script to run.
-
-**Verify, from the mainly host:**
-
-```sh
-echo probe | ssh -i ~/.ssh/mainly_provision mailprov@mail.example.com
-```
-
-JSON means the whole chain works. Anything else — see
-[Troubleshooting](#troubleshooting).
-
-### 2.3 Connect the domain
-
-```sh
-./mainly.sh domain add you@example.com example.com \
-  --host mail.example.com --key ~/.ssh/mainly_provision
-```
-
-Add `--port 2222` if sshd is not on 22, and `--user` if the account is not
-`mailprov`.
-
-The host key is read and pinned here, and printed so you can compare it against
-the server:
-
-```sh
-ssh-keygen -lf /etc/ssh/ssh_host_ed25519_key.pub   # on the mail server
-```
-
-An unpinned domain is refused rather than trusted — trust on first use is a
-decision to make once, visibly, not something to do silently on every
-connection.
-
-### 2.4 Ask the server what it allows
-
-```sh
-./mainly.sh domain probe you@example.com example.com
+./mainly.sh domain status
 ```
 
 ```
-example.com: ok
-  postfix 3.8.6 · dovecot 2.3.21
-  server allows: list
+Mail servers  you@example.com
+
+  ● example.com  mailprov@203.0.113.10:22
+      list, create, delete, password, alias, purge
 ```
 
-### 2.5 Grant something
-
-Nothing is granted yet. `list` is the safe first step:
-
-```sh
-./mainly.sh domain grant you@example.com example.com list
-./mainly.sh domain mailboxes you@example.com example.com
-```
-
-Seeing your real addresses means every layer works. Now widen — **on the mail
-server first**, because it is the gate that decides:
-
-```sh
-sudo sed -i 's/^domain example.com .*/domain example.com list,create,delete/' \
-  /etc/mainly-provision.conf
-```
-
-Then in mainly:
-
-```sh
-./mainly.sh domain probe you@example.com example.com
-./mainly.sh domain grant you@example.com example.com list,create,delete
-```
-
-Granting more here than the server permits is harmless — the extra simply never
-takes effect, and the settings screen shows it greyed out with the reason.
+That is the whole setup.
 
 ---
 
@@ -339,8 +137,7 @@ takes effect, and the settings screen shows it greyed out with the reason.
 ### In the browser
 
 **Settings → Mail server.** Each connected domain shows its host, when it was
-last checked, the grant switches, and — once `list` is on — the addresses that
-exist.
+last checked, the grant switches, and the addresses that exist.
 
 A grant the mail server will not permit is shown switched off and disabled, with
 the reason, rather than hidden. A control that vanishes sends someone hunting
@@ -354,25 +151,43 @@ destroyed.
 ### From the command line
 
 ```sh
-./mainly.sh domain list      you@example.com
-./mainly.sh domain probe     you@example.com example.com
-./mainly.sh domain mailboxes you@example.com example.com
-./mainly.sh domain create    you@example.com hello@example.com
-./mainly.sh domain delete    you@example.com hello@example.com [--purge]
-./mainly.sh domain grant     you@example.com example.com list,create
-./mainly.sh domain ops       you@example.com
-./mainly.sh domain forget    you@example.com example.com
-./mainly.sh domain hostkey   --host mail.example.com
+./mainly.sh domain status                 what is connected, and what it may do
+./mainly.sh domain doctor                 check every layer, name the broken one
+./mainly.sh domain addresses              what exists on the mail server
+./mainly.sh domain new hello@example.com  create one
+./mainly.sh domain rm  hello@example.com  remove one   [--purge]
+./mainly.sh domain add another.com        another domain on the same server
+./mainly.sh domain scope example.com keep change what it may do
+./mainly.sh domain history                every attempt, successful or not
+./mainly.sh domain forget example.com     drop the key here
 ```
 
-`create` prints a generated password once, or reads one from stdin:
+**Your login address is not an argument.** It is inferred, because an install
+almost always has one account. So is the domain, when only one is connected. Say
+which only when it is genuinely ambiguous — `--as you@example.com`, and the
+domain by name:
 
 ```sh
-echo 'a-password-you-chose' | ./mainly.sh domain create you@example.com hello@example.com
+./mainly.sh domain --as you@example.com addresses example.com
 ```
 
-`forget` removes the credential and the grants from mainly's database. It
-touches no address and no mail.
+`new` prints a generated password once, or reads one from stdin. Only the
+password goes to stdout, so it can be piped:
+
+```sh
+./mainly.sh domain new hello@example.com | pbcopy
+echo 'a-password-you-chose' | ./mainly.sh domain new hello@example.com
+```
+
+`add` connects a second domain on a mail server that is already connected. It
+reuses that server's key rather than asking for another, and refuses a domain
+the server has no addresses for:
+
+```sh
+$ ./mainly.sh domain add nothere.com
+203.0.113.10 has no addresses for nothere.com.
+It serves: example.com, other.example
+```
 
 In development, `./dev.sh domain …` is the same thing against a local checkout.
 
@@ -394,71 +209,110 @@ something that already holds API access.
 
 ---
 
-## The audit trail
+## What decides what
+
+Three gates. An operation has to pass all three, and they are deliberately not
+stored in the same place.
+
+| Gate | Lives in | Decides |
+| --- | --- | --- |
+| Driver capability | This codebase | What this kind of mail server can do at all |
+| App grants | `mail_domains.grants`, in mainly's Postgres | What this install has been told it may do |
+| **Server allowlist** | `/etc/mainly-provision.conf`, on the mail server | What the mail server will actually agree to |
+
+**The third gate is the one that matters**, because it is the one mainly cannot
+write. If mainly's database were compromised and every grant in it switched on,
+the mail server would still refuse every domain and verb its own file does not
+name. That is why `connect` grants what the server permits and no more: the
+answer is not mainly's to give.
+
+```
+mainly                          your mail server
+  │                                │
+  │  ssh — key pinned to           │  ~mailprov/.ssh/authorized_keys
+  │  one forced command            │    command="sudo mainly-provision --stdin",restrict
+  ├───────────────────────────────►│      │
+  │  verb on stdin                 │      ▼
+  │  password on the next line     │  /usr/local/sbin/mainly-provision
+  │                                │      │  validates every token
+  │◄───────────────────────────────┤      │  checks /etc/mainly-provision.conf
+        one JSON object            │      ▼
+                                   │  vmaps + dovecot users, under flock,
+                                   │  atomic, rolled back if they disagree
+```
+
+`restrict` denies port forwarding, agent forwarding, a PTY, X11 and `~/.ssh/rc`,
+so the key cannot open a shell or tunnel — only cause that one script to run.
+`setup`, `status`, `doctor` and `uninstall` are reachable only from a real argv
+on the mail server itself; nothing arriving over that connection can administer
+the host.
+
+### The grants
+
+| Grant | Allows |
+| --- | --- |
+| `list` | See which addresses exist |
+| `create` | Create new addresses |
+| `delete` | Remove addresses — the delivered mail stays on disk |
+| `password` | Change a mailbox password |
+| `alias` | Add and remove aliases |
+| `purge` | *Also* delete the stored mail when removing an address |
+
+### The audit trail
 
 Every attempt to change something on a mail server is recorded, successful or
 not — the same reasoning as the unsubscribe log: it reaches something outside
 mainly, and it is not undoable.
 
 ```sh
-./mainly.sh domain ops you@example.com
+./mainly.sh domain history
 ```
 
 ```
-2026-09-03T00:33:50.642Z  ok      delete       hello@example.com  (session)
-2026-09-03T00:33:13.610Z  ok      create       hello@example.com  (session)
-2026-09-03T00:32:39.191Z  FAILED  create       hello@example.com  (provisioner)
-  example.com grants: list
+2026-09-03T00:33:50.642Z  ok      delete     hello@example.com  (session)
+2026-09-03T00:33:13.610Z  ok      create     hello@example.com  (session)
+2026-09-03T00:32:39.191Z  FAILED  create     hello@example.com  (provisioner)
+      example.com grants: list
 ```
 
 `(session)` is a person in a browser or at the CLI; anything else is the name of
 the API token that did it. Records outlive the domain — "who deleted that
-address, and when" is most often asked after the domain has been disconnected.
+address, and when" is most often asked after it has been disconnected.
 
 Also in **Settings → Mail server → History**.
 
 ---
 
-## Troubleshooting
+## When something is wrong
 
-### Start here
+Each machine can diagnose its own half, and each says which half it is.
 
 ```sh
-./mainly.sh domain probe you@example.com example.com
+./mainly.sh domain doctor            # here
+sudo mainly-provision doctor         # on the mail server
 ```
 
-That one command exercises the whole chain and names the layer that failed.
+`domain doctor` walks every layer for every connected domain — host key,
+reachability, the helper's reply, map parity, what the server permits versus
+what is granted here — and prints the fix for the first thing that fails. Start
+there. If it says the fault is on the other machine, run the other one.
+
+`mainly-provision doctor` does the same for the mail server: the install, the
+config's ownership and mode, both map files, parity, the `mailprov` account and
+its shell, the key and its forced command, the sudoers line, and finally a real
+call through the same path mainly uses.
+
+A few failures worth naming, because the message alone does not say what to do:
 
 | What you see | What it means | Fix |
 | --- | --- | --- |
-| `domain_not_allowed` | The domain is not in `/etc/mainly-provision.conf`. | Add a `domain` line there. |
-| `verb_not_granted` | Listed, but not that verb. **This is the server refusing, not mainly.** | Widen the server's line, then `domain probe`. |
-| `'x' is not granted` | mainly's own grants, before anything reaches the wire. | `./mainly.sh domain grant …` |
-| *"did not answer with a provisioning reply"* | The key reached a shell rather than the script. | Check `command=` in `authorized_keys`, and that the account's shell is **not** `nologin`. |
+| *"did not answer with a provisioning reply"* | The key reached a shell rather than the script. Almost always `mailprov`'s shell is `nologin`, which accepts the connection, prints *"This account is currently not available"*, and never runs anything. | `sudo mainly-provision doctor` names it. `sudo chsh -s /bin/sh mailprov`. |
+| `the mail server permits nothing for this domain` | The domain is not in `/etc/mainly-provision.conf`, or is not on that server at all. `doctor` says which, because it knows what the server serves. | Re-run `setup` there, or add the `domain` line by hand. |
+| *"points at a private or reserved address"* | The mail server is on a LAN or a tailnet. | `ALLOW_PRIVATE_IMAP_HOSTS=true` in `.env`, then restart. |
+| Host key mismatch | The server's key changed, or something is in the way. | Confirm with `ssh-keygen -lf /etc/ssh/ssh_host_ed25519_key.pub` on the server *before* reconnecting. |
 | `lock_busy` | Another operation is running. | Try again. There is no queue, deliberately. |
-| `parity_broken` | The two files disagree. Both were restored. | See [Parity](#parity). |
-| Host key mismatch | The server's key changed, or something is in the way. | Confirm with `ssh-keygen -lf` on the server *before* re-pinning. |
-| `No host key is pinned` | The domain was added without one. | `./mainly.sh domain forget …` then add it again. |
+| `parity_broken` | The two maps disagree. Both were restored. | See below. |
 | `Connection refused`, intermittently | sshd is socket-activated and its burst limit tripped. | It clears on its own in a minute. mainly reuses one connection precisely to avoid this; something else is likely also connecting. |
-| `permission denied` from `doveadm` | The helper is not running as root. | Check the `sudoers.d` line and that `command=` includes `sudo`. |
-| `postmap_failed`, and `postmap` says `Permission denied` even as root | Postfix refuses to write a `.db` into a directory root does not own — it happens when the maps have been pointed somewhere like `/tmp`. | Keep the maps in a root-owned directory. `/etc/postfix` and `/etc/dovecot` already are. |
-
-### Isolating which half is broken
-
-Work outwards. Each step tests one more layer than the last:
-
-```sh
-# 1. The script, on the mail server, alone.
-echo probe | sudo /usr/local/sbin/mainly-provision --stdin
-
-# 2. The forced command, over SSH, from the mainly host.
-echo probe | ssh -i ~/.ssh/mainly_provision mailprov@mail.example.com
-
-# 3. mainly's driver, its stored key, and its grants.
-./mainly.sh domain probe you@example.com example.com
-```
-
-The first that fails is the layer to fix.
 
 ### Parity
 
@@ -468,8 +322,8 @@ will never receive. Either is worse than the change not happening, so every
 write verifies the two agree and restores both if they do not.
 
 A host that is *already* out of parity cannot be provisioned at all — every
-write would roll itself back. `probe` reports it, so you find out before a
-failed create rather than during one.
+write would roll itself back. `setup` refuses to start on one, and `doctor`
+prints the difference:
 
 ```sh
 diff <(awk 'NF{print $1}' /etc/postfix/vmaps | sort) \
@@ -493,10 +347,17 @@ ls -t /etc/postfix/vmaps.bak.* | head
 
 ## Turning it off
 
+### Narrow it, without disconnecting
+
+```sh
+./mainly.sh domain scope example.com read     # only see what exists
+./mainly.sh domain scope example.com keep     # everything but destroying mail
+```
+
 ### One domain, from mainly
 
 ```sh
-./mainly.sh domain forget you@example.com example.com
+./mainly.sh domain forget example.com
 ```
 
 Removes the key and the grants from mainly's database. Touches no address and no
@@ -507,27 +368,76 @@ mail.
 The authoritative off switch, because it does not depend on mainly behaving:
 
 ```sh
+sudo mainly-provision uninstall
+```
+
+It removes the key, the config, the sudoers line, the account and the script,
+after asking. It removes no address, no mailbox, and no byte of mail; everything
+created through domain control stays exactly as it is.
+
+To revoke access without uninstalling:
+
+```sh
 sudo truncate -s 0 /home/mailprov/.ssh/authorized_keys
 ```
 
-Or narrow rather than revoke — takes effect on the next call, no restart:
+---
+
+## Doing it by hand
+
+The wizard is not privileged — it writes files any operator could write, and
+`mainly-provision status` shows you what they are. If you would rather place
+them yourself, or you are configuring a host from Ansible:
 
 ```sh
-sudo sed -i 's/^domain example.com .*/domain example.com list/' \
-  /etc/mainly-provision.conf
+sudo install -m 0755 -o root -g root mainly-provision /usr/local/sbin/
+
+sudo tee /etc/mainly-provision.conf >/dev/null <<'EOF'
+vmaps    /etc/postfix/vmaps
+users    /etc/dovecot/users
+aliases  /etc/postfix/virtual_aliases
+mailroot /var/mail
+scheme   ARGON2ID
+reload   postfix
+
+domain example.com list,create,delete,password,alias,purge
+EOF
+sudo chmod 0644 /etc/mainly-provision.conf
+
+# /bin/sh, not nologin: sshd runs the forced command through the login shell.
+sudo adduser --system --group --shell /bin/sh \
+     --home /home/mailprov --disabled-password mailprov
+
+echo 'mailprov ALL=(root) NOPASSWD: /usr/local/sbin/mainly-provision' \
+  | sudo tee /etc/sudoers.d/mainly-provision
+sudo chmod 0440 /etc/sudoers.d/mainly-provision
+sudo visudo -c
+
+sudo mkdir -p /home/mailprov/.ssh
+printf 'command="sudo /usr/local/sbin/mainly-provision --stdin",restrict %s\n' \
+  "$(cat mainly_provision.pub)" | sudo tee /home/mailprov/.ssh/authorized_keys
+sudo chown -R mailprov:mailprov /home/mailprov/.ssh
+sudo chmod 700 /home/mailprov/.ssh
+sudo chmod 600 /home/mailprov/.ssh/authorized_keys
+
+sudo mainly-provision doctor
 ```
 
-### Uninstall completely
+Then, on the mainly host — `connect` takes the same string a `setup` would have
+printed, so build one, or use the flags directly:
 
 ```sh
-sudo rm -f /usr/local/sbin/mainly-provision \
-           /etc/mainly-provision.conf \
-           /etc/sudoers.d/mainly-provision
-sudo deluser --remove-home mailprov
+./mainly.sh domain connect "$(printf '%s' '{
+  "host":"203.0.113.10","port":22,"user":"mailprov",
+  "fingerprints":["sha256:…"],
+  "domains":["example.com"],
+  "key":"-----BEGIN OPENSSH PRIVATE KEY-----\n…\n"
+}' | base64 | tr -d '\n')"
 ```
 
-None of this removes an address, a mailbox, or a byte of mail. Everything
-created through domain control stays exactly as it is.
+`fingerprints` may be empty, in which case the key the server presents is pinned
+unverified — which is what trust on first use means, and why `setup` does not do
+it. Get them with `ssh-keygen -lf /etc/ssh/ssh_host_*_key.pub` on the server.
 
 ---
 
@@ -548,3 +458,6 @@ case, because the service checks capability before it dispatches.
 behind an HTTP API and should drop in without touching anything outside
 `drivers/`. Add the driver, register it in `drivers/index.ts`, and the settings
 screen, CLI and MCP tools work unchanged.
+
+The server-side script has its own reference:
+[`scripts/mainly-provision.md`](../scripts/mainly-provision.md).

@@ -764,6 +764,7 @@ export class MockApi implements MailApi {
       dovecot: '2.3.21',
       parity: true,
       serverGrants: ['list', 'create'],
+      serves: [this.demoDomain.domain],
     };
   }
 

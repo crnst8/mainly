@@ -5,9 +5,44 @@ shell script that creates and removes virtual mailboxes on a flat-file Postfix +
 Dovecot host, on behalf of a mainly install that reaches it over SSH.
 
 **This file documents the script next to it.** If you are setting the feature up
-for the first time, start with [docs/domain-control.md](../docs/domain-control.md)
-— it covers both halves in order. This is the reference for the half that lives
-on your mail server.
+for the first time you do not need it: copy the script to your mail server and
+run
+
+```sh
+sudo sh mainly-provision setup
+```
+
+which does everything below, checks its own work, and prints the one command to
+paste on the machine running mainly. [docs/domain-control.md](../docs/domain-control.md)
+covers both halves in order.
+
+This is the reference for what that wizard produces, for anyone configuring a
+host by hand or from Ansible, and for the wire protocol.
+
+---
+
+## Administration
+
+Four subcommands, all interactive, all requiring root and a terminal on the mail
+server itself:
+
+| | |
+| --- | --- |
+| `setup` | Detect, ask two questions, install everything, self-test, print the handover string |
+| `status` | What is installed here, and whether it is healthy |
+| `doctor` | Every check, each with the fix for its failure |
+| `uninstall` | Remove all of it. No address, no mailbox and no mail is touched |
+
+**They are reachable only from a real argv on this machine.** A request arriving
+over SSH is `--stdin`, which the administration dispatcher does not match, and
+the verb it then carries is matched against the wire grammar below, which names
+none of them. There is no path from the wire to the administration of the host.
+
+`setup` generates the SSH keypair here, installs the public half into
+`~mailprov/.ssh/authorized_keys` pinned to the forced command, prints the
+private half inside the handover string, and then removes it from this machine.
+Nothing that has to stay secret is left behind; re-running `setup` issues a new
+key and revokes the old one in the same step.
 
 ---
 
@@ -57,6 +92,9 @@ Verified against Postfix 3.8.6 and Dovecot 2.3.21 on Ubuntu 24.04.
 ---
 
 ## Install
+
+`mainly-provision setup` does all of this. What follows is what it writes, for a
+host being configured by hand.
 
 ```sh
 sudo install -m 0755 -o root -g root mainly-provision /usr/local/sbin/
@@ -146,8 +184,11 @@ domain example.net   list,create,delete,password
 ```
 
 **A domain absent from this file cannot be touched**, whatever mainly believes.
-Start with `list` alone — it proves the whole path works while nothing is able
-to change.
+This is the gate that decides, and it is the reason `./mainly.sh domain connect`
+grants whatever this file permits and no more: the answer is not the
+application's to give, so there is nothing for it to widen.
+
+Narrowing a line takes effect on the next call. There is nothing to restart.
 
 ### Grants
 
@@ -167,6 +208,10 @@ thing that purges.
 ---
 
 ## Grammar
+
+`setup`, `status`, `doctor` and `uninstall` are administration and are not part
+of this grammar — see [Administration](#administration). What follows is the
+wire protocol, and the whole of what a client can ask for.
 
 One verb per invocation. Read from argv, then `$SSH_ORIGINAL_COMMAND`, then the
 first line of stdin.
@@ -206,6 +251,22 @@ One JSON object on stdout, always, success or failure.
 {"ok":true,"version":1,"action":"create","address":"hello@example.com"}
 {"ok":false,"version":1,"error":"domain_not_allowed","detail":"example.net is not listed in /etc/mainly-provision.conf"}
 ```
+
+`probe` is the one with a shape worth knowing:
+
+```json
+{"ok":true,"version":1,"action":"probe",
+ "postfix":"3.8.6","dovecot":"2.3.21","scheme":"ARGON2ID","parity":true,
+ "domains":[{"domain":"example.com","grants":["list","create"]}],
+ "serves":["example.com","other.example"]}
+```
+
+`domains` is this file's allowlist. `serves` is every domain that has an address
+on the host, permitted or not — the two together are what let the client tell
+*"this server will not let mainly touch that domain"* from *"that domain is not
+on this server at all"*, which are the same refusal and opposite fixes. A client
+too old to read `serves` ignores it; a helper too old to send it leaves the
+client with an empty list, which it treats as "unknown" rather than "none".
 
 | Exit | Meaning |
 | --- | --- |

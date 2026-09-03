@@ -35,8 +35,16 @@
 #
 # ── Invocation ──────────────────────────────────────────────────────────────
 #
+#   mainly-provision setup        interactive: install, configure, issue a key
+#   mainly-provision status       what is installed, and whether it is healthy
+#   mainly-provision doctor       every check, with the fix for each failure
+#   mainly-provision uninstall    remove all of it; touches no address, no mail
+#
 #   mainly-provision --stdin      verb line on stdin, then any secret     (SSH)
 #   mainly-provision <verb…>      verb in argv                    (testing, cron)
+#
+# The first four administer this host and are reachable only from a real argv
+# on it — see the dispatcher below. The rest are the wire protocol.
 #
 # --stdin is what the forced command uses, because `sudo` resets the
 # environment and would drop $SSH_ORIGINAL_COMMAND. $SSH_ORIGINAL_COMMAND is
@@ -353,13 +361,21 @@ do_probe() {
   pf=$(postconf -h mail_version 2>/dev/null || echo unknown)
   dc=$(dovecot --version 2>/dev/null | awk '{print $1}' || echo unknown)
 
+  # Every domain with an address on this host, whether or not it is allowed.
+  # It is what lets the other end tell "this server will not let mainly touch
+  # that domain" from "that domain is not on this server at all" — two answers
+  # a refusal alone cannot distinguish, and which need opposite fixes.
+  serves=$(awk 'NF && $1 !~ /^#/ && $1 ~ /@/ {
+                  sub(/^[^@]*@/, "", $1); if (!seen[$1]++) print $1 }' "$VMAPS" 2>/dev/null |
+           sort | awk '{ printf "%s\"%s\"", sep, $0; sep="," }')
+
   # Reported here because a host whose maps are already out of parity cannot be
   # provisioned at all — every write would roll itself back at the commit check.
   # Better learned from a probe than from a failed create.
   if parity_ok; then parity=true; else parity=false; fi
 
-  printf '{"ok":true,"version":%s,"action":"probe","postfix":"%s","dovecot":"%s","scheme":"%s","parity":%s,"domains":[%s]}\n' \
-    "$VERSION" "$(json_escape "$pf")" "$(json_escape "$dc")" "$(json_escape "$SCHEME")" "$parity" "$domains"
+  printf '{"ok":true,"version":%s,"action":"probe","postfix":"%s","dovecot":"%s","scheme":"%s","parity":%s,"domains":[%s],"serves":[%s]}\n' \
+    "$VERSION" "$(json_escape "$pf")" "$(json_escape "$dc")" "$(json_escape "$SCHEME")" "$parity" "$domains" "$serves"
 }
 
 do_list() {
@@ -367,8 +383,12 @@ do_list() {
   valid_domain "$domain" || fail $EX_GRAMMAR bad_domain "$domain"
   require_grant "$domain" list
 
+  # `index($1, d) > 0` is not redundant: index() returns 0 for no match, and
+  # `length($1) - length(d) + 1` is *also* 0 whenever the domain is longer than
+  # the address — so without it, listing a long domain returned every shorter
+  # address in the file, from any domain.
   boxes=$(awk -F'[ \t]+' -v d="@$domain" '
-    NF && $1 !~ /^#/ && index($1, d) == length($1) - length(d) + 1 {
+    NF && $1 !~ /^#/ && index($1, d) > 0 && index($1, d) == length($1) - length(d) + 1 {
       printf "%s\"%s\"", sep, substr($1, 1, index($1, "@") - 1); sep=","
     }' "$VMAPS")
 
@@ -494,8 +514,9 @@ do_alias_list() {
   require_grant "$domain" alias
   [ -f "$ALIASES" ] || fail $EX_INTERNAL no_alias_file "$ALIASES does not exist"
 
+  # Same suffix check as do_list, and for the same reason.
   rows=$(awk -v d="@$domain" '
-    NF && $1 !~ /^#/ && index($1, d) == length($1) - length(d) + 1 {
+    NF && $1 !~ /^#/ && index($1, d) > 0 && index($1, d) == length($1) - length(d) + 1 {
       printf "%s{\"alias\":\"%s\",\"target\":\"%s\"}", sep, $1, $2; sep=","
     }' "$ALIASES")
 
@@ -545,12 +566,628 @@ do_alias_del() {
   printf '{"ok":true,"version":%s,"action":"alias-del","address":"%s"}\n' "$VERSION" "$address"
 }
 
+# ── Interactive administration ──────────────────────────────────────────────
+#
+# `setup`, `status`, `doctor` and `uninstall` exist because the alternative was
+# four pages of copy-and-paste across two machines, and every step of it was
+# something this script can do, check, and undo itself.
+#
+# They are reachable only from a real argv on this machine. The dispatcher at
+# the foot of this file hands them off before the wire protocol is parsed, and
+# the wire protocol cannot reach them: a request arriving over SSH is
+# `--stdin`, and the verb it then reads is matched against a `case` that does
+# not name any of them. Nothing a client can send administers this host.
+
+ADMIN_SELF=$0
+case "$ADMIN_SELF" in /*) ;; *) ADMIN_SELF="$PWD/$ADMIN_SELF" ;; esac
+
+INSTALLED=/usr/local/sbin/mainly-provision
+SUDOERS=/etc/sudoers.d/mainly-provision
+FULL_GRANTS=list,create,delete,password,alias,purge
+
+if [ -t 2 ]; then
+  B=$(printf '\033[1m'); D=$(printf '\033[2m'); R=$(printf '\033[0m')
+  RD=$(printf '\033[31m'); GR=$(printf '\033[32m'); YL=$(printf '\033[33m')
+else
+  B=''; D=''; R=''; RD=''; GR=''; YL=''
+fi
+
+say()  { printf '%s\n' "$*" >&2; }
+hdr()  { printf '\n%s%s%s\n' "$B" "$*" "$R" >&2; }
+good() { printf '  %s✓%s %s\n' "$GR" "$R" "$*" >&2; }
+bad()  { printf '  %s✗%s %s\n' "$RD" "$R" "$*" >&2; }
+huh()  { printf '  %s!%s %s\n' "$YL" "$R" "$*" >&2; }
+note() { printf '     %s%s%s\n' "$D" "$*" "$R" >&2; }
+quit() { printf '\n%s%s%s\n\n' "$RD" "$*" "$R" >&2; exit 1; }
+
+need_root() { [ "$(id -u)" = 0 ] || quit 'Run this with sudo.'; }
+need_tty() {
+  # A subshell, because POSIX makes a redirection error on a special built-in
+  # exit the shell outright — `{ : < /dev/tty; } || …` never reaches the `||`.
+  ( : < /dev/tty ) 2>/dev/null || quit 'This needs a terminal, and there is not one here.
+Run it from a shell on this machine — over SSH is fine, `docker exec -it` is fine,
+a pipe or a CI job is not. Every question below has a default, and taking them
+all without being asked is not something this should do quietly.'
+}
+
+# Prompts read /dev/tty, not stdin, so `curl … | sh` still works.
+ask() {
+  # ask <prompt> [default]  → $ANSWER
+  if [ -n "${2:-}" ]; then
+    printf '\n%s%s%s %s[%s]%s ' "$B" "$1" "$R" "$D" "$2" "$R" >&2
+  else
+    printf '\n%s%s%s ' "$B" "$1" "$R" >&2
+  fi
+  ANSWER=''
+  IFS= read -r ANSWER < /dev/tty || ANSWER=''
+  [ -n "$ANSWER" ] || ANSWER=${2:-}
+}
+
+confirm() {
+  # confirm <question> [y|n]   default y
+  case "${2:-y}" in y) hint='Y/n' ;; *) hint='y/N' ;; esac
+  printf '\n%s%s%s %s(%s)%s ' "$B" "$1" "$R" "$D" "$hint" "$R" >&2
+  reply=''
+  IFS= read -r reply < /dev/tty || reply=''
+  [ -n "$reply" ] || reply=${2:-y}
+  case "$reply" in [Yy]* ) return 0 ;; * ) return 1 ;; esac
+}
+
+# ── Detection ───────────────────────────────────────────────────────────────
+#
+# Every path this script writes to is asked of Postfix and Dovecot rather than
+# assumed, because a wrong guess here edits the wrong file as root. What is
+# found is shown, and every answer can be typed over.
+
+# `hash:/etc/postfix/vmaps, hash:/etc/postfix/other` → /etc/postfix/vmaps
+strip_maptype() {
+  v=${1%%,*}
+  v=${v# }
+  case "$v" in
+    *:/* ) printf '%s' "${v#*:}" ;;
+    /*   ) printf '%s' "$v" ;;
+    *    ) printf '' ;;
+  esac
+}
+
+detect() {
+  DET_VMAPS=$(strip_maptype "$(postconf -h virtual_mailbox_maps 2>/dev/null || true)")
+  DET_ALIASES=$(strip_maptype "$(postconf -h virtual_alias_maps 2>/dev/null || true)")
+  DET_TRANSPORT=$(postconf -h virtual_transport 2>/dev/null || true)
+  DET_POSTFIX=$(postconf -h mail_version 2>/dev/null || true)
+  DET_DOVECOT=$(dovecot --version 2>/dev/null | awk '{print $1}' || true)
+
+  # The passwd-file's path is the last absolute token in passdb's args.
+  DET_USERS=$(doveconf -n passdb 2>/dev/null |
+    awk '/args *=/ { for (i = NF; i >= 1; i--) if (substr($i, 1, 1) == "/") { print $i; exit } }')
+  DET_DRIVER=$(doveconf -n passdb 2>/dev/null | awk '/driver *=/ { print $3; exit }')
+
+  # maildir:/var/mail/%d/%n/Maildir → /var/mail
+  DET_MAILROOT=$(doveconf -h mail_location 2>/dev/null |
+    sed -e 's/^[a-z]*://' -e 's/%.*//' -e 's#/*$##')
+
+  # The strongest scheme this Dovecot can do. It applies only to passwords set
+  # from now on; a passwd-file holding a mix is normal and works fine, so there
+  # is nothing to gain by matching whatever the majority of existing rows use.
+  if doveadm pw -l 2>/dev/null | tr ' \t' '\n\n' | grep -qx ARGON2ID; then
+    DET_SCHEME=ARGON2ID
+  else
+    DET_SCHEME=SHA512-CRYPT
+  fi
+
+  [ -n "$DET_VMAPS" ] || DET_VMAPS=/etc/postfix/vmaps
+  [ -n "$DET_USERS" ] || DET_USERS=/etc/dovecot/users
+  [ -n "$DET_ALIASES" ] || DET_ALIASES=/etc/postfix/virtual_aliases
+  [ -n "$DET_MAILROOT" ] || DET_MAILROOT=/var/mail
+}
+
+# Which domains this machine actually accepts mail for: the ones with an
+# address in vmaps, plus any listed inline in virtual_mailbox_domains.
+domains_served() {
+  {
+    [ -f "$1" ] && awk 'NF && $1 !~ /^#/ && $1 ~ /@/ { sub(/^[^@]*@/, "", $1); print $1 }' "$1"
+    postconf -h virtual_mailbox_domains 2>/dev/null | tr ', \t' '\n\n\n'
+  } 2>/dev/null | grep '\.' | grep -v ':' | sort -u
+}
+
+# The address the mainly host will use to reach this one. Guessed from the
+# first global-scope address on this machine, which is right often enough to
+# be worth offering and always worth typing over.
+guess_host() {
+  # A pipeline's status is the last command's, so `ip … | awk` succeeds even
+  # when `ip` is absent. Each source is therefore tested for a result, not for
+  # an exit code.
+  found=''
+  if command -v ip >/dev/null 2>&1; then
+    found=$(ip -o -4 addr show scope global 2>/dev/null | awk '{ sub(/\/.*/, "", $4); print $4; exit }')
+  fi
+  [ -n "$found" ] || found=$(hostname -I 2>/dev/null | awk '{ print $1 }')
+  printf '%s' "$found"
+}
+
+host_fingerprints() {
+  for f in /etc/ssh/ssh_host_*_key.pub; do
+    [ -f "$f" ] || continue
+    ssh-keygen -lf "$f" 2>/dev/null | awk '{print $2}' | sed 's/^SHA256:/sha256:/'
+  done
+}
+
+sshd_port() {
+  p=$(sshd -T 2>/dev/null | awk '$1 == "port" { print $2; exit }')
+  [ -n "$p" ] || p=$(awk '$1 == "Port" { print $2; exit }' /etc/ssh/sshd_config 2>/dev/null)
+  printf '%s' "${p:-22}"
+}
+
+# ── setup ───────────────────────────────────────────────────────────────────
+
+do_setup() {
+  need_root
+  need_tty
+  command -v postconf >/dev/null 2>&1 || quit 'Postfix is not installed here. This is the mail server half of the setup — run it on the machine that receives your mail.'
+  command -v doveadm  >/dev/null 2>&1 || quit 'Dovecot is not installed here. This is the mail server half of the setup — run it on the machine that receives your mail.'
+  command -v ssh-keygen >/dev/null 2>&1 || quit 'ssh-keygen is missing. Install openssh-client.'
+
+  hdr 'mainly-provision setup'
+  say "  ${D}This machine, the mail server, will accept one SSH key that can do${R}"
+  say "  ${D}nothing but run this script. What it may then do is decided here,${R}"
+  say "  ${D}in a file mainly cannot write.${R}"
+
+  detect
+
+  hdr '1. What is here'
+  [ -n "$DET_POSTFIX" ] && good "postfix $DET_POSTFIX" || bad 'postfix — could not read its version'
+  [ -n "$DET_DOVECOT" ] && good "dovecot $DET_DOVECOT" || bad 'dovecot — could not read its version'
+  case "$DET_DRIVER" in
+    passwd-file ) good "dovecot authenticates from a passwd-file" ;;
+    '' ) huh "could not read Dovecot's passdb; assuming a passwd-file" ;;
+    * ) bad "dovecot authenticates with the '$DET_DRIVER' driver"
+        note 'This setup writes flat files. An SQL- or LDAP-backed server needs'
+        note 'a different driver — see docs/domain-control.md.'
+        confirm 'Continue anyway?' n || quit 'Stopped.' ;;
+  esac
+  case "$DET_TRANSPORT" in
+    lmtp:* ) good "delivery over $DET_TRANSPORT" ;;
+    '' ) huh 'no virtual_transport set' ;;
+    * ) huh "delivery over $DET_TRANSPORT" ;;
+  esac
+  say ''
+  note "addresses   $DET_VMAPS"
+  note "passwords   $DET_USERS"
+  note "aliases     $DET_ALIASES"
+  note "mail        $DET_MAILROOT"
+  note "hashing     $DET_SCHEME"
+
+  if confirm 'Are those four paths right?' y; then
+    :
+  else
+    ask 'Postfix virtual mailbox map'   "$DET_VMAPS";    DET_VMAPS=$ANSWER
+    ask 'Dovecot passwd-file'           "$DET_USERS";    DET_USERS=$ANSWER
+    ask 'Postfix virtual alias map'     "$DET_ALIASES";  DET_ALIASES=$ANSWER
+    ask 'Mail root'                     "$DET_MAILROOT"; DET_MAILROOT=$ANSWER
+  fi
+
+  [ -f "$DET_VMAPS" ] || quit "$DET_VMAPS does not exist. Create it, or point this at the file Postfix really uses."
+  [ -f "$DET_USERS" ] || quit "$DET_USERS does not exist. Create it, or point this at the file Dovecot really uses."
+
+  # A host already out of parity cannot be provisioned at all: every write
+  # would roll itself back at the commit check. Better found now than during a
+  # create somebody is waiting on.
+  hdr '2. Are the two files in agreement'
+  left=$(awk 'NF && $1 !~ /^#/ { print $1 }' "$DET_VMAPS" | sort)
+  right=$(awk -F: 'NF && $1 !~ /^#/ { print $1 }' "$DET_USERS" | sort)
+  if [ "$left" = "$right" ]; then
+    good "in parity — $(printf '%s\n' "$left" | grep -c . || true) addresses"
+  else
+    bad 'they disagree, and provisioning refuses to run on a host in that state'
+    say ''
+    printf '%s\n' "$left" > /tmp/.mp-l.$$; printf '%s\n' "$right" > /tmp/.mp-r.$$
+    diff /tmp/.mp-l.$$ /tmp/.mp-r.$$ | sed 's/^/     /' >&2 || true
+    rm -f /tmp/.mp-l.$$ /tmp/.mp-r.$$
+    say ''
+    note "< only in $DET_VMAPS  — accepts mail nobody can read"
+    note "> only in $DET_USERS  — a login to a mailbox that will never receive"
+    note 'Reconcile by hand, then run setup again.'
+    quit 'Stopped: fix parity first.'
+  fi
+
+  hdr '3. Which domains may mainly manage'
+  served=$(domains_served "$DET_VMAPS")
+  if [ -n "$served" ]; then
+    printf '%s\n' "$served" | sed "s/^/     $D/;s/\$/$R/" >&2
+    default=$(printf '%s\n' "$served" | tr '\n' ',' | sed 's/,$//')
+  else
+    huh 'no domains found in the maps — this server may not be serving any yet'
+    default=''
+  fi
+  ask 'Domains, comma separated' "$default"
+  domains=$(printf '%s' "$ANSWER" | tr ', \t' '\n\n\n' | grep . | tr 'A-Z' 'a-z' | sort -u)
+  [ -n "$domains" ] || quit 'No domains given. Nothing to set up.'
+  for d in $domains; do
+    valid_domain "$d" || quit "'$d' is not a domain name."
+  done
+
+  hdr '4. What may it do to them'
+  say "  ${D}full      everything below${R}"
+  say "  ${D}keep      create, delete, passwords, aliases — never destroys stored mail${R}"
+  say "  ${D}read      see which addresses exist, and nothing else${R}"
+  say ''
+  note 'full adds one thing keep does not: deleting an address may also destroy'
+  note 'its Maildir. Without it, a deleted address stops receiving and its mail'
+  note 'stays on disk, so recreating the address brings everything back.'
+  ask 'Scope — full, keep, read, or a comma-separated list' full
+  case "$ANSWER" in
+    full ) grants=$FULL_GRANTS ;;
+    keep ) grants=list,create,delete,password,alias ;;
+    read ) grants=list ;;
+    *    ) grants=$(printf '%s' "$ANSWER" | tr -d ' \t') ;;
+  esac
+  for g in $(printf '%s' "$grants" | tr ',' ' '); do
+    case "$g" in
+      list|create|delete|password|alias|purge ) ;;
+      * ) quit "'$g' is not a grant. Valid: list, create, delete, password, alias, purge." ;;
+    esac
+  done
+
+  hdr '5. Installing'
+
+  if [ "$ADMIN_SELF" != "$INSTALLED" ]; then
+    [ -f "$ADMIN_SELF" ] || quit "Cannot find this script's own file to install it. Save it to disk first, then run: sudo sh mainly-provision setup"
+    install -m 0755 -o root -g root "$ADMIN_SELF" "$INSTALLED"
+    good "$INSTALLED"
+  else
+    good "$INSTALLED (already here)"
+  fi
+
+  # Written fresh every time, with every path spelled out. A file whose values
+  # are half explicit and half inherited from this script's defaults is one
+  # nobody can read an answer off.
+  umask 022
+  {
+    printf '# mainly-provision — what this mail server will let mainly do.\n'
+    printf '#\n'
+    printf '# Written by `mainly-provision setup` on %s.\n' "$(date -u '+%Y-%m-%d %H:%M UTC')"
+    printf '#\n'
+    printf '# This is the gate that decides. mainly cannot write it, so nothing that\n'
+    printf '# happens to mainly can widen what this machine will agree to. Narrowing a\n'
+    printf '# line here takes effect on the next call; there is nothing to restart.\n'
+    printf '\n'
+    printf 'vmaps    %s\n' "$DET_VMAPS"
+    printf 'users    %s\n' "$DET_USERS"
+    printf 'aliases  %s\n' "$DET_ALIASES"
+    printf 'mailroot %s\n' "$DET_MAILROOT"
+    printf 'scheme   %s\n' "$DET_SCHEME"
+    printf 'reload   postfix\n'
+    printf '\n'
+    printf '# domain <name> <comma-separated grants>\n'
+    printf '#   list create delete password alias purge\n'
+    for d in $domains; do printf 'domain %s %s\n' "$d" "$grants"; done
+  } > "$CONF"
+  chown root:root "$CONF"
+  chmod 0644 "$CONF"
+  good "$CONF"
+
+  if id mailprov >/dev/null 2>&1; then
+    good 'account mailprov (already here)'
+  else
+    # /bin/sh and not nologin: sshd runs a forced command *through* the
+    # account's login shell, so nologin accepts the connection, prints "This
+    # account is currently not available", and never runs the script — which
+    # looks like a correct setup where every call mysteriously fails.
+    if command -v adduser >/dev/null 2>&1; then
+      adduser --system --group --shell /bin/sh --home /home/mailprov --disabled-password mailprov >/dev/null
+    else
+      useradd --system --shell /bin/sh --home-dir /home/mailprov --create-home mailprov
+      passwd -l mailprov >/dev/null 2>&1 || true
+    fi
+    good 'account mailprov, no password, shell /bin/sh'
+  fi
+  MAILPROV_HOME=$(getent passwd mailprov | cut -d: -f6)
+  [ -n "$MAILPROV_HOME" ] || MAILPROV_HOME=/home/mailprov
+  mkdir -p "$MAILPROV_HOME"
+
+  printf 'mailprov ALL=(root) NOPASSWD: %s\n' "$INSTALLED" > "$SUDOERS.tmp"
+  chmod 0440 "$SUDOERS.tmp"
+  if visudo -cqf "$SUDOERS.tmp" >/dev/null 2>&1; then
+    mv -f "$SUDOERS.tmp" "$SUDOERS"
+    good "$SUDOERS — sudo for that one path, and nothing else"
+  else
+    rm -f "$SUDOERS.tmp"
+    quit 'visudo rejected the sudoers line. Nothing was written.'
+  fi
+
+  hdr '6. The key'
+
+  # Generated here, handed over once, and then removed from this machine. A
+  # private key sitting on the server it unlocks is one more thing that has to
+  # stay secret for no benefit — mainly is the only thing that needs it, and
+  # re-running setup issues a new one in seconds.
+  KEYDIR=$(mktemp -d) || quit 'Could not make a temporary directory.'
+  chmod 700 "$KEYDIR"
+  ssh-keygen -q -t ed25519 -f "$KEYDIR/key" -N '' -C 'mainly-provision' </dev/null
+  mkdir -p "$MAILPROV_HOME/.ssh"
+  # `restrict` denies port forwarding, agent forwarding, a PTY, X11 and
+  # ~/.ssh/rc. With the forced command, the only thing this key can cause is
+  # one run of this script.
+  printf 'command="sudo %s --stdin",restrict %s\n' "$INSTALLED" "$(cat "$KEYDIR/key.pub")" \
+    > "$MAILPROV_HOME/.ssh/authorized_keys"
+  chown -R mailprov:"$(id -gn mailprov)" "$MAILPROV_HOME/.ssh"
+  chmod 700 "$MAILPROV_HOME/.ssh"
+  chmod 600 "$MAILPROV_HOME/.ssh/authorized_keys"
+  good "installed in $MAILPROV_HOME/.ssh/authorized_keys, pinned to one command"
+
+  hdr '7. Checking it works'
+  if reply=$(printf 'probe\n' | "$INSTALLED" --stdin 2>&1) && \
+     printf '%s' "$reply" | grep -q '"ok":true'; then
+    good 'the script answers, and its config parses'
+  else
+    bad 'the script would not answer'
+    printf '%s\n' "$reply" | sed 's/^/     /' >&2
+    rm -rf "$KEYDIR"
+    quit 'Stopped. Nothing above this point is undone; fix and run setup again.'
+  fi
+
+  hdr '8. Where mainly reaches this machine'
+  ask 'Address the mainly host should connect to' "$(guess_host)"
+  reach_host=$ANSWER
+  [ -n "$reach_host" ] || quit 'No address given.'
+  ask 'SSH port' "$(sshd_port)"
+  reach_port=$ANSWER
+
+  fps=$(host_fingerprints | awk '{ printf "%s\"%s\"", sep, $0; sep="," }')
+  doms=$(printf '%s\n' $domains | awk '{ printf "%s\"%s\"", sep, $0; sep="," }')
+  grts=$(printf '%s' "$grants" | tr ',' '\n' | awk 'NF { printf "%s\"%s\"", sep, $0; sep="," }')
+
+  blob=$(printf '{"v":1,"host":"%s","port":%s,"user":"mailprov","fingerprints":[%s],"domains":[%s],"grants":[%s],"key":"%s"}' \
+    "$(json_escape "$reach_host")" "${reach_port:-22}" "$fps" "$doms" "$grts" \
+    "$(json_escape "$(cat "$KEYDIR/key")")" | base64 | tr -d '\n')
+
+  rm -rf "$KEYDIR"
+
+  hdr 'Done. One command left, on the machine running mainly:'
+  say ''
+  printf '%s./mainly.sh domain connect %s%s\n' "$B" "$blob" "$R"
+  say ''
+  note 'That string carries the private key. Paste it into that terminal and'
+  note 'nowhere else — not a chat, not an issue, not a paste service. It is'
+  note 'not stored on this machine; if you lose it, run setup again for a new'
+  note 'one, which also revokes this one.'
+  say ''
+  say "  ${D}Afterwards: mainly-provision status · doctor · uninstall${R}"
+  say ''
+}
+
+# ── Checks, shared by status and doctor ─────────────────────────────────────
+
+FAILED=0
+
+check_all() {
+  verbose=${1:-no}
+
+  if [ -x "$INSTALLED" ]; then good "installed at $INSTALLED"
+  else bad "not installed at $INSTALLED"; FAILED=1
+       [ "$verbose" = yes ] && note 'Run: sudo sh mainly-provision setup'; fi
+
+  if [ -f "$CONF" ]; then
+    owner=$(stat -c %u "$CONF" 2>/dev/null || stat -f %u "$CONF" 2>/dev/null || echo '?')
+    mode=$(stat -c %a "$CONF" 2>/dev/null || stat -f %Lp "$CONF" 2>/dev/null || echo '?')
+    if [ "$owner" = 0 ]; then
+      case "$mode" in
+        *[2367] | *[2367][0-7] )
+          bad "$CONF is writable by more than root (mode $mode)"; FAILED=1
+          [ "$verbose" = yes ] && note "Run: sudo chmod 0644 $CONF" ;;
+        * ) good "$CONF — root-owned, mode $mode" ;;
+      esac
+    else
+      bad "$CONF is not owned by root"; FAILED=1
+      [ "$verbose" = yes ] && note "Run: sudo chown root:root $CONF"
+    fi
+  else
+    bad "$CONF is missing"; FAILED=1
+    [ "$verbose" = yes ] && note 'Run: sudo mainly-provision setup'
+    return 0
+  fi
+
+  load_config
+
+  for f in "$VMAPS" "$USERS"; do
+    [ -f "$f" ] && good "$f" || { bad "$f — named in $CONF, but not there"; FAILED=1; }
+  done
+
+  if [ -f "$VMAPS" ] && [ -f "$USERS" ]; then
+    if parity_ok; then
+      good "maps agree — $(awk 'NF && $1 !~ /^#/' "$VMAPS" | wc -l | tr -d ' ') addresses"
+    else
+      bad 'the two maps disagree; no write can succeed until they are reconciled'
+      FAILED=1
+      if [ "$verbose" = yes ]; then
+        note "diff <(awk 'NF{print \$1}' $VMAPS | sort) \\"
+        note "     <(awk -F: 'NF{print \$1}' $USERS | sort)"
+        note 'Delete the orphan, or add the missing half, then: postmap hash:'"$VMAPS"
+      fi
+    fi
+  fi
+
+  if id mailprov >/dev/null 2>&1; then
+    shell=$(getent passwd mailprov | cut -d: -f7)
+    home=$(getent passwd mailprov | cut -d: -f6)
+    case "$shell" in
+      */nologin | */false )
+        bad "mailprov's shell is $shell"
+        FAILED=1
+        [ "$verbose" = yes ] && {
+          note 'sshd runs the forced command through the login shell, so this'
+          note 'accepts the connection and then never runs the script.'
+          note 'Run: sudo chsh -s /bin/sh mailprov'
+        } ;;
+      * ) good "account mailprov, shell $shell" ;;
+    esac
+    ak="$home/.ssh/authorized_keys"
+    if [ -s "$ak" ]; then
+      if grep -q 'command=' "$ak"; then
+        good "one key installed, $(ssh-keygen -lf "$ak" 2>/dev/null | awk '{print $2}' | head -1)"
+      else
+        bad "$ak has a key with no forced command — it can open a shell"
+        FAILED=1
+        [ "$verbose" = yes ] && note 'Run setup again to replace it.'
+      fi
+    else
+      bad 'no key installed — mainly cannot reach this machine'
+      FAILED=1
+      [ "$verbose" = yes ] && note 'Run: sudo mainly-provision setup'
+    fi
+  else
+    bad 'no mailprov account'; FAILED=1
+    [ "$verbose" = yes ] && note 'Run: sudo mainly-provision setup'
+  fi
+
+  if [ -f "$SUDOERS" ]; then
+    if visudo -cqf "$SUDOERS" >/dev/null 2>&1; then good "$SUDOERS"
+    else bad "$SUDOERS does not parse"; FAILED=1; fi
+  else
+    bad "$SUDOERS is missing — the script cannot reach root"; FAILED=1
+    [ "$verbose" = yes ] && note 'Run: sudo mainly-provision setup'
+  fi
+
+  command -v doveadm >/dev/null 2>&1 && good "hashing with $SCHEME" || {
+    bad 'doveadm is not on PATH; passwords cannot be hashed'; FAILED=1; }
+
+  return 0
+}
+
+do_status() {
+  need_root
+  hdr 'mainly-provision'
+  pf=$(postconf -h mail_version 2>/dev/null || echo unknown)
+  dc=$(dovecot --version 2>/dev/null | awk '{print $1}' || echo unknown)
+  note "postfix $pf · dovecot $dc"
+  say ''
+  check_all no
+  if [ -f "$CONF" ]; then
+    hdr 'Domains'
+    if awk '$1 == "domain"' "$CONF" | grep -q .; then
+      awk -v d="$D" -v r="$R" '$1 == "domain" { printf "     %s  %s%s%s\n", $2, d, $3, r }' "$CONF" >&2
+    else
+      note 'none listed'
+    fi
+  fi
+  say ''
+  [ "$FAILED" = 0 ] || { say "  ${YL}Something is wrong. Run: sudo mainly-provision doctor${R}"; say ''; exit 1; }
+}
+
+do_doctor() {
+  need_root
+  hdr 'Checking every layer'
+  check_all yes
+
+  hdr 'End to end'
+  if reply=$(printf 'probe\n' | "$INSTALLED" --stdin 2>&1) && printf '%s' "$reply" | grep -q '"ok":true'; then
+    good 'the script runs and answers'
+    printf '     %s%s%s\n' "$D" "$reply" "$R" >&2
+  else
+    bad 'the script would not answer'
+    printf '%s\n' "$reply" | sed 's/^/     /' >&2
+    FAILED=1
+  fi
+
+  say ''
+  if [ "$FAILED" = 0 ]; then
+    say "  ${GR}This half is healthy.${R}"
+    say ''
+    note 'If mainly still cannot reach it, the fault is between the two machines:'
+    note '  · is the SSH port open from the mainly host'
+    note '  · does the address in mainly match this machine'
+    note 'On the mainly host, run: ./mainly.sh domain doctor'
+  else
+    say "  ${RD}Fix the ✗ lines above, then run this again.${R}"
+  fi
+  say ''
+  [ "$FAILED" = 0 ] || exit 1
+}
+
+do_uninstall() {
+  need_root
+  need_tty
+  hdr 'Uninstall'
+  note 'This removes the key, the permissions and this script.'
+  note 'It removes no address, no mailbox, and no mail. Everything created'
+  note 'through domain control stays exactly as it is.'
+
+  confirm 'Remove it?' n || { say ''; say '  Cancelled.'; say ''; exit 0; }
+
+  home=$(getent passwd mailprov 2>/dev/null | cut -d: -f6)
+  if [ -n "$home" ] && [ -f "$home/.ssh/authorized_keys" ]; then
+    rm -f "$home/.ssh/authorized_keys"
+    good 'key removed — mainly can no longer reach this machine'
+  fi
+  rm -f "$SUDOERS"      && good "$SUDOERS"
+  rm -f "$CONF"         && good "$CONF"
+
+  if id mailprov >/dev/null 2>&1 && confirm 'Remove the mailprov account too?' y; then
+    # `deluser --remove-home` needs perl, which a slim host may not have, and it
+    # fails as a whole when perl is missing rather than removing the account and
+    # skipping the directory. So: try it, fall back to removing the account
+    # alone, then take the directory with coreutils — and check the result
+    # instead of assuming it, because reporting a removal that did not happen is
+    # worse than reporting the failure.
+    if command -v deluser >/dev/null 2>&1; then
+      deluser --remove-home mailprov >/dev/null 2>&1 || deluser mailprov >/dev/null 2>&1 || true
+    else
+      userdel -r mailprov >/dev/null 2>&1 || userdel mailprov >/dev/null 2>&1 || true
+    fi
+
+    if id mailprov >/dev/null 2>&1; then
+      bad 'the mailprov account is still here'
+      note 'Its key is gone, so mainly cannot reach this machine either way.'
+      note 'Remove the account by hand:  sudo userdel -r mailprov'
+    else
+      # Only under the directories an account of this kind is ever given. The
+      # path comes from passwd, and passwd is editable.
+      case "$home" in
+        /home/?* | /var/lib/?* ) [ -d "$home" ] && rm -rf -- "$home" ;;
+      esac
+      good 'account mailprov'
+    fi
+  fi
+
+  rm -f "$INSTALLED" && good "$INSTALLED"
+  say ''
+  say "  ${D}On the mainly host, finish with: ./mainly.sh domain forget <domain>${R}"
+  say ''
+}
+
 # ── Request parsing ─────────────────────────────────────────────────────────
 #
 # The verb comes from argv, from $SSH_ORIGINAL_COMMAND, or from the first line
 # of stdin — in that order. Whichever it is, every token is validated below
 # before it reaches anything, so the source of the request changes nothing
 # about how much it is trusted.
+
+# Administration first, and only from argv. A request arriving over SSH is
+# `--stdin`, so it never matches here; the verb it then carries is matched
+# against the `case` at the foot of this file, which names none of these. There
+# is no path from the wire to the administration of this host.
+if [ $# -gt 0 ] && [ "$1" != --stdin ]; then
+  case "$1" in
+    setup )     do_setup;     exit 0 ;;
+    status )    do_status;    exit 0 ;;
+    doctor )    do_doctor;    exit 0 ;;
+    uninstall ) do_uninstall; exit 0 ;;
+    version )   printf 'mainly-provision protocol v%s\n' "$VERSION"; exit 0 ;;
+    help | --help | -h )
+      say ''
+      say "  ${B}mainly-provision${R} — the mail server half of mainly's domain control."
+      say ''
+      say "  ${B}setup${R}        install it, choose what it may do, issue mainly a key"
+      say "  status       what is installed here, and whether it is healthy"
+      say "  doctor       every check, with the fix for each failure"
+      say "  uninstall    remove all of it — no address and no mail is touched"
+      say ''
+      say "  ${D}Run setup here, then paste the one command it prints into a${R}"
+      say "  ${D}shell on the machine running mainly.${R}"
+      say ''
+      exit 0 ;;
+  esac
+fi
 
 if [ $# -gt 0 ] && [ "$1" != --stdin ]; then
   :

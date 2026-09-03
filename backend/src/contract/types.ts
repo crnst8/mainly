@@ -810,10 +810,11 @@ export type ServerEvent =
  * the sidebar. This is a different axis entirely: whether this install may
  * write to the mail server that hosts the domain, and how far.
  *
- * The default for every one of these is off. Connecting a domain grants
- * nothing; each verb is turned on deliberately, and `purge` is separate from
- * `delete` because retiring an address and destroying its mail are different
- * decisions that happen to share a button.
+ * Every one of these is off until something turns it on, and the only thing that
+ * does is the mail server's own answer about what it permits — `domain connect`
+ * asks and stores exactly that. `purge` is separate from `delete` because
+ * retiring an address and destroying its mail are different decisions that
+ * happen to share a button.
  */
 export type DomainGrant = 'list' | 'create' | 'delete' | 'password' | 'alias' | 'purge';
 
@@ -892,6 +893,14 @@ export interface DomainProbe {
    */
   parity: boolean;
   serverGrants: DomainGrant[];
+  /**
+   * Every domain that has an address on that mail server, permitted or not.
+   *
+   * Separate from `serverGrants` because "this server will not let mainly touch
+   * that domain" and "that domain is not on this server at all" are the same
+   * refusal and opposite fixes. Empty from a helper too old to report it.
+   */
+  serves: string[];
 }
 
 /** One attempt to change something on a mail server. Written whether it worked

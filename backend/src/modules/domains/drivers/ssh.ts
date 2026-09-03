@@ -403,6 +403,7 @@ export const sshDriver: DomainDriver = {
       // false is a broken host.
       parity: reply.parity !== false,
       serverGrants: mine ? asGrants(mine.grants) : [],
+      serves: Array.isArray(reply.serves) ? reply.serves.filter((d): d is string => typeof d === 'string') : [],
     };
   },
 

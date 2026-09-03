@@ -30,6 +30,9 @@ export interface ProbeResult {
   parity: boolean;
   /** What the server says it will allow for this domain. */
   serverGrants: DomainGrant[];
+  /** Every domain that machine serves, whether or not it is on its allowlist.
+   *  Empty from a helper too old to report it. */
+  serves: string[];
 }
 
 export interface DomainDriver {

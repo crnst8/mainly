@@ -312,7 +312,7 @@ usage: ./dev.sh <command>
   user <email>       create a login
   seed               (re)create the fixture ./dev.sh check asserts against
   token <args>       mint or revoke an agent token
-  domain <args>      connect a mail server domain, and grant what it may do
+  domain <args>      connect a mail server, and set what it may do
   check              typecheck + contract + url + search + smoke + query
   logs [api|db|web]
 EOF

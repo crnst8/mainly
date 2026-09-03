@@ -515,9 +515,10 @@ server.registerTool(
       const domains = await client.domains();
       if (!domains.length) {
         return text(
-          'No domains are connected, so no address can be created or removed from here.\n' +
-            'Connecting one needs shell access on the host:\n' +
-            '  ./mainly.sh domain add you@example.com example.com --host mail.example.com --key ~/.ssh/id_ed25519',
+          'No mail server is connected, so no address can be created or removed from here.\n' +
+            'Connecting one needs shell access on both machines:\n' +
+            '  on the mail server:  sudo mainly-provision setup\n' +
+            '  on the mainly host:  ./mainly.sh domain connect <the string it printed>',
         );
       }
       return text(
