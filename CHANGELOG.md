@@ -1,3 +1,9 @@
+## 1.3.0 — 2026-09-03
+
+- chore: bump deps & screenshots refresh
+- docs: release notes for 1.3.0
+- feat: optional server-side domain control
+
 ## 1.2.4 — 2026-08-31
 
 - Closed the three reported upstream advisories (@fastify/static 8.3.0→10.1.3, which needed a setHeaders migration to the v10 FastifyReply API; mailparser 3.9.14→3.9.17; nanoid→3.3.18 in both trees)
