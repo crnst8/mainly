@@ -1,3 +1,7 @@
+## 1.3.1 — 2026-09-03
+
+- fix: domain workflow cli
+
 ## Unreleased
 
 Domain control setup is now two commands instead of two pages.
