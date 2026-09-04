@@ -7,22 +7,27 @@
 
 **A mail client optimized for multiple inboxes across multiple domains.**
 
-Try the demo · mainly.crnst8.com
+  #### [Try the demo](https://mainly.crnst8.com/demo)
+
 
 <img src="site/sc.png#gh-light-mode-only" width="820" alt="Twelve mailboxes across seven domains in one message list">
 <img src="site/sc-dark.png#gh-dark-mode-only" width="820" alt="Twelve mailboxes across seven domains in one message list">
+
+
 
 </div>
 
 ---
 
+<br />
+
 ## What does it do?
 
-### It’s a mail client that does everything you expect a mail client to do, but designed specifically for users that handle multiple inboxes across multiple domains.
+### It does everything you expect a mail client to do, but designed for users that handle multiple inboxes across multiple domains.
 
 Most clients aren’t optimised to handle for users who handle lots of mailboxes and domains at once, both visually and structurally. 
 
-#### Instead of leaning on IMAP, Mainly uses Postgres to store metadata from the mail-server to make it faster to store & search instead of querying constantly across all the accounts. This works particularly well for those who self-host their own email servers with Postfix & Dovecot.
+Instead of leaning on IMAP, Mainly uses Postgres to store metadata from the mail-server to make it faster to store & search instead of querying constantly across all the accounts. This works particularly well for those who self-host their own email servers with Postfix & Dovecot.
 
 
 - A unified query across twelve mailboxes is 5–20ms of SQL instead of 3–8 seconds of sequential `SELECT`/`SEARCH`/`FETCH` , and there’s no client-side MTA, DNS, DKIM, or Sieve. 
