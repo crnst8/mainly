@@ -1,3 +1,7 @@
+## 1.3.2 — 2026-09-04
+
+- chore: README cleanup
+
 ## 1.3.1 — 2026-09-03
 
 - fix: domain workflow cli
