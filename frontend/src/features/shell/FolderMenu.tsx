@@ -13,9 +13,16 @@
 
 import { useState } from 'react';
 import { Check, Dot, Folder as FolderIcon, Inbox, Plus, Refresh, Trash } from '@/components/icons';
-import { ContextMenu, MenuItem, MenuSub, type ContextMenuController } from '@/components/context-menu';
+import {
+  ContextMenu,
+  MenuItem,
+  MenuSub,
+  MenuToggle,
+  type ContextMenuController,
+} from '@/components/context-menu';
 import { PopLabel, PopSep } from '@/components/ui';
 import { useSidebarGroups, useStore } from '@/lib/store';
+import { groupTintsMembers } from '@/lib/types';
 import type { AccountGroup, Folder } from '@/lib/types';
 
 /** What was right-clicked. A folder carries its account so "new folder here"
@@ -146,18 +153,26 @@ function Body({ target, close }: { target: SidebarTarget; close: () => void }) {
 
 /* ── Group menu ───────────────────────────────────────────────────────────── */
 
-function GroupBody({ group, close }: { group: AccountGroup; close: () => void }) {
+function GroupBody({ group: opened, close }: { group: AccountGroup; close: () => void }) {
   const renameAccountGroup = useStore((s) => s.renameAccountGroup);
   const setAccountGroupColor = useStore((s) => s.setAccountGroupColor);
+  const toggleAccountGroupTint = useStore((s) => s.toggleAccountGroupTint);
   const removeAccountGroup = useStore((s) => s.removeAccountGroup);
   const { groups } = useSidebarGroups();
-  const [name, setName] = useState(group.name);
+  const [name, setName] = useState(opened.name);
 
   /* The resolved membership, not `group.accountIds`: a group can name a mailbox
      that has since been removed, and acting on an id nothing resolves is how a
      bulk action reports a count that does not match what happened. */
-  const resolved = groups.find((g) => g.group.id === group.id);
+  const resolved = groups.find((g) => g.group.id === opened.id);
   const accountIds = (resolved?.accounts ?? []).map((a) => a.id);
+
+  /* The live record, not the snapshot the right-click captured. The menu stays
+     open across a toggle — that is the point of a checkbox rather than a
+     command — so anything drawing a tick has to read state that changes under
+     it. Falls back to the snapshot only while the group is being removed. */
+  const group = resolved?.group ?? opened;
+  const tintsMembers = groupTintsMembers(group);
 
   return (
     <>
@@ -182,7 +197,7 @@ function GroupBody({ group, close }: { group: AccountGroup; close: () => void })
         />
       </div>
 
-      <MenuSub label="Colour" icon={<FolderIcon size={13} />} width={200}>
+      <MenuSub label="Colour" icon={<FolderIcon size={13} />} width={216}>
         <PopLabel>Group colour</PopLabel>
         <div className="pop__swatches">
           {FOLDER_COLORS.map((c) => (
@@ -209,6 +224,18 @@ function GroupBody({ group, close }: { group: AccountGroup; close: () => void })
         >
           No colour
         </MenuItem>
+        <PopSep />
+        {/* Lives here rather than in the group menu proper: it modifies the
+            swatch above it, and it is on by default, so it belongs where you
+            can see what it did. Does not close the menu — the whole value of a
+            checkbox is watching the sidebar change while it is still open. */}
+        <MenuToggle
+          checked={tintsMembers}
+          icon={<FolderIcon size={13} />}
+          onClick={() => void toggleAccountGroupTint(group.id)}
+        >
+          Colour mailboxes too
+        </MenuToggle>
       </MenuSub>
 
       <PopSep />

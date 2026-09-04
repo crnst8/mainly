@@ -33,6 +33,7 @@ import { count } from '@/lib/format';
 import { useContextMenu } from '@/components/context-menu';
 import { useDomains, useSidebarGroups, useStore, type ResolvedGroup } from '@/lib/store';
 import { FolderMenu, type SidebarTarget } from './FolderMenu';
+import { groupMemberTint } from '@/lib/types';
 import type { Account, Folder, FolderRole, Id, Scope } from '@/lib/types';
 
 const ROLE_ICON: Record<FolderRole, typeof Inbox> = {
@@ -391,6 +392,9 @@ function GroupNode({
   const toggleAccountGroup = useStore((s) => s.toggleAccountGroup);
   const { group, accounts, unread } = resolved;
   const open = !group.collapsed;
+  /* What the mailboxes inside inherit — null when the group has no colour or
+     the user has turned the cascade off in the group's own menu. */
+  const memberTint = groupMemberTint(group);
 
   return (
     <div className="group">
@@ -427,7 +431,12 @@ function GroupNode({
         </div>
 
         {open && (
-          <div className="subtree">
+          <div
+            className="subtree subtree--rail"
+            /* The rail takes the group's colour when it has one, so the indent
+               and the tint are the same statement rather than two. */
+            style={memberTint ? ({ '--rail': memberTint } as React.CSSProperties) : undefined}
+          >
             {accounts.length ? (
               accounts.map((a) => (
                 <AccountNode
@@ -435,6 +444,7 @@ function GroupNode({
                   account={a}
                   defaultOpen={false}
                   drag={drag}
+                  inheritedTint={memberTint}
                   onMenu={onMenu}
                 />
               ))
@@ -454,12 +464,16 @@ function AccountNode({
   account,
   defaultOpen,
   drag,
+  inheritedTint,
   onMenu,
 }: {
   account: Account;
   defaultOpen: boolean;
   /** Absent inside a domain view, where there are no groups to drag into. */
   drag?: AccountDrag;
+  /** The colour the enclosing group lends this mailbox, if any. Mirrors
+   *  `useAccountColor`, which resolves the same order for every other surface. */
+  inheritedTint?: string | null;
   onMenu: (e: React.MouseEvent, target: SidebarTarget) => void;
 }) {
   const [open, setOpen] = useState(defaultOpen);
@@ -472,7 +486,8 @@ function AccountNode({
   const prefs = useStore((s) => s.prefs);
   const setSettings = useStore((s) => s.setSettings);
 
-  const tint = account.color ?? prefs?.theme.domainColors[account.domain] ?? 'var(--line-strong)';
+  const tint =
+    account.color ?? inheritedTint ?? prefs?.theme.domainColors[account.domain] ?? 'var(--line-strong)';
   const active = scope.kind === 'account' && scope.value === account.id;
   const broken = account.status === 'auth_error' || account.status === 'connect_error';
 
@@ -530,7 +545,7 @@ function AccountNode({
       )}
 
       {open && (
-        <div className="subtree">
+        <div className="subtree subtree--rail" style={{ '--rail': tint } as React.CSSProperties}>
           {roots.map((f) => (
             <FolderNode
               key={f.id}

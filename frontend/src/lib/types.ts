@@ -128,6 +128,29 @@ export interface AccountGroup {
   /** Members, in the order the user dragged them. */
   accountIds: Id[];
   position: number;
+  /**
+   * Whether `color` also stands as the colour of the mailboxes inside.
+   *
+   * Colouring a group and then colouring each mailbox in it to match is the
+   * same decision typed once per mailbox, so the cascade is the default and
+   * this is the way out of it. Optional because groups stored before the
+   * option existed do not carry it, and those read as on — see
+   * `groupTintsMembers`.
+   */
+  tintMembers?: boolean;
+}
+
+/** Whether a group lends its colour to the mailboxes in it. Absent means on:
+ *  a group saved before the flag existed must behave like a new one. */
+export function groupTintsMembers(group: AccountGroup): boolean {
+  return group.tintMembers !== false;
+}
+
+/** The colour a group lends its members, or null when it has none to lend.
+ *  One place decides, so the sidebar hairline, the list stripe and the reader
+ *  cannot disagree about what colour a mailbox is. */
+export function groupMemberTint(group: AccountGroup): string | null {
+  return groupTintsMembers(group) ? group.color : null;
 }
 
 /* ──────────────────────────────────────────────────────────────────────────

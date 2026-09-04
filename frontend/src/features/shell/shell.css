@@ -703,6 +703,28 @@
   animation: subtree-in var(--dur-base) var(--ease-out);
 }
 
+/*
+ * One step of nesting: an indent and the hairline it hangs from.
+ *
+ * The indent alone was not enough. A group and the mailboxes in it are two
+ * different kinds of thing at the same left edge, and with eight groups open
+ * the pane read as one flat list of forty rows — the twisty was the only thing
+ * saying which row owned which. The rail restores the ownership: every child
+ * sits against a line that starts under its parent's twisty and ends where the
+ * subtree does, so the eye follows a column instead of measuring an indent.
+ *
+ * Applied once per parent, not per depth. Folder rows already carry `--depth`
+ * in their own padding, and stacking both would spend the pane's 232px on
+ * whitespace before the fourth level.
+ */
+.subtree--rail {
+  margin-left: 10px;
+  padding-left: 8px;
+  /* Mixed down rather than used neat: at full strength a tinted rail competes
+     with the mailbox hairlines it is meant to be gathering. */
+  border-left: 1px solid color-mix(in oklab, var(--rail, var(--line-strong)) 38%, transparent);
+}
+
 @keyframes subtree-in {
   from {
     opacity: 0;
@@ -988,8 +1010,9 @@
   background: var(--tint);
 }
 
+/* Sits inside the rail, which is already carrying the indent. */
 .group__empty {
-  padding: var(--s-3) var(--s-3) var(--s-3) var(--s-8);
+  padding: var(--s-3);
   font-size: var(--t-2xs);
   color: var(--text-faint);
 }

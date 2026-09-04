@@ -19,7 +19,7 @@ import { usePrefersDark } from './media';
 import { printMessage } from './print';
 import { remoteImagesAllowed } from './sender';
 import { parseLocation, routeDefaults, sameFilters, sameScope, type RouteState } from './url';
-import { withPreferenceDefaults } from './types';
+import { groupMemberTint, groupTintsMembers, withPreferenceDefaults } from './types';
 import type {
   Account,
   AccountGroup,
@@ -251,6 +251,8 @@ interface Actions {
   removeAccountGroup(id: Id): Promise<void>;
   setAccountGroupColor(id: Id, color: string | null): Promise<void>;
   toggleAccountGroup(id: Id): Promise<void>;
+  /** Whether the group's colour cascades to the mailboxes in it. */
+  toggleAccountGroupTint(id: Id): Promise<void>;
   /** Put an account in a group, or with `groupId: null` back among the
    *  ungrouped. `index` is the drop position inside the destination. */
   moveAccountToGroup(accountId: Id, groupId: Id | null, index?: number): Promise<void>;
@@ -1260,6 +1262,7 @@ export const useStore = create<State & Actions>((set, get) => ({
           name: trimmed,
           color: null,
           collapsed: false,
+          tintMembers: true,
           accountIds: [],
           position: prefs.accountGroups.length,
         },
@@ -1280,6 +1283,10 @@ export const useStore = create<State & Actions>((set, get) => ({
 
   async toggleAccountGroup(id) {
     await patchGroup(get, id, (g) => ({ ...g, collapsed: !g.collapsed }));
+  },
+
+  async toggleAccountGroupTint(id) {
+    await patchGroup(get, id, (g) => ({ ...g, tintMembers: !groupTintsMembers(g) }));
   },
 
   async removeAccountGroup(id) {
@@ -1983,13 +1990,40 @@ const PRIORITY_ORDER: Record<Account['priority'], number> = {
   muted: 0,
 };
 
+/**
+ * accountId → the colour its group lends it.
+ *
+ * Built once per hook call rather than per row: this is asked for every line of
+ * a thousand-row list. First group wins, matching `useSidebarGroups`, so a
+ * mailbox named by two groups is drawn the same colour it is filed under.
+ */
+function groupTints(groups: AccountGroup[] | undefined): Map<Id, string> {
+  const map = new Map<Id, string>();
+  for (const g of groups ?? []) {
+    const tint = groupMemberTint(g);
+    if (!tint) continue;
+    for (const id of g.accountIds) if (!map.has(id)) map.set(id, tint);
+  }
+  return map;
+}
+
+/**
+ * What colour a mailbox is, everywhere it is drawn.
+ *
+ * Most specific wins: a colour set on the mailbox itself, then the one its
+ * group lends it, then its domain's. The group sits in the middle because it is
+ * a choice the user made about *these* mailboxes, where the domain colour is a
+ * fact about the address — but a colour typed against one mailbox is more
+ * specific still, and cascading over it would throw away an instruction.
+ */
 export const useAccountColor = () => {
   const accounts = useStore((s) => s.accounts);
   const prefs = useStore((s) => s.prefs);
+  const tints = useMemo(() => groupTints(prefs?.accountGroups), [prefs?.accountGroups]);
   return (accountId: Id): string => {
     const a = accounts.find((x) => x.id === accountId);
     if (!a) return 'var(--n-5)';
-    return a.color ?? prefs?.theme.domainColors[a.domain] ?? 'var(--n-5)';
+    return a.color ?? tints.get(a.id) ?? prefs?.theme.domainColors[a.domain] ?? 'var(--n-5)';
   };
 };
 
