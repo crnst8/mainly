@@ -657,8 +657,21 @@ async function main(): Promise<void> {
       const target = await resolveDomain(userId, domain);
       const supplied = await passwordFromStdin();
       const password = supplied ?? generatePassword();
-      await createMailbox(userId, target.id, { localpart, password }, { kind: 'session' });
+      // `startSync: false`: this process closes the pool on its way out, so the
+      // first sync belongs to the server running beside it, on its next pass.
+      const created = await createMailbox(
+        userId,
+        target.id,
+        { localpart, password },
+        { kind: 'session' },
+        { startSync: false },
+      );
       console.error(`\n  ${GR}✓${R} created ${B}${localpart}@${domain}${R}`);
+      console.error(
+        created.linked
+          ? `     ${D}added here — it will start syncing shortly${R}`
+          : `     ${YL}not added here:${R} ${created.linkError ?? 'unknown reason'}`,
+      );
       if (!supplied) {
         console.error(`     ${D}password, shown once:${R}`);
         console.log(password);

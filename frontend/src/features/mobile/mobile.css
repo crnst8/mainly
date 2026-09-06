@@ -1047,6 +1047,16 @@
   margin-top: var(--s-3);
 }
 
+/* A message drawn for a 600px table does not get to make the shell 600px wide.
+   It scrolls inside its own box; the screen stays the width of the screen —
+   which is the difference between a wide mail and a whole app you have to pan
+   around and cannot pan back. */
+.mreader__body,
+.mthread__body {
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
 .mreader__body {
   margin-bottom: var(--s-7);
 }

@@ -17,9 +17,9 @@ import type {
   BulkOnboardResult,
   BulkOnboardRow,
   Priority,
-  ServerConfig,
   ServerTemplate,
 } from '../../contract/types.ts';
+import { insertAccount } from './service.ts';
 import { discover } from '../onboarding/autoconfig.ts';
 import { verify, type VerifyInput } from '../onboarding/verify.ts';
 import { syncNow } from '../../sync/engine.ts';
@@ -414,64 +414,4 @@ async function addOne(
     if (/duplicate key/.test(message)) return fail('This mailbox has already been added');
     return fail(message);
   }
-}
-
-/** The one INSERT both the wizard and the bulk import go through, so the two
- *  cannot drift on defaults, sealing, or sidebar position. */
-async function insertAccount(
-  userId: string,
-  input: {
-    address: string;
-    password: string;
-    label: string;
-    displayName: string;
-    priority: Priority;
-    imap: ServerConfig;
-    smtp: ServerConfig;
-  },
-): Promise<string> {
-  const domain = input.address.split('@')[1];
-  if (!domain) throw badRequest('Address has no domain part');
-
-  const sealed = seal(input.password);
-
-  const row = await one<{ id: string }>(
-    `
-    INSERT INTO accounts (
-      user_id, address, domain, label, display_name, priority,
-      imap_host, imap_port, imap_security,
-      smtp_host, smtp_port, smtp_security, username,
-      secret_ciphertext, secret_nonce, secret_tag, secret_key_version,
-      status, position
-    ) VALUES (
-      $1, $2, $3, $4, $5, $6::priority_t,
-      $7, $8, $9::security_t,
-      $10, $11, $12::security_t, $13,
-      $14, $15, $16, $17,
-      'syncing',
-      (SELECT coalesce(max(position) + 1, 0) FROM accounts WHERE user_id = $1)
-    )
-    RETURNING id
-    `,
-    [
-      userId,
-      input.address,
-      domain,
-      input.label || input.address,
-      input.displayName,
-      input.priority,
-      input.imap.host,
-      input.imap.port,
-      input.imap.security,
-      input.smtp.host,
-      input.smtp.port,
-      input.smtp.security,
-      input.imap.username || input.address,
-      sealed.ciphertext,
-      sealed.nonce,
-      sealed.tag,
-      sealed.keyVersion,
-    ],
-  );
-  return row!.id;
 }

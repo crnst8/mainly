@@ -88,6 +88,8 @@ export interface ManagedMailbox {
   address: string;
   /** True when this install already syncs the address. */
   linked: boolean;
+  /** On a create, why the address was not added as an account here. */
+  linkError?: string | null;
 }
 
 export interface ListResult {

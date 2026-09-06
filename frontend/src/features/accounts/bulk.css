@@ -456,6 +456,19 @@
   color: var(--text-faint);
 }
 
+/* The hint drops below the switch rather than squeezing it: two words per
+   button is not a choice anyone reads. */
+@media (max-width: 620px) {
+  .onb__mode {
+    flex-wrap: wrap;
+    gap: var(--s-3);
+  }
+
+  .onb__mode__hint {
+    flex-basis: 100%;
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   .grid__row,
   .grid__drop,

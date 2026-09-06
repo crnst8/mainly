@@ -1006,6 +1006,11 @@ function AccountRow({ account: a, focused }: { account: Account; focused: boolea
         {broken && a.error && <div className="acctrow__err">{a.error}</div>}
       </div>
 
+      {/* Captions for the narrow layout, where each control gets its own line
+          and a bare toggle beside nothing is a puzzle. `display: none` on the
+          wide one, which is why they can sit next to the control they name
+          without disturbing the row's column order. */}
+      <span className="acctrow__cap acctrow__cap--priority">Priority</span>
       <Segmented<Priority>
         ariaLabel={`Priority for ${a.address}`}
         value={a.priority}
@@ -1017,6 +1022,7 @@ function AccountRow({ account: a, focused }: { account: Account; focused: boolea
         {broken ? 'error' : a.lastSyncAt ? relative(a.lastSyncAt) : 'never synced'}
       </span>
 
+      <span className="acctrow__cap acctrow__cap--visible">In unified views</span>
       <Toggle
         label={`Show ${a.address} in unified views`}
         checked={!a.hidden}

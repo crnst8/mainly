@@ -25,6 +25,7 @@ import { Button, Empty, Field, IconButton, Modal, Row, Spinner, Toggle } from '@
 import { Check, Close, Globe, Trash } from '@/components/icons';
 import { relative } from '@/lib/format';
 import { getApi } from '@/lib/api';
+import { useStore } from '@/lib/store';
 import {
   DOMAIN_GRANTS,
   DOMAIN_GRANT_LABELS,
@@ -302,10 +303,14 @@ function DomainCard({ domain: d, onChanged }: { domain: ManagedDomain; onChanged
 /* ── Add ──────────────────────────────────────────────────────────────────── */
 
 /**
- * Creating an address offers to add the mailbox to this install in the same
- * step, because this is the one moment the password is known. Making the
- * operator retype it into the account form immediately afterwards is the kind
- * of friction that ends in a reused password.
+ * Creating an address adds the mailbox to this install in the same step,
+ * because this is the one moment the password is known. Making the operator
+ * retype it into the account form immediately afterwards is the kind of
+ * friction that ends in a reused password.
+ *
+ * The server does both halves and reports the second separately, so the one
+ * case that needs a person — address created, account not added — keeps the
+ * generated password on screen instead of closing over it.
  */
 function AddMailbox({
   domain: d,
@@ -320,6 +325,9 @@ function AddMailbox({
   const [password, setPassword] = useState(() => generatePassword());
   const [busy, setBusy] = useState(false);
   const [failure, setFailure] = useState<string | null>(null);
+  /* Set only in the awkward middle: the address exists on the mail server and
+     this install did not take it. The modal stays open on it. */
+  const [unlinked, setUnlinked] = useState<string | null>(null);
 
   const address = `${localpart || '…'}@${d.domain}`;
   const valid = /^[a-z0-9]([a-z0-9._+-]{0,62}[a-z0-9])?$/.test(localpart);
@@ -329,12 +337,49 @@ function AddMailbox({
     setFailure(null);
     try {
       const api = await getApi();
-      await api.createDomainMailbox(d.id, { localpart, password });
+      const created = await api.createDomainMailbox(d.id, { localpart, password });
+
+      if (created.linkError) {
+        setUnlinked(created.linkError);
+        setBusy(false);
+        return;
+      }
+
+      // Accounts, folders and sync state all gained a mailbox at once. One
+      // reload, rather than three parts of the app finding out separately.
+      await useStore.getState().resync();
+      useStore.getState().toast(`${created.address} added and syncing`);
       onDone();
     } catch (err) {
       setFailure(message(err));
       setBusy(false);
     }
+  }
+
+  if (unlinked) {
+    return (
+      <Modal
+        title={`${address} created`}
+        onClose={onDone}
+        footer={
+          <Button variant="primary" onClick={onDone}>
+            Done
+          </Button>
+        }
+      >
+        <p className="settings__note">
+          The address exists on the mail server and will receive mail. It was not added to this
+          install: {unlinked}
+        </p>
+        <p className="settings__note settings__note--error">
+          Copy the password now — the server keeps only a hash of it, and adding the account under
+          Accounts will ask for it.
+        </p>
+        <Field label="Password" hint="This is the last time it is shown.">
+          <input className="input" readOnly value={password} onFocus={(e) => e.target.select()} />
+        </Field>
+      </Modal>
+    );
   }
 
   return (
@@ -368,7 +413,7 @@ function AddMailbox({
 
       <Field
         label="Password"
-        hint="Generated. Copy it now — the server stores only a hash."
+        hint="Generated. Used to add the mailbox here as well; copy it, the server stores only a hash."
         error={password.length < MIN_APP_PASSWORD ? `At least ${MIN_APP_PASSWORD} characters.` : null}
       >
         <div className="mailsrv__pwrow">

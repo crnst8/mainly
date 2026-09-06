@@ -34,7 +34,7 @@ through the API.
 | `read` | Search, read messages, list accounts and folders. |
 | `write` | Mark, flag, label, move, archive, trash, snooze. |
 | `unsubscribe` | Act on `List-Unsubscribe`. Deliberately separate from `write`. |
-| `provision` | Create and remove addresses on a connected mail server. Deliberately separate from `write`: filing mail and minting an address are not the same authority. Does nothing unless a domain has been connected — see [domain control](domain-control.md). |
+| `provision` | Create and remove addresses on a connected mail server. Deliberately separate from `write`: filing mail and minting an address are not the same authority. An address created this way is not added as an account here — that is closed to tokens, see below. Does nothing unless a domain has been connected — see [domain control](domain-control.md). |
 
 **Adding an account, changing a mailbox password, deleting an account, and
 connecting a domain are closed to tokens at any scope.** Those handle

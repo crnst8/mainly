@@ -564,7 +564,8 @@ server.registerTool(
       'Creates a real mailbox on your mail server. Needs a token with the `provision` scope ' +
       'and the `create` grant on that domain. The password is shown once in the reply and is ' +
       'not recoverable — the server stores only a hash — so pass it on to whoever needs it. ' +
-      'Every attempt is recorded.',
+      'The address is not added as an account here: adding one is closed to tokens at every ' +
+      'scope, so a person does that from Accounts, with this password. Every attempt is recorded.',
     inputSchema: {
       domainId: z.string().describe('From mail_domains.'),
       localpart: z
@@ -583,7 +584,8 @@ server.registerTool(
       const created = await client.createMailbox(domainId, { localpart, password: secret });
       return text(
         `Created ${created.address}.\n\npassword: ${secret}\n\n` +
-          'Shown once. The server keeps only a hash of it.',
+          'Shown once. The server keeps only a hash of it.' +
+          (created.linkError ? `\n\nNot added as an account here: ${created.linkError}` : ''),
       );
     }),
 );

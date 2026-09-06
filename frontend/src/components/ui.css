@@ -298,6 +298,17 @@
   line-height: var(--lh-snug);
 }
 
+/* A label and its hint stop sharing a line before either has to wrap into two
+   words per line — which is what "new password" beside a full sentence did on a
+   390px screen. */
+@media (max-width: 620px) {
+  .field__label {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 2px;
+  }
+}
+
 .input {
   height: 32px;
   padding: 0 var(--s-5);
@@ -408,6 +419,25 @@ textarea.input {
   color: var(--text-faint);
   line-height: var(--lh-snug);
   margin-top: 2px;
+}
+
+/*
+ * On a phone the control drops below the text it belongs to.
+ *
+ * A setting row is a sentence and a control, and `space-between` gives the
+ * control whatever it asks for — a 180px select against a two-line title leaves
+ * the title four words wide. Wrapping keeps both readable, and the basis is
+ * what decides when: while the text still has 200px it stays on the line.
+ */
+@media (max-width: 620px) {
+  .row {
+    flex-wrap: wrap;
+    gap: var(--s-4) var(--s-5);
+  }
+
+  .row__text {
+    flex: 1 1 200px;
+  }
 }
 
 /* ── Swatch ───────────────────────────────────────────────────────────────── */
@@ -746,6 +776,11 @@ textarea.input {
 .modal__body {
   padding: var(--s-7);
   overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  /* The list behind a modal must not scroll when the modal's own content runs
+     out — the phone's rubber band made every long form feel like it had come
+     loose from the page. */
+  overscroll-behavior: contain;
 }
 
 .modal__foot {
@@ -756,6 +791,34 @@ textarea.input {
   padding: var(--s-5) var(--s-7);
   border-top: 1px solid var(--line-soft);
   background: var(--bg-sunken);
+}
+
+/*
+ * On a phone the dialog takes the screen it is given.
+ *
+ * `8vh` of scrim above an `82vh` modal is fine on a desktop and wrong on iOS,
+ * where `vh` counts a viewport the browser's own chrome is sitting on top of:
+ * the footer — which is where the button that finishes the job lives — ended up
+ * under the address bar. Percentages of the scrim instead, which is a fixed
+ * element and therefore the part actually on screen.
+ */
+@media (max-width: 620px) {
+  .scrim {
+    padding: var(--s-6) var(--s-4) calc(var(--s-4) + var(--safe-bottom));
+  }
+
+  .modal {
+    max-height: 100%;
+  }
+
+  .modal__head,
+  .modal__foot {
+    padding: var(--s-5);
+  }
+
+  .modal__body {
+    padding: var(--s-5);
+  }
 }
 
 /* ── Empty state — oversized, editorial, no illustration ──────────────────── */

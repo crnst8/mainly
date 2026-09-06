@@ -143,10 +143,13 @@ A grant the mail server will not permit is shown switched off and disabled, with
 the reason, rather than hidden. A control that vanishes sends someone hunting
 for a setting that is working exactly as intended.
 
-Creating an address offers to add the mailbox to this install in the same step,
-because that is the one moment the password is known. Removing one asks for the
-address to be typed back, and says plainly whether the mail is being kept or
-destroyed.
+Creating an address adds the mailbox to this install in the same step, because
+that is the one moment the password is known — servers are discovered the same
+way the account wizard discovers them, the sign-in is verified before anything
+is stored, and the account starts syncing. If any of that does not work the
+address is still created, and the screen says why it was not added and keeps the
+password on view. Removing one asks for the address to be typed back, and says
+plainly whether the mail is being kept or destroyed.
 
 ### From the command line
 
@@ -171,8 +174,9 @@ domain by name:
 ./mainly.sh domain --as you@example.com addresses example.com
 ```
 
-`new` prints a generated password once, or reads one from stdin. Only the
-password goes to stdout, so it can be piped:
+`new` adds the address as an account here too, and says whether that worked. It
+prints a generated password once, or reads one from stdin. Only the password
+goes to stdout, so it can be piped:
 
 ```sh
 ./mainly.sh domain new hello@example.com | pbcopy
@@ -206,6 +210,12 @@ Tools: `mail_domains`, `mail_addresses`, `mail_create_address`,
 Installing or replacing the SSH key is closed to tokens at **any** scope. A
 credential that widens what the application can do must not be installable by
 something that already holds API access.
+
+So is adding an account. An address a token creates is a real address and
+receives mail immediately, but this install does not start syncing it — a
+`provision` token may mint an address, it may not also give itself a mailbox
+this install signs into. The reply carries the password; a person adds the
+account under Accounts.
 
 ---
 

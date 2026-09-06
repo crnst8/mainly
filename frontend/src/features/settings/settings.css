@@ -538,6 +538,93 @@
   color: var(--danger);
 }
 
+/* Named only on the narrow layout — see the row's markup for why they are
+   inline rather than pseudo-elements. */
+.acctrow__cap {
+  display: none;
+}
+
+/*
+ * One column, at a phone's width.
+ *
+ * Six columns of controls against a `minmax(0, 1fr)` identity means the
+ * identity is the one that gives: at 390px the address lost a character at a
+ * time while a three-button priority control kept its full width, and the
+ * toggle sat beside nothing that said what it toggled. Each control gets a line
+ * and a name.
+ *
+ * Every placement is explicit — including the four rows, which is what lets the
+ * stripe span them with `1 / -1` and what keeps the repair form and the remove
+ * confirmation in implicit rows underneath rather than filling a gap left
+ * mid-row by auto-flow.
+ */
+@media (max-width: 620px) {
+  .acctrow {
+    grid-template-columns: 3px minmax(0, 1fr) auto;
+    grid-template-rows: auto auto auto auto;
+    column-gap: var(--s-5);
+    row-gap: var(--s-4);
+  }
+
+  .acctrow__stripe {
+    grid-area: 1 / 1 / -1 / 2;
+  }
+
+  /* The gap does the inset now, so everything in the column lines up. */
+  .acctrow__id {
+    grid-area: 1 / 2 / 2 / -1;
+    padding-left: 0;
+  }
+
+  .acctrow__cap {
+    display: block;
+    font-size: var(--t-sm);
+    color: var(--text-secondary);
+  }
+
+  .acctrow__cap--priority {
+    grid-area: 2 / 2;
+  }
+
+  .acctrow .seg {
+    grid-area: 2 / 3;
+  }
+
+  .acctrow__cap--visible {
+    grid-area: 3 / 2;
+  }
+
+  .acctrow .toggle {
+    grid-area: 3 / 3;
+    justify-self: end;
+  }
+
+  .acctrow__status {
+    grid-area: 4 / 2;
+  }
+
+  .acctrow__acts {
+    grid-area: 4 / 3;
+    justify-self: end;
+  }
+
+  /* Full width, minus the stripe. `1 / -1` would run under it. */
+  .acctrow__repair,
+  .acctrow__confirm {
+    grid-column: 2 / -1;
+    flex-wrap: wrap;
+    margin: 0;
+  }
+
+  .acctrow__repair > *:first-child {
+    max-width: none;
+  }
+
+  .acctrow__confirm__acts {
+    margin-left: 0;
+  }
+}
+
 /* ── Keyboard reference ───────────────────────────────────────────────────── */
 
 .keys {
@@ -733,6 +820,19 @@
   }
   .settings__head .iconbtn {
     margin-left: auto;
+  }
+}
+
+/* A phone. 24px of padding on each side of a 390px screen is an eighth of the
+   width spent on nothing, and every control inside is already fighting for it. */
+@media (max-width: 620px) {
+  .settings__head {
+    padding: var(--s-5);
+    gap: var(--s-5);
+  }
+
+  .settings__scroll {
+    padding: var(--s-6) var(--s-5) var(--s-10);
   }
 }
 

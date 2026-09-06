@@ -263,3 +263,20 @@
   background: var(--accent);
   transition: width var(--dur-slow) var(--ease-out);
 }
+
+/* ── Narrow ───────────────────────────────────────────────────────────────
+   The wizard is where a phone first meets this app, and two of its layouts
+   assumed a modal 560px wide: paired fields, and five priority options side by
+   side whose names — "critical", "important" — are longer than the 60px they
+   were given. Both were unreadable on a phone rather than merely tight. */
+
+@media (max-width: 620px) {
+  .onb__grid {
+    grid-template-columns: 1fr;
+  }
+
+  /* Wraps to three and two rather than shrinking to five. */
+  .prio {
+    grid-template-columns: repeat(auto-fit, minmax(88px, 1fr));
+  }
+}

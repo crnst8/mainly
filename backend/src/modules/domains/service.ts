@@ -34,6 +34,7 @@ import {
   type ManagedDomain,
   type ManagedMailbox,
 } from '../../contract/types.ts';
+import { linkAddress } from '../accounts/service.ts';
 import { driverFor, type DomainDriver, type DriverContext } from './drivers/index.ts';
 // Reached directly, and only here: see the note in drivers/index.ts.
 import { scanHostKey } from './drivers/ssh.ts';
@@ -351,11 +352,33 @@ export async function listOps(userId: string, limit = 100): Promise<DomainOp[]> 
 
 /* ── Writes on the mail server ───────────────────────────────────────────── */
 
+/**
+ * Create an address on the mail server, and add it to this install.
+ *
+ * The second half is not a convenience. This is the only moment the password
+ * exists in plaintext — the server keeps a hash and this application keeps
+ * nothing — so an address created here and linked later means retyping a
+ * generated password into a second form, which is how a weaker one gets used
+ * instead. Creating the mailbox and syncing it are one errand.
+ *
+ * Linking cannot fail the request. The address exists on the mail server the
+ * moment `create` returns; a discovery or sign-in problem after that is
+ * reported on the result, so the caller can say "created, not added, because —"
+ * rather than "failed" about something that plainly worked.
+ *
+ * Sessions only, and that is the same line accounts/routes.ts draws: adding an
+ * account is closed to API tokens at every scope. A `provision` token may mint
+ * an address; it may not also give itself a mailbox this install signs into.
+ *
+ * `startSync: false` for a caller whose process will be gone before a sync
+ * could finish — see `linkAddress`.
+ */
 export async function createMailbox(
   userId: string,
   id: string,
   input: { localpart: string; password: string },
   actor: Actor,
+  options: { startSync?: boolean } = {},
 ): Promise<ManagedMailbox> {
   const { row, driver, ctx } = await load(userId, id, 'create');
   const create = must(driver, 'create', 'create');
@@ -365,7 +388,22 @@ export async function createMailbox(
     create.call(driver, ctx, input),
   );
 
-  return { localpart: input.localpart, address, linked: false };
+  if (actor.kind !== 'session') {
+    return {
+      localpart: input.localpart,
+      address,
+      linked: false,
+      linkError: 'Created by an API token, which cannot add accounts. Add it under Accounts.',
+    };
+  }
+
+  const link = await linkAddress(userId, address, input.password, options);
+  return {
+    localpart: input.localpart,
+    address,
+    linked: link.accountId !== null,
+    linkError: link.error,
+  };
 }
 
 export async function removeMailbox(

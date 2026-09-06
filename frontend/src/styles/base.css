@@ -78,6 +78,47 @@ button {
   -webkit-tap-highlight-color: transparent;
 }
 
+/*
+ * Touch. Two rules that between them account for most of "it feels wrong on a
+ * phone", and neither is visible on a desktop.
+ *
+ * **16px, without exception.** Mobile Safari zooms the page when a focused
+ * control's text is smaller than 16px, and does not zoom back out when it
+ * blurs — so typing into any field left the whole app magnified with no way
+ * back. The mobile composer has sized its own fields for this for a while; the
+ * wizard, the settings panes and every modal were still at 13px, which is where
+ * the trap actually was. `max()` rather than a flat 16px so a reader who has
+ * scaled the type up keeps their size, and `:not()` rather than a class list so
+ * it outweighs the `.input` that sets 13px — one rule, no file to keep in step.
+ *
+ * **`touch-action: manipulation`.** Says a control will never be double-tapped
+ * to zoom, which is what lets the browser dispatch the tap immediately instead
+ * of holding it for 300ms to find out. Everything the app makes tappable, and
+ * nothing that scrolls.
+ */
+@media (pointer: coarse) {
+  input:not([type='checkbox']):not([type='radio']),
+  textarea,
+  select {
+    font-size: max(16px, var(--t-sm));
+  }
+
+  /* The box has to grow with the text it now holds. */
+  input.input {
+    height: 40px;
+  }
+
+  button,
+  a,
+  label,
+  select,
+  [role='button'],
+  [role='switch'],
+  [role='tab'] {
+    touch-action: manipulation;
+  }
+}
+
 button:disabled {
   cursor: default;
 }

@@ -895,6 +895,14 @@ export interface ManagedMailbox {
   address: string;
   /** True when an account in this install already syncs this address. */
   linked: boolean;
+  /**
+   * Why a just-created address was not added as an account, when it wasn't.
+   *
+   * Only ever set on a create response: creating an address adds it to this
+   * install in the same step, and the one thing worse than that failing is it
+   * failing silently. Absent from listings, where `linked` is the whole story.
+   */
+  linkError?: string | null;
 }
 
 export interface ManagedAlias {
