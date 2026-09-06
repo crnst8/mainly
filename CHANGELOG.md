@@ -1,3 +1,8 @@
+## 1.3.3 — 2026-09-06
+
+- fix: Mobile UX tweaks + Auto-add accounts when new
+- chore: readme cleanup
+
 ## 1.3.2 — 2026-09-04
 
 - chore: README cleanup
