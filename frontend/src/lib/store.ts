@@ -31,6 +31,7 @@ import type {
   MailColors,
   Message,
   MessageAction,
+  MessageActionResult,
   MessageSummary,
   Preferences,
   PrintColors,
@@ -316,15 +317,15 @@ let markReadTimer: ReturnType<typeof setTimeout> | null = null;
 let openGeneration = 0;
 let listGeneration = 0;
 let dataRevision = 0;
-const pendingWrites = new Map<Id, Promise<void>>();
+const pendingWrites = new Map<Id, Promise<MessageActionResult | void>>();
 
 /** Preserve click order for overlapping messages without delaying other mail. */
-function writeAction(ids: Id[], action: MessageAction, threaded = false): Promise<void> {
+function writeAction(ids: Id[], action: MessageAction, threaded = false): Promise<MessageActionResult | void> {
   const prior = [...new Set(ids.map((id) => pendingWrites.get(id)).filter((p) => p !== undefined))];
   const write = (async () => {
     await Promise.all(prior.map((p) => p.catch(() => {})));
     const api = await getApi();
-    await api.act(ids, action, { threaded });
+    return api.act(ids, action, { threaded, returnChanges: action.type === 'delete' || action.type === 'move' });
   })();
   ids.forEach((id) => pendingWrites.set(id, write));
   const cleanup = () => {
@@ -985,8 +986,8 @@ export const useStore = create<State & Actions>((set, get) => ({
     // compensating move keeps Undo available without losing work on reload.
     const saving = writeAction(
       ids, action,
-      get().query.threaded && action.type === 'flag' &&
-        (action.add.includes('seen') || action.remove.includes('seen')),
+      get().query.threaded && ((action.type === 'delete' && !action.permanent) ||
+        (action.type === 'flag' && (action.add.includes('seen') || action.remove.includes('seen')))),
     );
     if (removes && label) {
       const originals = new Map<Id, Id[]>();
@@ -997,7 +998,17 @@ export const useStore = create<State & Actions>((set, get) => ({
       }
       const reversible = !(action.type === 'delete' && action.permanent) && touched.length === ids.length;
       get().toast(`${label} · ${ids.length} message${ids.length > 1 ? 's' : ''}`, reversible ? () => {
-        void saving.then(async () => {
+        void saving.then(async (receipt) => {
+          // The server also moved conversation members that were collapsed out
+          // of the list. Restore its exact set, including across accounts.
+          if (receipt) {
+            originals.clear();
+            for (const [id, folderId] of Object.entries(receipt.previousFolders)) {
+              const members = originals.get(folderId) ?? [];
+              members.push(id);
+              originals.set(folderId, members);
+            }
+          }
           for (const [folderId, members] of originals) {
             await get().act(members, { type: 'move', folderId });
           }

@@ -34,6 +34,8 @@ import type {
   ListResult,
 
   MessageAction,
+  MessageActionOptions,
+  MessageActionResult,
   MessageSummary,
   Preferences,
   Priority,
@@ -543,14 +545,16 @@ export class MockApi implements MailApi {
     };
   }
 
-  async act(ids: Id[], action: MessageAction, options?: { threaded?: boolean }) {
+  async act(ids: Id[], action: MessageAction, options?: MessageActionOptions) {
     await sleep(LATENCY.fast);
     const set = new Set(ids);
-    if (options?.threaded && action.type === 'flag' && (action.add.includes('seen') || action.remove.includes('seen'))) {
+    if (options?.threaded && ((action.type === 'delete' && !action.permanent) ||
+        (action.type === 'flag' && (action.add.includes('seen') || action.remove.includes('seen'))))) {
       const threads = new Set(this.summaries.filter((m) => set.has(m.id)).map((m) => m.threadId));
       this.summaries.filter((m) => threads.has(m.threadId)).forEach((m) => set.add(m.id));
     }
     const touched = [...this.summaries, ...this.messages].filter((m) => set.has(m.id));
+    const previousFolders = Object.fromEntries(touched.map((m) => [m.id, m.folderId]));
 
     switch (action.type) {
       case 'flag': {
@@ -581,7 +585,7 @@ export class MockApi implements MailApi {
           if (touched.some((m) => !trashFor(m))) throw new Error('No trash folder for this account');
           for (const m of touched) m.folderId = trashFor(m)!.id;
         }
-        this.emit({ type: 'messages:deleted', ids });
+        this.emit({ type: 'messages:deleted', ids: [...set] });
         break;
       }
       case 'label': {
@@ -599,6 +603,7 @@ export class MockApi implements MailApi {
     }
 
     this.recount();
+    if (options?.returnChanges) return { previousFolders } satisfies MessageActionResult;
   }
 
   private recount() {

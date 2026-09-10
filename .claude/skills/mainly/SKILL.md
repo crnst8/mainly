@@ -134,7 +134,9 @@ confirmed IMAP location separately from the visible folder (migration 013).
 `backend/src/sync/replay.ts` carries COPYUID mappings into later queued actions;
 UIDPLUS is required for moves so stable ids never guess at server identity.
 The frontend saves actions immediately; Undo files messages back with a second
-saved action. `frontend/scripts/store-check.mjs` checks delayed-response races,
+saved action. Threaded Trash moves the whole owned conversation; its optional
+action receipt records each affected message’s original folder for exact Undo.
+`frontend/scripts/store-check.mjs` checks delayed-response races,
 and `backend/scripts/consistency-check.mjs` checks persistence and replay against
 Postgres with a deterministic IMAP peer. Both run in `./dev.sh check`.
 

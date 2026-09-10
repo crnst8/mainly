@@ -15,6 +15,8 @@ import type {
   ListQuery,
   Message,
   MessageAction,
+  MessageActionOptions,
+  MessageActionResult,
   MessageSummary,
   Priority,
   Thread,
@@ -114,7 +116,7 @@ export async function messageRoutes(app: FastifyInstance): Promise<void> {
     } satisfies Thread;
   });
 
-  app.post<{ Body: { ids: string[]; action: MessageAction; threaded?: boolean } }>(
+  app.post<{ Body: { ids: string[]; action: MessageAction } & MessageActionOptions }>(
     '/messages/actions',
     async (req, reply) => {
       const { ids, action } = req.body;
@@ -147,11 +149,12 @@ export async function messageRoutes(app: FastifyInstance): Promise<void> {
           id: string;
           account_id: string;
           thread_id: string;
+          folder_id: string;
           uid: number;
           uidvalidity: number | null;
           path: string;
         }>(
-          `SELECT m.id, m.account_id, m.thread_id, coalesce(m.remote_uid, m.uid) AS uid, f.path, f.uidvalidity
+          `SELECT m.id, m.account_id, m.thread_id, m.folder_id, coalesce(m.remote_uid, m.uid) AS uid, f.path, f.uidvalidity
              FROM messages m
              JOIN accounts a ON a.id = m.account_id
              JOIN folders f ON f.id = coalesce(m.remote_folder_id, m.folder_id)
@@ -167,8 +170,8 @@ export async function messageRoutes(app: FastifyInstance): Promise<void> {
             req.userId,
             ids,
             req.body.threaded === true &&
-              action.type === 'flag' &&
-              (action.add.includes('seen') || action.remove.includes('seen')),
+              ((action.type === 'delete' && !action.permanent) ||
+                (action.type === 'flag' && (action.add.includes('seen') || action.remove.includes('seen')))),
           ],
         );
         const ownedIds = owned.rows.map((r) => r.id);
@@ -311,6 +314,7 @@ export async function messageRoutes(app: FastifyInstance): Promise<void> {
           // messages belonging to someone else, and those must not appear in an
           // event telling every open tab to change a row.
           ids: ownedIds,
+          previousFolders: Object.fromEntries(owned.rows.map((m) => [m.id, m.folder_id])),
           accountIds: affectedAccounts,
           counts: await countSnapshot(
             affectedAccounts,
@@ -354,6 +358,9 @@ export async function messageRoutes(app: FastifyInstance): Promise<void> {
         for (const accountId of affected.accountIds) syncNow(req.userId, accountId);
       }
 
+      if (req.body.returnChanges === true) {
+        return reply.send({ previousFolders: affected.previousFolders } satisfies MessageActionResult);
+      }
       return reply.code(204).send();
     },
   );

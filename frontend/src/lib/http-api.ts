@@ -19,6 +19,8 @@ import type {
   ListResult,
   Message,
   MessageAction,
+  MessageActionOptions,
+  MessageActionResult,
   Preferences,
   SavedView,
   DomainGrant,
@@ -128,8 +130,8 @@ export class HttpApi implements MailApi {
   list = (query: ListQuery) => this.post<ListResult>('/messages/query', query);
   get = (id: Id) => this.req<Message>(`/messages/${id}`);
   getThread = (threadId: Id) => this.req<Thread>(`/threads/${threadId}`);
-  act = (ids: Id[], action: MessageAction, options?: { threaded?: boolean }) =>
-    this.post<void>('/messages/actions', { ids, action, threaded: options?.threaded });
+  act = (ids: Id[], action: MessageAction, options?: MessageActionOptions) =>
+    this.post<MessageActionResult | void>('/messages/actions', { ids, action, ...options });
 
   // A plain URL, authenticated by the same session cookie every other request
   // uses. The download is the browser's job from here.

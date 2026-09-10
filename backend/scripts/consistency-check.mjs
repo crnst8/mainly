@@ -8,6 +8,7 @@ const BASE = process.env.SMOKE_BASE ?? 'http://127.0.0.1:5284/api';
 let cookie = '',
   csrf = '',
   userId,
+  foreignUserId,
   accountId;
 async function call(path, body) {
   const res = await fetch(`${BASE}${path}`, {
@@ -239,6 +240,87 @@ try {
     0,
   );
   check('pending permanent deletion is not resurrected by envelope ingestion', () => {});
+  // Reproduce the UI path: a collapsed row, Trash, then the very next inbox query.
+  const older = await add(inbox, 51, 'trash-conversation');
+  const newer = await add(inbox, 52, 'trash-conversation');
+  await act([newer.id], { type: 'flag', add: ['seen'], remove: [] }, true);
+  const inboxQuery = {
+    scope: { kind: 'folder', value: inbox.id, role: null },
+    sort: 'date', dir: 'desc', group: 'none', threaded: true, limit: 100, cursor: null,
+    filters: { unreadOnly: false, flaggedOnly: false, hasAttachments: false,
+      accountIds: [], domains: [], folderIds: [], priorities: [], labels: [], since: null, before: null },
+  };
+  const beforeTrash = await call('/messages/query', inboxQuery);
+  const representative = beforeTrash.body.messages.find((m) => m.threadId === 'trash-conversation');
+  assert.equal(representative.threadCount, 2);
+  // Model the already-stuck inbox from the previous release: the newest member
+  // is in Trash, but is still used to represent its older inbox sibling.
+  await act([representative.id], { type: 'delete', permanent: false });
+  const stuck = await call('/messages/query', inboxQuery);
+  assert.ok(stuck.body.messages.some((m) => m.id === representative.id));
+  const trashed = await call('/messages/actions', {
+    ids: [representative.id], action: { type: 'delete', permanent: false },
+    threaded: true, returnChanges: true,
+  });
+  assert.equal(trashed.status, 200);
+  const afterTrash = await call('/messages/query', inboxQuery);
+  check('trashing a collapsed conversation stays out of the inbox on immediate reload', () => {
+    assert.ok(!afterTrash.body.messages.some((m) => m.threadId === 'trash-conversation'),
+      'trashed conversation immediately reappeared in the inbox');
+  });
+  const receipt = trashed.body.previousFolders;
+  check('Undo receipt includes the hidden inbox member and the already-trashed member', () => {
+    assert.deepEqual(Object.keys(receipt).sort(), [older.id, newer.id].sort());
+    assert.equal(receipt[representative.id], trash.id);
+    assert.equal(receipt[representative.id === older.id ? newer.id : older.id], inbox.id);
+  });
+  for (const [id, folderId] of Object.entries(receipt)) {
+    await act([id], { type: 'move', folderId });
+  }
+  const restored = await query('SELECT id, folder_id FROM messages WHERE id = ANY($1::uuid[])', [Object.keys(receipt)]);
+  check('Undo restores every affected message to its own original folder', () => {
+    assert.ok(restored.every((m) => m.folder_id === receipt[m.id]));
+  });
+  // A separate mailbox with the same thread must use its own Trash folder.
+  const [secondAccount] = await query(`INSERT INTO accounts(user_id,address,domain,label,imap_host,imap_port,smtp_host,smtp_port,username,secret_ciphertext,secret_nonce,secret_tag,status)
+    VALUES ($1,'second@example.test','example.test','Second','invalid',993,'invalid',587,'second','x','x','x','disabled') RETURNING id`, [userId]);
+  const secondFolders = await query(`INSERT INTO folders(account_id,path,name,role,uidvalidity,uidnext)
+    VALUES ($1,'INBOX','Inbox','inbox',1,100),($1,'Trash','Trash','trash',1,100) RETURNING *`, [secondAccount.id]);
+  const secondInbox = secondFolders.find((f) => f.role === 'inbox');
+  const secondTrash = secondFolders.find((f) => f.role === 'trash');
+  const [copy] = await query(`INSERT INTO messages(account_id,folder_id,uid,thread_id,from_address,date)
+    VALUES ($1,$2,1,'trash-conversation','sender@example.test',now()) RETURNING id`, [secondAccount.id,secondInbox.id]);
+  const unrelated = await add(inbox,53,'unrelated-conversation');
+  // Matching thread ids are not authority to mutate another user's mailbox.
+  [{ id: foreignUserId }] = await query(`INSERT INTO users(email,password_hash) VALUES ($1,'no-login') RETURNING id`, [`foreign-${randomUUID()}@example.test`]);
+  const [foreignAccount] = await query(`INSERT INTO accounts(user_id,address,domain,label,imap_host,imap_port,smtp_host,smtp_port,username,secret_ciphertext,secret_nonce,secret_tag,status)
+    VALUES ($1,'foreign@example.test','example.test','Foreign','invalid',993,'invalid',587,'foreign','x','x','x','disabled') RETURNING id`, [foreignUserId]);
+  const [foreignInbox] = await query(`INSERT INTO folders(account_id,path,name,role) VALUES ($1,'INBOX','Inbox','inbox') RETURNING id`, [foreignAccount.id]);
+  const [foreignMessage] = await query(`INSERT INTO messages(account_id,folder_id,uid,thread_id,from_address,date)
+    VALUES ($1,$2,1,'trash-conversation','sender@example.test',now()) RETURNING id`, [foreignAccount.id,foreignInbox.id]);
+  await act([representative.id], { type:'delete', permanent:false }, true);
+  const crossAccount = await query('SELECT id,folder_id,account_id FROM messages WHERE id=ANY($1::uuid[])', [[older.id,newer.id,copy.id,unrelated.id]]);
+  check('thread Trash spans owned accounts without touching unrelated mail', () => {
+    assert.equal(crossAccount.find((m) => m.id === copy.id).folder_id,secondTrash.id);
+    assert.equal(crossAccount.find((m) => m.id === older.id).folder_id,trash.id);
+    assert.equal(crossAccount.find((m) => m.id === newer.id).folder_id,trash.id);
+    assert.equal(crossAccount.find((m) => m.id === unrelated.id).folder_id,inbox.id);
+  });
+  assert.equal((await query('SELECT folder_id FROM messages WHERE id=$1',[foreignMessage.id]))[0].folder_id,foreignInbox.id);
+  const unauthorized = await call('/messages/actions', {
+    ids: [foreignMessage.id], action: { type:'delete', permanent:false }, threaded: true, returnChanges: true,
+  });
+  check('thread expansion and receipts never cross user ownership', () => assert.equal(unauthorized.status,404));
+  const pendingTargets = await query("SELECT account_id, payload FROM sync_ops WHERE kind='delete' AND account_id=ANY($1::uuid[]) ORDER BY id", [[accountId,secondAccount.id]]);
+  check('every conversation member is queued for its own IMAP account', () => {
+    for (const id of [older.id,newer.id,copy.id]) assert.ok(pendingTargets.some((o) => o.payload.ids.includes(id)));
+    assert.ok(pendingTargets.filter((o) => o.account_id === secondAccount.id).every((o) => o.payload.targets.every((t) => t.id === copy.id && t.path === 'INBOX')));
+  });
+  const flatOlder = await add(inbox,61,'flat-conversation');
+  const flatNewer = await add(inbox,62,'flat-conversation');
+  await act([flatNewer.id], { type:'delete', permanent:false });
+  check('unthreaded Trash continues to move only the explicitly selected message', () => {});
+  assert.equal((await query('SELECT folder_id FROM messages WHERE id=$1',[flatOlder.id]))[0].folder_id,inbox.id);
   await query("UPDATE folders SET role='custom' WHERE id=$1", [trash.id]);
   const noTrash = await call('/messages/actions', {
     ids: [collision.id],
@@ -256,6 +338,6 @@ try {
     `consistency-check: ${passed} passed; local action acknowledgements ${timings.map((ms) => Math.round(ms) + 'ms').join(', ')}`,
   );
 } finally {
-  if (userId) await query('DELETE FROM users WHERE id=$1', [userId]);
+  if (userId || foreignUserId) await query('DELETE FROM users WHERE id=ANY($1::uuid[])', [[userId,foreignUserId].filter(Boolean)]);
   await close();
 }

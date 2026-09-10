@@ -122,6 +122,37 @@ await check(
     assert.deepEqual(calls[1], { ids: ['m'], action: { type: 'move', folderId: 'inbox' } });
   },
 );
+await check('conversation Trash requests a receipt and Undo restores hidden members separately', async () => {
+  store.setState({ result: result([{ ...row, threadCount: 3 }]) });
+  const saving = deferred();
+  const calls = [];
+  transport.act = (ids, action, options) => {
+    calls.push({ ids, action, options });
+    return calls.length === 1 ? saving.promise : Promise.resolve();
+  };
+  const deleting = store.getState().trash(['m']);
+  await tick();
+  assert.deepEqual(calls[0].options, { threaded: true, returnChanges: true });
+  // Undo can be clicked before the receipt arrives; it still uses all members.
+  store.getState().toasts[0].undo();
+  saving.resolve({ previousFolders: { m: 'inbox', hidden: 'sent', otherAccount: 'other-inbox' } });
+  transport.list = async () => result([]);
+  await deleting;
+  await tick();
+  assert.deepEqual(calls.slice(1).map(({ ids, action }) => ({ ids, action })), [
+    { ids: ['m'], action: { type: 'move', folderId: 'inbox' } },
+    { ids: ['hidden'], action: { type: 'move', folderId: 'sent' } },
+    { ids: ['otherAccount'], action: { type: 'move', folderId: 'other-inbox' } },
+  ]);
+  assert.ok(calls.slice(1).every((c) => c.options.threaded === false));
+});
+await check('unthreaded Trash does not expand a conversation', async () => {
+  store.setState({ query: { ...store.getState().query, threaded: false } });
+  let options;
+  transport.act = async (_ids, _action, opts) => { options = opts; };
+  await store.getState().trash(['m']);
+  assert.equal(options.threaded, false);
+});
 await check('an old list response cannot replace a newer scope', async () => {
   const old = deferred();
   let calls = 0;

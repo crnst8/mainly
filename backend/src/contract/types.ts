@@ -718,6 +718,19 @@ export type ListColumn =
    Actions & sync
    ────────────────────────────────────────────────────────────────────────── */
 
+/** A filing receipt includes hidden conversation members, so Undo can restore
+ * each message to its own folder rather than guessing from the visible row. */
+export interface MessageActionResult {
+  previousFolders: Record<Id, Id>;
+}
+
+export interface MessageActionOptions {
+  /** Expand reversible Trash and read/unread to the owned conversation. */
+  threaded?: boolean;
+  /** Return original folders for a saved Undo operation. */
+  returnChanges?: boolean;
+}
+
 export type MessageAction =
   | { type: 'flag'; add: Flag[]; remove: Flag[] }
   | { type: 'move'; folderId: Id }
