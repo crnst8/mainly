@@ -1,3 +1,7 @@
+## 1.3.5 — 2026-09-10
+
+- fix: deletion bug
+
 ## 1.3.4 — 2026-09-10
 
 - fix: status sync (undo/delete/read etc) more reliable
