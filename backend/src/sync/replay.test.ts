@@ -36,7 +36,8 @@ function fakeClient(opts: {
   let releases = 0;
   const client = {
     mailbox: { path: 'INBOX', permanentFlags: opts.permanentFlags },
-    async getMailboxLock(path: string) {
+    async getMailboxLock(path: string, options: { readOnly: boolean }) {
+      assert.equal(options.readOnly, false, 'replay must re-open a pooled EXAMINE mailbox read-write');
       client.mailbox = { ...client.mailbox, path };
       return { path, release: () => { releases++; } };
     },
@@ -141,4 +142,14 @@ test('targets in two mailboxes are one STORE each', async () => {
     { command: 'add', uids: [2], flags: ['\\Seen'] },
   ]);
   assert.equal(releases(), 2);
+});
+
+
+test('reassigned UIDs are rejected before any STORE', async () => {
+  const { client, calls, releases } = fakeClient({});
+  const op = markRead([7]);
+  const withValidity = { ...op, payload: { ...op.payload, targets: [{ path: 'INBOX', uid: 7, uidValidity: 42 }] } };
+  await assert.rejects(() => applyOp(client, 'account', withValidity), /UIDVALIDITY changed/);
+  assert.deepEqual(calls, []);
+  assert.equal(releases(), 1);
 });

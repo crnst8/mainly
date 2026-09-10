@@ -38,9 +38,9 @@ export async function indexPendingBodies(
 ): Promise<number> {
   return withConnection(creds, async (client) => {
     const pending = await query<PendingRow>(
-      `SELECT m.id, m.uid, f.path
+      `SELECT m.id, coalesce(m.remote_uid, m.uid) AS uid, f.path
          FROM messages m
-         JOIN folders f ON f.id = m.folder_id
+         JOIN folders f ON f.id = coalesce(m.remote_folder_id, m.folder_id)
         WHERE m.account_id = $1 AND m.body_indexed_at IS NULL
         ORDER BY m.date DESC, m.id DESC
         LIMIT $2`,
@@ -93,16 +93,12 @@ async function indexRows(client: ImapFlow, pending: PendingRow[]): Promise<numbe
     }
   }
 
-  const targets: TextPartTarget[] = parts.flatMap((row) =>
-    row.part
-      ? [{ uid: row.uid, part: row.part, encoding: row.encoding ?? undefined, charset: row.charset ?? undefined }]
-      : [],
-  );
   const rawText = new Map<string, string>();
   for (const [path, rows] of byPath(parts)) {
     await client.mailboxOpen(path, { readOnly: true });
-    const uids = new Set(rows.map((row) => row.uid));
-    const folderTargets = targets.filter((target) => uids.has(target.uid));
+    const folderTargets: TextPartTarget[] = rows.flatMap((row) => row.part
+      ? [{ uid: row.uid, part: row.part, encoding: row.encoding ?? undefined, charset: row.charset ?? undefined }]
+      : []);
     const fetched = await fetchTextParts(client, folderTargets);
     for (const [uid, text] of fetched) rawText.set(`${path}:${uid}`, text);
   }

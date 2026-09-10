@@ -278,11 +278,11 @@ async function locate(userId: string, messageId: string): Promise<Locator | null
     secret_tag: Buffer;
     secret_key_version: number;
   }>(
-    `SELECT m.id, m.uid, f.path, m.preview, a.status,
+    `SELECT m.id, coalesce(m.remote_uid, m.uid) AS uid, f.path, m.preview, a.status,
             a.id AS account_id, a.address, a.imap_host, a.imap_port, a.imap_security,
             a.username, a.secret_ciphertext, a.secret_nonce, a.secret_tag, a.secret_key_version
        FROM messages m
-       JOIN folders f  ON f.id = m.folder_id
+       JOIN folders f  ON f.id = coalesce(m.remote_folder_id, m.folder_id)
        JOIN accounts a ON a.id = m.account_id
       WHERE a.user_id = $1 AND m.id = $2`,
     [userId, messageId],

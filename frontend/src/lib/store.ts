@@ -4,8 +4,8 @@
  * Rules that keep this fast:
  *  - Mutations paint first, then reconcile. Every action that touches a row
  *    updates local state synchronously and fires the API in the background.
- *  - Destructive actions are staged behind an undo window, not a confirm
- *    dialog. Nothing you can do here is unrecoverable within `undoWindowMs`.
+ *  - Actions persist immediately. Undo for filing is a compensating move,
+ *    so refreshing cannot discard a browser-only timer.
  *  - The list is the only thing allowed to hold message arrays. Everything else
  *    holds ids.
  */
@@ -283,7 +283,7 @@ interface Actions {
   dismissToast(id: string): void;
 }
 
-/** Ids that are staged for removal but still inside the undo window. Kept out
+/** Ids whose removal is still being saved. Kept out
  *  of the store so re-renders do not depend on them. */
 const pendingRemoval = new Set<Id>();
 
@@ -314,6 +314,26 @@ const toastTimers = new Map<string, ReturnType<typeof setTimeout>>();
  *  that become read after the user has already left them. */
 let markReadTimer: ReturnType<typeof setTimeout> | null = null;
 let openGeneration = 0;
+let listGeneration = 0;
+let dataRevision = 0;
+const pendingWrites = new Map<Id, Promise<void>>();
+
+/** Preserve click order for overlapping messages without delaying other mail. */
+function writeAction(ids: Id[], action: MessageAction, threaded = false): Promise<void> {
+  const prior = [...new Set(ids.map((id) => pendingWrites.get(id)).filter((p) => p !== undefined))];
+  const write = (async () => {
+    await Promise.all(prior.map((p) => p.catch(() => {})));
+    const api = await getApi();
+    await api.act(ids, action, { threaded });
+  })();
+  ids.forEach((id) => pendingWrites.set(id, write));
+  const cleanup = () => {
+    dataRevision++;
+    for (const id of ids) if (pendingWrites.get(id) === write) pendingWrites.delete(id);
+  };
+  void write.then(cleanup, cleanup);
+  return write;
+}
 
 function cancelMarkRead(): void {
   if (!markReadTimer) return;
@@ -432,9 +452,11 @@ export const useStore = create<State & Actions>((set, get) => ({
             });
             break;
           case 'messages:new':
-            void get().refresh();
+            dataRevision++;
+            scheduleRefresh(get);
             break;
           case 'messages:changed':
+            dataRevision++;
             // No ids is the sync worker saying "the index moved underneath you"
             // without enumerating how. The only honest response is to re-read,
             // and the only safe way to do that is coalesced — one pass over
@@ -443,10 +465,13 @@ export const useStore = create<State & Actions>((set, get) => ({
               scheduleRefresh(get);
               break;
             }
-            patchMessages(set, get, event.ids, event.patch);
+            patchMessages(set, get, event.ids.filter((id) => !pendingWrites.has(id)), event.patch);
+            scheduleRefresh(get);
             break;
           case 'messages:deleted':
+            dataRevision++;
             dropMessages(set, get, event.ids);
+            scheduleRefresh(get);
             break;
         }
       });
@@ -588,10 +613,16 @@ export const useStore = create<State & Actions>((set, get) => ({
 
   async refresh() {
     const { query } = get();
+    const generation = ++listGeneration;
     set({ loading: true });
     try {
       const api = await getApi();
+      await Promise.allSettled([...pendingWrites.values()]);
+      if (generation !== listGeneration || get().query !== query) return;
+      const revision = dataRevision;
       const result = await api.list({ ...query, cursor: null });
+      if (generation !== listGeneration || get().query !== query) return;
+      if (revision !== dataRevision) { scheduleRefresh(get); return; }
       // Hide rows that are mid-undo so they do not flash back into the list.
       const messages = result.messages.filter((m) => !pendingRemoval.has(m.id));
       set({ result: { ...result, messages }, loading: false, stale: false });
@@ -610,45 +641,52 @@ export const useStore = create<State & Actions>((set, get) => ({
         if (kept.length !== selectedIds.size) set({ selectedIds: new Set(kept) });
       }
     } catch (e) {
-      set({ loading: false, stale: false, error: e instanceof Error ? e.message : String(e) });
+      if (generation === listGeneration) set({ error: e instanceof Error ? e.message : String(e) });
+    } finally {
+      if (generation === listGeneration) set({ loading: false });
     }
   },
 
   async loadMore() {
     const { query, result, loading } = get();
     if (!result?.nextCursor || loading) return;
+    const generation = ++listGeneration;
+    const revision = dataRevision;
     set({ loading: true });
     try {
       const api = await getApi();
       const next = await api.list({ ...query, cursor: result.nextCursor });
       // The scope may have changed under a page that was already in flight;
       // splicing it in then interleaves two different views.
-      if (get().query.scope !== query.scope) return;
+      if (generation !== listGeneration || get().query !== query) return;
+      if (revision !== dataRevision) { scheduleRefresh(get); return; }
       set({
         result: {
           ...next,
-          messages: [...result.messages, ...next.messages.filter((m) => !pendingRemoval.has(m.id))],
+          messages: [...(get().result?.messages ?? []), ...next.messages.filter((m) => !pendingRemoval.has(m.id) && !get().result?.messages.some((old) => old.id === m.id))],
         },
       });
     } catch (e) {
       // `loading` stays true forever if this throws, and `loading` is what the
       // scroll handler checks before asking for the next page — so one failed
       // page meant the list never paged again.
-      get().toast(e instanceof Error ? e.message : 'Could not load more');
+      if (generation === listGeneration) get().toast(e instanceof Error ? e.message : 'Could not load more');
     } finally {
-      set({ loading: false });
+      if (generation === listGeneration) set({ loading: false });
     }
   },
 
   async resync() {
     try {
       const api = await getApi();
+      await Promise.allSettled([...pendingWrites.values()]);
+      const revision = dataRevision;
       const [accounts, folders, sync] = await Promise.all([
         api.listAccounts(),
         api.listFolders(),
         api.syncState(),
       ]);
-      set({ accounts, folders, sync });
+      if (revision === dataRevision) set({ accounts, folders, sync });
       await get().refresh();
     } catch {
       // Called on the way back from offline or asleep, so failing is expected
@@ -771,7 +809,12 @@ export const useStore = create<State & Actions>((set, get) => ({
     });
     try {
       const api = await getApi();
+      const revision = dataRevision;
       const message = await api.get(id);
+      if (revision !== dataRevision) {
+        const latest = get().result?.messages.find((m) => m.id === id);
+        if (latest) Object.assign(message, { seen: latest.seen, flagged: latest.flagged, answered: latest.answered, folderId: latest.folderId, labels: latest.labels });
+      }
       // Only commit if the user has not moved on while this was in flight.
       if (get().openId !== id || generation !== openGeneration) return;
       set({ openMessage: message, readerLoading: false });
@@ -786,11 +829,9 @@ export const useStore = create<State & Actions>((set, get) => ({
       // `message` describes only the newest representative. Trusting the latter
       // skipped auto-read whenever that newest message had already been seen.
       const unreadAtOpen = listed ? !listed.seen : !message.seen;
-      let readDelayElapsed = false;
       if (delay >= 0 && unreadAtOpen) {
         markReadTimer = setTimeout(() => {
           markReadTimer = null;
-          readDelayElapsed = true;
           const current = get();
           if (current.openId !== id || generation !== openGeneration) return;
           // A collapsed row represents the conversation. Mark every unread
@@ -802,22 +843,25 @@ export const useStore = create<State & Actions>((set, get) => ({
       }
 
       if (get().query.threaded && message.threadId) {
-        const thread = await api.getThread(message.threadId);
+        let thread: Thread;
+        for (;;) {
+          const revision = dataRevision;
+          thread = await api.getThread(message.threadId);
+          if (get().openId !== id || generation !== openGeneration) return;
+          if (revision === dataRevision) break;
+          // Wait for auto-read or a later explicit read/unread, then load the
+          // thread as saved. Never issue a second auto-read from a stale reply.
+          await Promise.allSettled([...pendingWrites.values()]);
+        }
         if (get().openId === id && generation === openGeneration) {
           set({ openThread: thread.messages.length > 1 ? thread : null });
-          // With an instant/short delay the timer can beat the thread lookup.
-          // Finish the conversation once its member ids arrive.
-          if (readDelayElapsed) {
-            const unread = thread.messages.filter((m) => !m.seen && m.id !== id).map((m) => m.id);
-            if (unread.length) {
-              void get().act(unread, { type: 'flag', add: ['seen'], remove: [] });
-            }
-          }
+
         }
       } else {
         set({ openThread: null });
       }
     } catch (e) {
+      if (get().openId !== id || generation !== openGeneration) return;
       set({ readerLoading: false, error: e instanceof Error ? e.message : String(e) });
     }
   },
@@ -871,7 +915,7 @@ export const useStore = create<State & Actions>((set, get) => ({
     set({
       openThread: {
         ...thread,
-        messages: thread.messages.map((m) => (m.id === id ? full : m)),
+        messages: thread.messages.map((m) => (m.id === id ? { ...full, seen: m.seen, flagged: m.flagged, answered: m.answered, folderId: m.folderId, labels: m.labels } : m)),
       },
     });
   },
@@ -880,6 +924,9 @@ export const useStore = create<State & Actions>((set, get) => ({
 
   async act(ids, action, label) {
     if (!ids.length) return;
+    dataRevision++;
+    // A manual read/unread decision must cancel a pending automatic read.
+    if (action.type === 'flag' && (action.add.includes('seen') || action.remove.includes('seen'))) cancelMarkRead();
     const { result } = get();
     const removes = action.type === 'move' || action.type === 'delete';
     const target = new Set(ids);
@@ -923,49 +970,52 @@ export const useStore = create<State & Actions>((set, get) => ({
         // The reader sliding onto the next message is a consequence of the
         // action, not a place the user chose to go.
         set({
-      openId: survivor?.id ?? null,
-      openMessage: null,
-      openThread: null,
-      mailOverride: null,
-      mailRemote: null,
-      nav: 'replace',
-    });
+          openId: survivor?.id ?? null,
+          openMessage: null,
+          openThread: null,
+          mailOverride: null,
+          mailRemote: null,
+          nav: 'replace',
+        });
         if (survivor) void get().open(survivor.id, 'replace');
       }
     }
 
-    // 2. Stage destructive work behind the undo window.
-    const undoWindow = get().prefs?.undoWindowMs ?? 6000;
+    // Saving starts during the click, including during the Undo window. A
+    // compensating move keeps Undo available without losing work on reload.
+    const saving = writeAction(
+      ids, action,
+      get().query.threaded && action.type === 'flag' &&
+        (action.add.includes('seen') || action.remove.includes('seen')),
+    );
     if (removes && label) {
-      let cancelled = false;
-      const timer = setTimeout(async () => {
-        if (cancelled) return;
-        for (const id of ids) pendingRemoval.delete(id);
-        const api = await getApi();
-        await api.act(ids, action).catch(() => get().resync());
-      }, undoWindow);
-
-      get().toast(`${label} · ${ids.length} message${ids.length > 1 ? 's' : ''}`, () => {
-        cancelled = true;
-        clearTimeout(timer);
-        for (const id of ids) pendingRemoval.delete(id);
-        // Put the aggregates back as well. Undo that restores the rows but not
-        // the numbers beside them leaves the sidebar lying until the next pass.
-        adjustCounts(
-          set,
-          get,
-          deltas.map((d) => ({ ...d, unread: -d.unread, total: -d.total })),
-        );
-        void get().refresh();
-      });
-      return;
+      const originals = new Map<Id, Id[]>();
+      for (const m of touched) {
+        const group = originals.get(m.folderId) ?? [];
+        group.push(m.id);
+        originals.set(m.folderId, group);
+      }
+      const reversible = !(action.type === 'delete' && action.permanent) && touched.length === ids.length;
+      get().toast(`${label} · ${ids.length} message${ids.length > 1 ? 's' : ''}`, reversible ? () => {
+        void saving.then(async () => {
+          for (const [folderId, members] of originals) {
+            await get().act(members, { type: 'move', folderId });
+          }
+          await get().resync();
+        }).catch(() => {});
+      } : undefined);
     }
-
-    // 3. Non-destructive: fire and reconcile. `resync` rather than `refresh`
-    //    because the counts were painted optimistically too, and a failed write
-    //    must not leave them adjusted for something that never happened.
-    const api = await getApi();
-    await api.act(ids, action).catch(() => get().resync());
+    try {
+      await saving;
+    } catch (e) {
+      get().toast(e instanceof Error ? e.message : 'Could not save the action');
+      await get().resync();
+      // Refresh the reader too: it owns copies not replaced by list refresh.
+      if (get().openId && target.has(get().openId!)) void get().open(get().openId, 'replace');
+    } finally {
+      for (const id of ids) if (!pendingWrites.has(id)) pendingRemoval.delete(id);
+      scheduleRefresh(get);
+    }
   },
 
   async toggleRead(ids) {
@@ -1065,16 +1115,20 @@ export const useStore = create<State & Actions>((set, get) => ({
 
   async archive(ids) {
     const target = ids ?? targetIds(get());
-    const first = (get().result?.messages ?? []).find((m) => m.id === target[0]);
-    const archive = get().folders.find((f) => f.role === 'archive' && f.accountId === first?.accountId);
-    if (!archive) {
-      // Returning silently trains people to distrust the control — the keyboard
-      // shortcut and the mobile swipe both looked like they had worked. Say why
-      // nothing happened instead.
-      get().toast(`No Archive folder on ${first ? 'that account' : 'this account'}`);
-      return;
+    const rows = get().result?.messages ?? [];
+    const byAccount = new Map<Id, Id[]>();
+    for (const id of target) {
+      const row = rows.find((m) => m.id === id) ?? (get().openMessage?.id === id ? get().openMessage : null);
+      if (!row) continue;
+      const members = byAccount.get(row.accountId) ?? [];
+      members.push(id);
+      byAccount.set(row.accountId, members);
     }
-    await get().act(target, { type: 'move', folderId: archive.id }, 'Archived');
+    await Promise.all([...byAccount].map(async ([accountId, members]) => {
+      const archive = get().folders.find((f) => f.role === 'archive' && f.accountId === accountId);
+      if (!archive) { get().toast('No Archive folder on that account'); return; }
+      await get().act(members, { type: 'move', folderId: archive.id }, 'Archived');
+    }));
   },
 
   async trash(ids) {

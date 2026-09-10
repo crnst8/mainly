@@ -234,7 +234,7 @@ domain) db_up; shift; (cd backend && node --experimental-strip-types src/cli/dom
 
   check)
     install_deps
-    (cd frontend && npx tsc -b --noEmit && node scripts/url-check.mjs && node scripts/search-check.mjs)
+    (cd frontend && npx tsc -b --noEmit && node scripts/url-check.mjs && node scripts/search-check.mjs && node scripts/store-check.mjs)
     (cd backend && npx tsc -b --noEmit && npm test && node scripts/check-contract.mjs \
       && node --experimental-strip-types scripts/static-check.mjs \
       && node --experimental-strip-types scripts/auth-check.mjs)
@@ -289,7 +289,7 @@ domain) db_up; shift; (cd backend && node --experimental-strip-types src/cli/dom
     }
 
     export SMOKE_BASE="http://127.0.0.1:$CHECK_PORT/api"
-    (cd backend && node scripts/smoke.mjs && node scripts/query-check.mjs && node scripts/index-check.mjs)
+    (cd backend && node scripts/smoke.mjs && node scripts/query-check.mjs && node scripts/index-check.mjs && node --experimental-strip-types scripts/consistency-check.mjs)
     ;;
 
   logs)

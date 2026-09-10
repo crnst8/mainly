@@ -107,6 +107,13 @@ check(
   `${threadedIds.size} ids, cursor ${threadedCursor}`,
 );
 
+// Both seek directions must remain exact on the maintained thread index.
+const threadAsc = await call('/messages/query', { method: 'POST', body: q({ threaded: true, dir: 'asc', limit: 500 }) });
+check('threaded ascending reverses the descending thread order',
+  JSON.stringify(threadAsc.body.messages.map((m) => m.threadId)) ===
+    JSON.stringify([...threaded.body.messages].reverse().map((m) => m.threadId)),
+  'thread ordering differs by direction');
+
 const threadedUnread = await call('/messages/query', {
   method: 'POST',
   body: q({ threaded: true, filters: { ...EMPTY, unreadOnly: true } }),

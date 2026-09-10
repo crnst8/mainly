@@ -1,6 +1,6 @@
 /** Folder pass: IMAP LIST/LSUB to the local `folders` table. */
 
-import { query, transaction } from '../db/index.ts';
+import { query, transaction, type QueryRunner } from '../db/index.ts';
 import type { FolderRole } from '../contract/types.ts';
 import { publish } from '../modules/events/bus.ts';
 import { withConnection, type AccountCredentials } from './pool.ts';
@@ -109,10 +109,10 @@ export async function syncFolders(creds: AccountCredentials): Promise<number> {
 
       // Folders that vanished server-side. Their messages cascade away with
       // them, which is correct: the server is authoritative for what exists.
-      await tx.query(
-        `DELETE FROM folders WHERE account_id = $1 AND path <> ALL($2::text[])`,
-        [creds.id, rows.map((r) => r.path)],
-      );
+      await tx.query(`DELETE FROM folders WHERE account_id = $1 AND path <> ALL($2::text[])`, [
+        creds.id,
+        rows.map((r) => r.path),
+      ]);
     });
 
     return rows.length;
@@ -126,10 +126,24 @@ export async function syncFolders(creds: AccountCredentials): Promise<number> {
  * pass, then expands the much smaller set of label combinations to build the
  * per-label map used by ordinary (non-search) facets.
  */
-export async function refreshCounts(accountIds: string | readonly string[]): Promise<void> {
+export async function refreshCounts(
+  accountIds: string | readonly string[],
+  run: QueryRunner = query,
+): Promise<void> {
   const ids = typeof accountIds === 'string' ? [accountIds] : [...accountIds];
   if (!ids.length) return;
-  await query(
+  if (run === query) {
+    return transaction(async (tx) => {
+      const owners = await tx.query<{ user_id: string }>(
+        'SELECT DISTINCT user_id FROM accounts WHERE id = ANY($1::uuid[]) ORDER BY user_id',
+        [ids],
+      );
+      for (const owner of owners.rows)
+        await tx.query('SELECT pg_advisory_xact_lock(hashtext($1))', [`messages:${owner.user_id}`]);
+      await refreshCounts(ids, async (sql, params) => (await tx.query(sql, params)).rows);
+    });
+  }
+  await run(
     `
     WITH grouped AS MATERIALIZED (
       SELECT f2.id AS folder_id,
@@ -184,6 +198,7 @@ export async function refreshCounts(accountIds: string | readonly string[]): Pro
  */
 export async function countSnapshot(
   accountIds: string | readonly string[],
+  run: QueryRunner = query,
 ): Promise<{
   accounts: Record<string, { unread: number; total: number }>;
   folders: Record<string, { unread: number; total: number }>;
@@ -195,7 +210,7 @@ export async function countSnapshot(
   };
   if (!ids.length) return snapshot;
 
-  const rows = await query<{
+  const rows = await run<{
     account_id: string;
     folder_id: string;
     unread: number;

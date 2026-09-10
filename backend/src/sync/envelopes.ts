@@ -27,7 +27,7 @@
  */
 
 import type { ImapFlow } from 'imapflow';
-import { query, transaction } from '../db/index.ts';
+import { query, transaction, messageTransaction } from '../db/index.ts';
 import { config } from '../config.ts';
 import type { Priority } from '../contract/types.ts';
 import {
@@ -151,7 +151,7 @@ export async function syncEnvelopes(
 
 /* ── One folder ────────────────────────────────────────────────────────────── */
 
-async function syncFolder(
+export async function syncFolder(
   client: ImapFlow,
   userId: string,
   accountId: string,
@@ -216,7 +216,8 @@ async function syncFolder(
   /* ── Flags ──────────────────────────────────────────────────────────────── */
 
   const condstore = client.capabilities?.has('CONDSTORE') ?? false;
-  const useDelta = condstore && folder.highest_modseq !== null && folder.uidvalidity === uidValidity;
+  const useDelta =
+    condstore && folder.highest_modseq !== null && folder.uidvalidity === uidValidity;
 
   // The delta path reports only what changed, so it cannot also serve as the
   // "what still exists" census. The full scan does both.
@@ -227,9 +228,7 @@ async function syncFolder(
     for await (const msg of client.fetch(
       '1:*',
       { uid: true, flags: true },
-      useDelta
-        ? { uid: true, changedSince: BigInt(folder.highest_modseq!) }
-        : { uid: true },
+      useDelta ? { uid: true, changedSince: BigInt(folder.highest_modseq!) } : { uid: true },
     )) {
       const f = readFlags(msg.flags);
       if (!useDelta) serverUids.add(msg.uid);
@@ -239,7 +238,7 @@ async function syncFolder(
 
   if (flagUpdates.length) {
     for (let i = 0; i < flagUpdates.length; i += BATCH) {
-      result.updated += await applyFlags(folder.id, flagUpdates.slice(i, i + BATCH));
+      result.updated += await applyFlags(userId, folder.id, flagUpdates.slice(i, i + BATCH));
     }
   }
 
@@ -273,7 +272,7 @@ async function syncFolder(
     if (census) {
       const gone = await query<{ id: string }>(
         `DELETE FROM messages
-          WHERE folder_id = $1 AND uid <> ALL($2::bigint[])
+          WHERE folder_id = $1 AND uid IS NOT NULL AND uid <> ALL($2::bigint[])
           RETURNING id`,
         [folder.id, [...census]],
       );
@@ -356,8 +355,7 @@ async function fetchEnvelopes(
     // A message with no Message-ID cannot be threaded by reference and cannot be
     // deduped across accounts, but it must still index. The synthesised id is
     // stable for this message in this folder, which is all threading needs.
-    const messageId =
-      cleanId(env.messageId) ?? `no-id.${folder.id}.${msg.uid}@local.invalid`;
+    const messageId = cleanId(env.messageId) ?? `no-id.${folder.id}.${msg.uid}@local.invalid`;
 
     out.push({
       uid: msg.uid,
@@ -410,7 +408,14 @@ async function fillPreviews(client: ImapFlow, batch: Indexed[]): Promise<void> {
     client,
     batch.flatMap((m) =>
       m.previewPart
-        ? [{ uid: m.uid, part: m.previewPart, encoding: m.previewEncoding, charset: m.previewCharset }]
+        ? [
+            {
+              uid: m.uid,
+              part: m.previewPart,
+              encoding: m.previewEncoding,
+              charset: m.previewCharset,
+            },
+          ]
         : [],
     ),
   );
@@ -493,6 +498,13 @@ SELECT $1::uuid, $2::uuid, r.uid, r.message_id, r.thread_id, r.in_reply_to,
     seen bool, flagged bool, answered bool, draft_flag bool,
     attachment_count int, size int
   )
+WHERE NOT EXISTS (
+  SELECT 1 FROM sync_ops o
+  JOIN folders f ON f.account_id = o.account_id AND f.id = $2
+  CROSS JOIN LATERAL jsonb_array_elements(o.payload->'targets') t
+  WHERE o.account_id = $1 AND o.kind IN ('move', 'delete')
+    AND t->>'path' = f.path AND (t->>'uid')::bigint = r.uid
+)
 ON CONFLICT (folder_id, uid) DO UPDATE SET
   message_id = EXCLUDED.message_id,
   thread_id = EXCLUDED.thread_id,
@@ -516,12 +528,16 @@ ON CONFLICT (folder_id, uid) DO UPDATE SET
   has_attachments = EXCLUDED.has_attachments,
   attachment_count = EXCLUDED.attachment_count,
   size = EXCLUDED.size
+WHERE NOT EXISTS (
+  SELECT 1 FROM sync_ops o WHERE o.account_id = messages.account_id
+    AND o.kind = 'flag' AND o.payload->'ids' ? messages.id::text
+)
 -- labels, snoozed_until and body_cached_at are ours, not the server's, and are
 -- deliberately absent from the update list.
 RETURNING id
 `;
 
-async function upsert(
+export async function upsert(
   userId: string,
   accountId: string,
   folderId: string,
@@ -553,12 +569,18 @@ async function upsert(
     size: m.size,
   }));
 
-  const rows = await query<{ id: string }>(UPSERT_SQL, [
-    accountId,
-    folderId,
-    priority,
-    JSON.stringify(payload),
-  ]);
+  const rows = await messageTransaction(
+    userId,
+    async (tx) =>
+      (
+        await tx.query<{ id: string }>(UPSERT_SQL, [
+          accountId,
+          folderId,
+          priority,
+          JSON.stringify(payload),
+        ])
+      ).rows,
+  );
   return rows.length;
 }
 
@@ -569,12 +591,17 @@ async function upsert(
  * the server's answer is stale by definition, and applying it undoes what the
  * user just did.
  */
-async function applyFlags(
+export async function applyFlags(
+  userId: string,
   folderId: string,
   updates: { uid: number; seen: boolean; flagged: boolean; answered: boolean }[],
 ): Promise<number> {
-  const rows = await query<{ id: string }>(
-    `
+  const rows = await messageTransaction(
+    userId,
+    async (tx) =>
+      (
+        await tx.query<{ id: string }>(
+          `
     UPDATE messages m
        SET seen = r.seen, flagged = r.flagged, answered = r.answered
       FROM jsonb_to_recordset($2::jsonb) AS r(uid bigint, seen bool, flagged bool, answered bool)
@@ -589,7 +616,9 @@ async function applyFlags(
        )
     RETURNING m.id
     `,
-    [folderId, JSON.stringify(updates)],
+          [folderId, JSON.stringify(updates)],
+        )
+      ).rows,
   );
   return rows.length;
 }

@@ -61,6 +61,8 @@ export class HttpApi implements MailApi {
       ...init,
       headers,
       credentials: 'same-origin',
+      ...(path === '/messages/actions' && typeof init.body === 'string' && new TextEncoder().encode(init.body).length < 60_000
+        ? { keepalive: true } : {}),
     });
 
     // The backend echoes the session's CSRF token on every response, so a
@@ -126,7 +128,8 @@ export class HttpApi implements MailApi {
   list = (query: ListQuery) => this.post<ListResult>('/messages/query', query);
   get = (id: Id) => this.req<Message>(`/messages/${id}`);
   getThread = (threadId: Id) => this.req<Thread>(`/threads/${threadId}`);
-  act = (ids: Id[], action: MessageAction) => this.post<void>('/messages/actions', { ids, action });
+  act = (ids: Id[], action: MessageAction, options?: { threaded?: boolean }) =>
+    this.post<void>('/messages/actions', { ids, action, threaded: options?.threaded });
 
   // A plain URL, authenticated by the same session cookie every other request
   // uses. The download is the browser's job from here.

@@ -6,7 +6,8 @@
  * it changed, and this module is the only code allowed to write the index.
  */
 
-import { query, transaction } from '../db/index.ts';
+import type { PoolClient } from 'pg';
+import { query, messageTransaction } from '../db/index.ts';
 
 const CHUNK = 1000;
 
@@ -14,13 +15,17 @@ const CHUNK = 1000;
 export async function refreshThreads(
   userId: string,
   threadIds: readonly string[],
+  client?: PoolClient,
 ): Promise<void> {
   const unique = [...new Set(threadIds)].filter(Boolean);
   if (!unique.length) return;
 
   for (let offset = 0; offset < unique.length; offset += CHUNK) {
     const chunk = unique.slice(offset, offset + CHUNK);
-    await transaction(async (tx) => {
+    const within = client
+      ? async (fn: (tx: PoolClient) => Promise<void>) => fn(client)
+      : (fn: (tx: PoolClient) => Promise<void>) => messageTransaction(userId, fn);
+    await within(async (tx) => {
       await tx.query(
         `WITH agg AS (
            SELECT m.thread_id,
@@ -100,9 +105,7 @@ export async function refreshThreads(
 }
 
 /** Recompute every thread touched by one or more accounts. */
-export async function refreshAccountThreads(
-  accountIds: string | readonly string[],
-): Promise<void> {
+export async function refreshAccountThreads(accountIds: string | readonly string[]): Promise<void> {
   const ids = typeof accountIds === 'string' ? [accountIds] : [...new Set(accountIds)];
   if (!ids.length) return;
 

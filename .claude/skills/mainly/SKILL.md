@@ -79,7 +79,7 @@ frontend/   React 19 + Zustand + Vite + motion. PWA.
   src/features/     shell · mail-list · reader · compose · accounts ·
                     settings · mobile · help
   src/styles/       tokens.css is the source of truth for every visual value
-  scripts/          url-check · search-check · sender-check (executable specs)
+  scripts/          url-check · search-check · store-check · sender-check (executable specs)
 backend/    Fastify + pg + imapflow + nodemailer + mailparser + argon2
   src/contract/     byte-identical copies of frontend types.ts and search.ts
   src/modules/      auth · accounts · messages · unsubscribe · domains ·
@@ -88,9 +88,9 @@ backend/    Fastify + pg + imapflow + nodemailer + mailparser + argon2
                     bodies · body-index · replay · idle · mailboxes · parse
   src/smtp/         outbound send
   src/cli/          create-user · token · domain · seed
-  migrations/       numbered, forward-only SQL (001…012)
+  migrations/       numbered, forward-only SQL (001…014)
   scripts/          smoke · query-check · index-check · check-contract ·
-                    static-check · auth-check · database-benchmark
+                    static-check · auth-check · consistency-check · database-benchmark
 mcp/        MCP server over stdio — the same HTTP API, exposed to agents
 site/       landing page + hosted demo shell
 scripts/    build-site · deploy-site · release · mainly-provision (+ its .md)
@@ -123,6 +123,20 @@ Ignore `frontend/backend/` — empty directories left by `tsc -b`, not source.
 | Domain control (optional) | `backend/src/modules/domains/` + `scripts/mainly-provision` |
 | MCP tools | `mcp/src/index.ts` |
 | Config / env | `backend/src/config.ts` · `.env.example` · `docs/configuration.md` |
+
+## Mutation consistency
+
+Message actions commit the local row, replay queue and list aggregates together
+in `backend/src/modules/messages/routes.ts`. `backend/src/db/index.ts` provides
+the short user-scoped write transaction; IDLE and polling share the account
+claim so envelope snapshots cannot race replay. Pending moves retain their
+confirmed IMAP location separately from the visible folder (migration 013).
+`backend/src/sync/replay.ts` carries COPYUID mappings into later queued actions;
+UIDPLUS is required for moves so stable ids never guess at server identity.
+The frontend saves actions immediately; Undo files messages back with a second
+saved action. `frontend/scripts/store-check.mjs` checks delayed-response races,
+and `backend/scripts/consistency-check.mjs` checks persistence and replay against
+Postgres with a deterministic IMAP peer. Both run in `./dev.sh check`.
 
 ## The contract — the one piece of ceremony
 

@@ -337,6 +337,9 @@ async function listScoped(p: Params, run: QueryRunner): Promise<ListResult> {
      * newest message — so the collapse reads it straight out of MESSAGE_COLUMNS
      * rather than selecting the key twice under two names.
      */
+    // Keep these primary-key lookups parameterised. Flattened joins can choose
+    // a hash scan of every thread/message once per folder before LIMIT, turning
+    // a 100-row inbox page into seconds of work after a large initial sync.
     base = `
       SELECT DISTINCT ON (cand.thread_id) cand.*
         FROM unnest(${scopedFolders}::uuid[]) AS wanted(folder_id)
@@ -348,8 +351,16 @@ async function listScoped(p: Params, run: QueryRunner): Promise<ListResult> {
                  m.flagged AS thread_flagged,
                  m.has_attachments AS thread_attachments
             FROM thread_folders tf
-            JOIN threads t ON t.user_id = tf.user_id AND t.thread_id = tf.thread_id
-            JOIN messages m ON m.id = t.last_message
+            JOIN LATERAL (
+              SELECT t.last_message FROM threads t
+               WHERE t.user_id = tf.user_id AND t.thread_id = tf.thread_id
+               OFFSET 0
+            ) t ON true
+            JOIN LATERAL (
+              SELECT ${MESSAGE_COLUMNS}, m.snoozed_until FROM messages m
+               WHERE m.id = t.last_message
+               OFFSET 0
+            ) m ON true
            WHERE tf.user_id = ${userId}
              AND tf.folder_id = wanted.folder_id
              AND (m.snoozed_until IS NULL OR m.snoozed_until <= now())

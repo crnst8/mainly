@@ -16,7 +16,7 @@
  */
 
 import type { ImapFlow } from 'imapflow';
-import { query } from '../db/index.ts';
+import { query, transaction } from '../db/index.ts';
 import type { Flag, MessageAction } from '../contract/types.ts';
 import { withConnection, takeRefusal, type AccountCredentials } from './pool.ts';
 
@@ -36,6 +36,8 @@ const MAX_ATTEMPTS = 8;
  * delete would find no row at all. The op has to be self-describing.
  */
 interface Target {
+  id?: string;
+  uidValidity?: number | null;
   path: string;
   uid: number;
 }
@@ -68,37 +70,69 @@ const IMAP_FLAG: Partial<Record<Flag, string>> = {
  * behind it is still worth running.
  */
 export async function replayAccount(creds: AccountCredentials): Promise<number> {
-  const ops = await query<OpRow>(
-    `SELECT id, kind, payload, attempts
-       FROM sync_ops
-      WHERE account_id = $1
-        AND next_attempt_at <= now()
-        AND attempts < $2
-      ORDER BY id
-      LIMIT $3`,
-    [creds.id, MAX_ATTEMPTS, PER_PASS],
-  );
+  const ops = await dueOps(creds.id);
   if (!ops.length) return 0;
 
   let done = 0;
   try {
-    await withConnection(creds, async (client) => {
-      for (const op of ops) {
-        try {
-          await applyOp(client, creds.id, op);
-          await query('DELETE FROM sync_ops WHERE id = $1', [op.id]);
-          done++;
-        } catch (err) {
-          await recordFailure(op, err as Error);
-        }
-      }
-    });
+    done = await withConnection(creds, (client) => replayOps(client, creds.id, ops));
   } catch (err) {
     // Could not connect at all. Nothing was attempted, so nothing is charged an
     // attempt: this is the server's outage, not the op's fault, and burning the
     // retry budget on it would park perfectly good work.
-    console.warn({ account: creds.address, err: (err as Error).message }, 'replay could not connect');
+    console.warn(
+      { account: creds.address, err: (err as Error).message },
+      'replay could not connect',
+    );
     return 0;
+  }
+  return done;
+}
+
+export async function dueOps(accountId: string): Promise<OpRow[]> {
+  return query<OpRow>(
+    `SELECT id, kind, payload, attempts
+       FROM sync_ops o
+      WHERE account_id = $1
+        AND next_attempt_at <= now()
+        AND attempts < $2
+        AND NOT EXISTS (
+          SELECT 1 FROM sync_ops prior
+           WHERE prior.account_id = o.account_id AND prior.id < o.id
+             AND (prior.next_attempt_at > now() OR prior.attempts >= $2)
+             AND prior.payload->'ids' ?| ARRAY(SELECT jsonb_array_elements_text(o.payload->'ids'))
+        )
+      ORDER BY id
+      LIMIT $3`,
+    [accountId, MAX_ATTEMPTS, PER_PASS],
+  );
+}
+
+/** Runs under the account claim; exported for deterministic replay regressions. */
+export async function replayOps(
+  client: ImapFlow,
+  accountId: string,
+  ops: OpRow[],
+): Promise<number> {
+  let done = 0;
+  const blocked = new Set<string>();
+  for (const op of ops) {
+    if (op.payload.ids.some((id) => blocked.has(id))) continue;
+    try {
+      // A preceding move may have assigned new UIDs to queued successors.
+      const current = await query<Pick<OpRow, 'payload'>>(
+        'SELECT payload FROM sync_ops WHERE id = $1',
+        [op.id],
+      );
+      if (!current.length) continue;
+      op.payload = current[0]!.payload;
+      await applyOp(client, accountId, op);
+      await query('DELETE FROM sync_ops WHERE id = $1', [op.id]);
+      done++;
+    } catch (err) {
+      op.payload.ids.forEach((id) => blocked.add(id));
+      await recordFailure(op, err as Error);
+    }
   }
   return done;
 }
@@ -159,8 +193,12 @@ function assertKeepable(client: ImapFlow, path: string, flag: string): void {
 /** One op against one connection. Exported for replay.test.ts, which drives the
  *  flag path — the one branch that never touches the database. */
 export async function applyOp(client: ImapFlow, accountId: string, op: OpRow): Promise<void> {
-  const { action, targets } = op.payload;
-  if (!targets?.length) return;
+  const { action } = op.payload;
+  if (!op.payload.targets?.length) return;
+  const targets = (op.payload.targets = op.payload.targets.map((t, i) => ({
+    ...t,
+    id: t.id ?? op.payload.ids[i],
+  })));
   const sources = byFolder(targets);
 
   switch (action.type) {
@@ -169,8 +207,12 @@ export async function applyOp(client: ImapFlow, accountId: string, op: OpRow): P
       const remove = action.remove.map((f) => IMAP_FLAG[f]).filter((f): f is string => !!f);
       if (!add.length && !remove.length) return;
       for (const [path, uids] of sources) {
-        const lock = await client.getMailboxLock(path);
+        const lock = await client.getMailboxLock(path, { readOnly: false });
         try {
+          assertValidity(
+            client,
+            targets.filter((t) => t.path === path),
+          );
           // Removal is always allowed; only setting a flag needs the mailbox to
           // keep it.
           for (const flag of add) assertKeepable(client, path, flag);
@@ -203,17 +245,36 @@ export async function applyOp(client: ImapFlow, accountId: string, op: OpRow): P
       // COPY + STORE \Deleted + EXPUNGE when it does not.
       const target = await destinationPath(accountId, action);
       for (const [path, uids] of sources) {
-        if (target && path === target) continue; // already there
-        const lock = await client.getMailboxLock(path);
+        if (target && path === target) {
+          await relocate(accountId, op, path, path, new Map(uids.map((uid) => [uid, uid])), null);
+          continue;
+        }
+        const lock = await client.getMailboxLock(path, { readOnly: false });
         try {
+          assertValidity(
+            client,
+            targets.filter((t) => t.path === path),
+          );
           if (target) {
-            confirm(
-              await client.messageMove(uids, target, { uid: true }),
-              client,
-              `Moving ${uids.length} message(s) from ${path} to ${target}`,
+            // Without COPYUID we cannot safely address the moved message again.
+            // Refuse before changing mail rather than guess by Message-ID, which
+            // is neither mandatory nor unique within a folder.
+            if (!client.capabilities.has('UIDPLUS'))
+              throw permanent('Moving mail requires UIDPLUS to preserve message identity');
+            const moved = await client.messageMove(uids, target, { uid: true });
+            confirm(moved, client, `Moving ${uids.length} message(s) from ${path} to ${target}`);
+            if (!moved || !moved.uidMap)
+              throw permanent('The server moved mail without returning its new UIDs');
+            await relocate(
+              accountId,
+              op,
+              path,
+              target,
+              moved.uidMap,
+              moved.uidValidity ? Number(moved.uidValidity) : null,
             );
           } else {
-            // Permanent delete, or no trash folder to move to.
+            // Explicit permanent delete.
             confirm(
               await client.messageDelete(uids, { uid: true }),
               client,
@@ -239,8 +300,12 @@ export async function applyOp(client: ImapFlow, accountId: string, op: OpRow): P
       const target = await pathOf(accountId, action.folderId);
       if (!target) throw permanent('Destination folder no longer exists');
       for (const [path, uids] of sources) {
-        const lock = await client.getMailboxLock(path);
+        const lock = await client.getMailboxLock(path, { readOnly: false });
         try {
+          assertValidity(
+            client,
+            targets.filter((t) => t.path === path),
+          );
           confirm(
             await client.messageCopy(uids, target, { uid: true }),
             client,
@@ -255,6 +320,78 @@ export async function applyOp(client: ImapFlow, accountId: string, op: OpRow): P
   }
 }
 
+function assertValidity(client: ImapFlow, targets: Target[]): void {
+  const actual = client.mailbox ? Number(client.mailbox.uidValidity) : null;
+  if (targets.some((t) => t.uidValidity != null && t.uidValidity !== actual)) {
+    throw permanent('Mailbox UIDVALIDITY changed; refusing to act on reassigned UIDs');
+  }
+}
+
+/** Keep stable local ids, cached bodies, labels, and queued follow-up actions
+ * attached to the new server UID. The API uses this same short database lock. */
+async function relocate(
+  accountId: string,
+  op: OpRow,
+  source: string,
+  destination: string,
+  uidMap: Map<number, number>,
+  uidValidity: number | null,
+): Promise<void> {
+  await transaction(async (tx) => {
+    const account = await tx.query<{ user_id: string }>(
+      'SELECT user_id FROM accounts WHERE id = $1',
+      [accountId],
+    );
+    await tx.query('SELECT pg_advisory_xact_lock(hashtext($1))', [
+      `messages:${account.rows[0]!.user_id}`,
+    ]);
+    const folder = await tx.query<{ id: string }>(
+      'SELECT id FROM folders WHERE account_id = $1 AND path = $2',
+      [accountId, destination],
+    );
+    if (!folder.rows[0]) throw permanent('Destination folder no longer exists');
+    const folderId = folder.rows[0].id;
+    const successors = await tx.query<OpRow>(
+      'SELECT id, payload FROM sync_ops WHERE account_id = $1 AND id > $2 ORDER BY id FOR UPDATE',
+      [accountId, op.id],
+    );
+    for (const [index, target] of op.payload.targets.entries()) {
+      if (target.path !== source) continue;
+      const uid = uidMap.get(target.uid);
+      if (uid === undefined)
+        throw permanent('The server did not return a UID for every moved message');
+      const id = target.id ?? op.payload.ids[index];
+      await tx.query(
+        `UPDATE messages
+        SET uid = CASE WHEN folder_id = $2 THEN $3::bigint ELSE NULL END,
+            remote_folder_id = CASE WHEN folder_id = $2 THEN NULL ELSE $2::uuid END,
+            remote_uid = CASE WHEN folder_id = $2 THEN NULL ELSE $3::bigint END
+        WHERE id = $1`,
+        [id, folderId, uid],
+      );
+      for (const next of successors.rows) {
+        next.payload.targets = next.payload.targets.map((t, i) =>
+          (t.id ?? next.payload.ids[i]) === id
+            ? { ...t, id, path: destination, uid, uidValidity: uidValidity ?? t.uidValidity }
+            : t,
+        );
+      }
+    }
+    for (const next of successors.rows) {
+      await tx.query('UPDATE sync_ops SET payload = $2 WHERE id = $1', [
+        next.id,
+        JSON.stringify(next.payload),
+      ]);
+    }
+    // Persist each completed folder so retrying a later failure never repeats it.
+    await tx.query(
+      `UPDATE sync_ops SET payload = jsonb_set(payload, '{targets}', $2::jsonb) WHERE id = $1`,
+      [op.id, JSON.stringify(op.payload.targets.filter((t) => t.path !== source))],
+    );
+  });
+  op.payload.targets = op.payload.targets.filter((t) => t.path !== source);
+}
+
 async function destinationPath(accountId: string, action: MessageAction): Promise<string | null> {
   if (action.type === 'move') {
     const path = await pathOf(accountId, action.folderId);
@@ -267,9 +404,9 @@ async function destinationPath(accountId: string, action: MessageAction): Promis
       `SELECT path FROM folders WHERE account_id = $1 AND role = 'trash' ORDER BY position LIMIT 1`,
       [accountId],
     );
-    // No trash folder is not an error: some servers do not have one, and the
-    // correct behaviour there is an expunge.
-    return rows[0]?.path ?? null;
+    // A missing trash folder must never turn a reversible action into expunge.
+    if (!rows[0]) throw permanent('Trash folder no longer exists');
+    return rows[0].path;
   }
   return null;
 }
@@ -307,7 +444,7 @@ async function recordFailure(op: OpRow, err: Error): Promise<void> {
             -- the only record that the user asked for something the server
             -- refused, and the UI surfaces it from here.
             next_attempt_at = CASE WHEN $4 THEN 'infinity'::timestamptz
-                                   ELSE now() + (least(300, power(2, $2)::int) || ' seconds')::interval
+                                   ELSE now() + (least(300, power(2, $2::int)::int) || ' seconds')::interval
                               END
       WHERE id = $1`,
     [op.id, parked ? MAX_ATTEMPTS : attempts, err.message, parked],

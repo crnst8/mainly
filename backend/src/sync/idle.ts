@@ -20,10 +20,11 @@
  */
 
 import type { ImapFlow } from 'imapflow';
-import { query } from '../db/index.ts';
+import { query, claimAccount } from '../db/index.ts';
 import { config } from '../config.ts';
 import type { Priority } from '../contract/types.ts';
 import { connect, type AccountCredentials } from './pool.ts';
+import { replayAccount } from './replay.ts';
 import { syncEnvelopes } from './envelopes.ts';
 import { refreshCounts, publishCounts } from './folders.ts';
 import { refreshAccountThreads } from './threads.ts';
@@ -166,6 +167,7 @@ class Watcher {
     // A notification arriving mid-pass is remembered rather than dropped: the
     // fetch already in flight may have read the mailbox before the new message
     // landed in it.
+    if (this.stopped) return;
     if (this.syncing) {
       this.dirty = true;
       return;
@@ -174,22 +176,34 @@ class Watcher {
     try {
       do {
         this.dirty = false;
-        const result = await syncEnvelopes(
-          credentialsOf(this.row),
-          this.row.user_id,
-          this.row.priority,
-          // This folder only. A push about the inbox is not a reason to re-scan
-          // an archive of forty thousand messages.
-          { folderPaths: [this.path] },
-        );
-        if (result.indexed || result.updated || result.removed) {
-          await refreshCounts(this.row.id);
-          await refreshAccountThreads(this.row.id);
-          publish(this.row.user_id, { type: 'messages:changed', ids: [], patch: {} });
-          await publishCounts(this.row.user_id, this.row.id);
-          console.log({ account: this.row.address, ...result }, 'idle pass indexed new mail');
+        // IDLE and polling share one writer. Otherwise a stale IDLE fetch can
+        // land after replay removed the operation that protected local flags.
+        const claim = await claimAccount(this.row.id);
+        if (!claim) {
+          this.schedule();
+          return;
         }
-      } while (this.dirty);
+        try {
+          await replayAccount(credentialsOf(this.row));
+          const result = await syncEnvelopes(
+            credentialsOf(this.row),
+            this.row.user_id,
+            this.row.priority,
+            // This folder only. A push about the inbox is not a reason to re-scan
+            // an archive of forty thousand messages.
+            { folderPaths: [this.path] },
+          );
+          if (result.indexed || result.updated || result.removed) {
+            await refreshCounts(this.row.id);
+            await refreshAccountThreads(this.row.id);
+            publish(this.row.user_id, { type: 'messages:changed', ids: [], patch: {} });
+            await publishCounts(this.row.user_id, this.row.id);
+            console.log({ account: this.row.address, ...result }, 'idle pass indexed new mail');
+          }
+        } finally {
+          await claim.release();
+        }
+      } while (this.dirty && !this.stopped);
     } catch (err) {
       console.warn(
         { account: this.row.address, err: (err as Error).message },

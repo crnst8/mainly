@@ -34,6 +34,7 @@ import type {
   ListResult,
 
   MessageAction,
+  MessageSummary,
   Preferences,
   Priority,
   SavedView,
@@ -542,9 +543,13 @@ export class MockApi implements MailApi {
     };
   }
 
-  async act(ids: Id[], action: MessageAction) {
+  async act(ids: Id[], action: MessageAction, options?: { threaded?: boolean }) {
     await sleep(LATENCY.fast);
     const set = new Set(ids);
+    if (options?.threaded && action.type === 'flag' && (action.add.includes('seen') || action.remove.includes('seen'))) {
+      const threads = new Set(this.summaries.filter((m) => set.has(m.id)).map((m) => m.threadId));
+      this.summaries.filter((m) => threads.has(m.threadId)).forEach((m) => set.add(m.id));
+    }
     const touched = [...this.summaries, ...this.messages].filter((m) => set.has(m.id));
 
     switch (action.type) {
@@ -558,6 +563,7 @@ export class MockApi implements MailApi {
           for (const f of action.remove) {
             if (f === 'seen') m.seen = false;
             if (f === 'flagged') m.flagged = false;
+            if (f === 'answered') m.answered = false;
           }
         }
         break;
@@ -567,14 +573,13 @@ export class MockApi implements MailApi {
         break;
       }
       case 'delete': {
-        const trash = this.folders.find(
-          (f) => f.role === 'trash' && f.accountId === touched[0]?.accountId,
-        );
-        if (action.permanent || !trash) {
+        if (action.permanent) {
           this.messages = this.messages.filter((m) => !set.has(m.id));
           this.summaries = this.summaries.filter((m) => !set.has(m.id));
         } else {
-          for (const m of touched) m.folderId = trash.id;
+          const trashFor = (m: MessageSummary) => this.folders.find((f) => f.role === 'trash' && f.accountId === m.accountId);
+          if (touched.some((m) => !trashFor(m))) throw new Error('No trash folder for this account');
+          for (const m of touched) m.folderId = trashFor(m)!.id;
         }
         this.emit({ type: 'messages:deleted', ids });
         break;

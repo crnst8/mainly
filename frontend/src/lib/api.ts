@@ -90,7 +90,7 @@ export interface MailApi {
   list(query: ListQuery): Promise<ListResult>;
   get(id: Id): Promise<Message>;
   getThread(threadId: Id): Promise<Thread>;
-  act(ids: Id[], action: MessageAction): Promise<void>;
+  act(ids: Id[], action: MessageAction, options?: { threaded?: boolean }): Promise<void>;
   /** A URL the browser can navigate to in order to download an attachment.
    *  Not a fetch: letting the browser own the download means it also owns the
    *  save dialog, the progress, and the resume, none of which we should rebuild. */

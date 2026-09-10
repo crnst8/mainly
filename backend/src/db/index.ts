@@ -98,6 +98,15 @@ export async function transaction<T>(fn: (client: pg.PoolClient) => Promise<T>):
   }
 }
 
+/** Serialize index changes with API actions, but never hold this lock over
+ * IMAP. Each write obtains a fresh snapshot after the preceding action commits. */
+export function messageTransaction<T>(userId: string, fn: (client: pg.PoolClient) => Promise<T>): Promise<T> {
+  return transaction(async (client) => {
+    await client.query('SELECT pg_advisory_xact_lock(hashtext($1))', [`messages:${userId}`]);
+    return fn(client);
+  });
+}
+
 /**
  * Try to take an advisory lock for an account.
  *

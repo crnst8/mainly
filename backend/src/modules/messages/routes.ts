@@ -7,7 +7,7 @@
  */
 
 import type { FastifyInstance } from 'fastify';
-import { one, query, transaction } from '../../db/index.ts';
+import { one, query, messageTransaction } from '../../db/index.ts';
 import { badRequest, notFound } from '../../lib/errors.ts';
 import type {
   Addr,
@@ -21,7 +21,7 @@ import type {
 } from '../../contract/types.ts';
 import { listMessages } from './query.ts';
 import { publish } from '../events/bus.ts';
-import { refreshCounts, publishCounts } from '../../sync/folders.ts';
+import { refreshCounts, countSnapshot } from '../../sync/folders.ts';
 import { refreshThreads } from '../../sync/threads.ts';
 import { syncNow } from '../../sync/engine.ts';
 import { ensureBody, fetchAttachment, type CachedBody } from '../../sync/bodies.ts';
@@ -43,9 +43,10 @@ export async function messageRoutes(app: FastifyInstance): Promise<void> {
     // Cache miss goes to IMAP now, on the request. The alternative — return the
     // envelope and let the client poll — means the reader paints an empty
     // message first, and an empty message is indistinguishable from a broken one.
-    const body = row.body_html === null && row.body_text === null
-      ? await ensureBody(req.userId, req.params.id)
-      : null;
+    const body =
+      row.body_html === null && row.body_text === null
+        ? await ensureBody(req.userId, req.params.id)
+        : null;
 
     return toMessage(row, body);
   });
@@ -55,20 +56,22 @@ export async function messageRoutes(app: FastifyInstance): Promise<void> {
     '/messages/:id/attachments/:part',
     async (req, reply) => {
       const file = await fetchAttachment(req.userId, req.params.id, req.params.part);
-      return reply
-        .header('content-type', file.mimeType)
-        // `attachment` and not `inline`: the browser must never be asked to
-        // render mail-supplied bytes on our own origin, whatever they claim to be.
-        .header(
-          'content-disposition',
-          `attachment; filename*=UTF-8''${encodeURIComponent(file.filename)}`,
-        )
-        .header('content-length', file.content.length)
-        .header('cache-control', 'private, max-age=300')
-        // Belt and braces: the disposition header above is the rule, this stops a
-        // sniffing browser from overriding it.
-        .header('x-content-type-options', 'nosniff')
-        .send(file.content);
+      return (
+        reply
+          .header('content-type', file.mimeType)
+          // `attachment` and not `inline`: the browser must never be asked to
+          // render mail-supplied bytes on our own origin, whatever they claim to be.
+          .header(
+            'content-disposition',
+            `attachment; filename*=UTF-8''${encodeURIComponent(file.filename)}`,
+          )
+          .header('content-length', file.content.length)
+          .header('cache-control', 'private, max-age=300')
+          // Belt and braces: the disposition header above is the rule, this stops a
+          // sniffing browser from overriding it.
+          .header('x-content-type-options', 'nosniff')
+          .send(file.content)
+      );
     },
   );
 
@@ -111,13 +114,27 @@ export async function messageRoutes(app: FastifyInstance): Promise<void> {
     } satisfies Thread;
   });
 
-  app.post<{ Body: { ids: string[]; action: MessageAction } }>(
+  app.post<{ Body: { ids: string[]; action: MessageAction; threaded?: boolean } }>(
     '/messages/actions',
     async (req, reply) => {
       const { ids, action } = req.body;
       if (!ids?.length) throw badRequest('ids is required');
+      if (!action || !['flag', 'move', 'copy', 'delete', 'label', 'snooze'].includes(action.type))
+        throw badRequest('Unknown message action');
+      if (action.type === 'flag') {
+        const flags = ['seen', 'flagged', 'answered'];
+        if (
+          !Array.isArray(action.add) ||
+          !Array.isArray(action.remove) ||
+          [...action.add, ...action.remove].some((f) => !flags.includes(f)) ||
+          action.add.some((f) => action.remove.includes(f))
+        )
+          throw badRequest('Unsupported or conflicting flags');
+        action.add = [...new Set(action.add)];
+        action.remove = [...new Set(action.remove)];
+      }
 
-      const affected = await transaction(async (tx) => {
+      const affected = await messageTransaction(req.userId, async (tx) => {
         // Ownership check and mutation in one statement — a separate check
         // would be a TOCTOU gap.
         //
@@ -127,18 +144,32 @@ export async function messageRoutes(app: FastifyInstance): Promise<void> {
         // reads back the destination, and a permanent delete leaves no row to
         // read at all. See sync/replay.ts.
         const owned = await tx.query<{
-           id: string;
-           account_id: string;
-           thread_id: string;
-           uid: number;
+          id: string;
+          account_id: string;
+          thread_id: string;
+          uid: number;
+          uidvalidity: number | null;
           path: string;
         }>(
-           `SELECT m.id, m.account_id, m.thread_id, m.uid, f.path
+          `SELECT m.id, m.account_id, m.thread_id, coalesce(m.remote_uid, m.uid) AS uid, f.path, f.uidvalidity
              FROM messages m
              JOIN accounts a ON a.id = m.account_id
-             JOIN folders f ON f.id = m.folder_id
-            WHERE a.user_id = $1 AND m.id = ANY($2::uuid[])`,
-          [req.userId, ids],
+             JOIN folders f ON f.id = coalesce(m.remote_folder_id, m.folder_id)
+            WHERE a.user_id = $1 AND (
+              m.id = ANY($2::uuid[]) OR ($3::boolean AND m.thread_id IN (
+                SELECT original.thread_id FROM messages original
+                JOIN accounts owner ON owner.id = original.account_id
+                WHERE owner.user_id = $1 AND original.id = ANY($2::uuid[])
+              ))
+            )
+            ORDER BY m.id FOR UPDATE OF m`,
+          [
+            req.userId,
+            ids,
+            req.body.threaded === true &&
+              action.type === 'flag' &&
+              (action.add.includes('seen') || action.remove.includes('seen')),
+          ],
         );
         const ownedIds = owned.rows.map((r) => r.id);
         if (!ownedIds.length) throw notFound('Messages');
@@ -155,15 +186,16 @@ export async function messageRoutes(app: FastifyInstance): Promise<void> {
             for (const f of action.remove) {
               if (f === 'seen') sets.push('seen = false');
               if (f === 'flagged') sets.push('flagged = false');
+              if (f === 'answered') sets.push('answered = false');
             }
             if (sets.length) {
-              await tx.query(
-                `UPDATE messages SET ${sets.join(', ')} WHERE id = ANY($1::uuid[])`,
-                [ownedIds],
-              );
+              await tx.query(`UPDATE messages SET ${sets.join(', ')} WHERE id = ANY($1::uuid[])`, [
+                ownedIds,
+              ]);
             }
             break;
           }
+          case 'copy':
           case 'move': {
             // The destination has to belong to the same account as every
             // message being moved. Folder ids are per-account, so an unchecked
@@ -184,23 +216,32 @@ export async function messageRoutes(app: FastifyInstance): Promise<void> {
                 `${strays.length} of ${owned.rows.length} messages belong to a different account than that folder. Move within one account at a time.`,
               );
             }
-            await tx.query('UPDATE messages SET folder_id = $2 WHERE id = ANY($1::uuid[])', [
-              ownedIds,
-              action.folderId,
-            ]);
+            if (action.type === 'move')
+              await tx.query(
+                'UPDATE messages SET remote_folder_id = coalesce(remote_folder_id, folder_id), remote_uid = coalesce(remote_uid, uid), uid = NULL, folder_id = $2 WHERE id = ANY($1::uuid[])',
+                [ownedIds, action.folderId],
+              );
             break;
           }
           case 'delete':
             if (action.permanent) {
               await tx.query('DELETE FROM messages WHERE id = ANY($1::uuid[])', [ownedIds]);
             } else {
+              const trash = await tx.query(
+                `SELECT DISTINCT account_id FROM folders WHERE account_id = ANY($1::uuid[]) AND role = 'trash'`,
+                [affectedAccounts],
+              );
+              if (trash.rows.length !== affectedAccounts.length)
+                throw badRequest('No trash folder for this account');
               await tx.query(
                 `UPDATE messages m
-                    SET folder_id = t.id
-                   FROM folders t
+                    SET remote_folder_id = coalesce(m.remote_folder_id, m.folder_id),
+                        remote_uid = coalesce(m.remote_uid, m.uid), uid = NULL,
+                        folder_id = (SELECT t.id FROM folders t
+                          WHERE t.account_id = m.account_id AND t.role = 'trash'
+                          ORDER BY t.position, t.id LIMIT 1)
                   WHERE m.id = ANY($1::uuid[])
-                    AND t.account_id = m.account_id
-                    AND t.role = 'trash'`,
+                    AND EXISTS (SELECT 1 FROM folders t WHERE t.account_id = m.account_id AND t.role = 'trash')`,
                 [ownedIds],
               );
             }
@@ -223,8 +264,6 @@ export async function messageRoutes(app: FastifyInstance): Promise<void> {
               action.until,
             ]);
             break;
-          case 'copy':
-            break;
         }
 
         // Queue the same change for IMAP, in the same transaction as the local
@@ -236,19 +275,36 @@ export async function messageRoutes(app: FastifyInstance): Promise<void> {
         if (action.type !== 'label' && action.type !== 'snooze') {
           for (const accountId of affectedAccounts) {
             const mine = owned.rows.filter((r) => r.account_id === accountId);
-            await tx.query(
-              'INSERT INTO sync_ops (account_id, kind, payload) VALUES ($1, $2, $3)',
-              [
-                accountId,
-                action.type,
-                JSON.stringify({
-                  ids: mine.map((r) => r.id),
-                  targets: mine.map((r) => ({ path: r.path, uid: r.uid })),
-                  action,
-                }),
-              ],
-            );
+            await tx.query('INSERT INTO sync_ops (account_id, kind, payload) VALUES ($1, $2, $3)', [
+              accountId,
+              action.type,
+              JSON.stringify({
+                ids: mine.map((r) => r.id),
+                targets: mine.map((r) => ({
+                  id: r.id,
+                  path: r.path,
+                  uid: r.uid,
+                  uidValidity: r.uidvalidity,
+                })),
+                action,
+              }),
+            ]);
           }
+        }
+        // Lists read maintained thread/facet indexes. Commit them with the
+        // message change so a refresh never sees half an accepted action.
+        if (['flag', 'move', 'delete', 'label'].includes(action.type)) {
+          await refreshCounts(
+            affectedAccounts,
+            async (sql, params) => (await tx.query(sql, params)).rows,
+          );
+        }
+        if (['flag', 'move', 'delete'].includes(action.type)) {
+          await refreshThreads(
+            req.userId,
+            owned.rows.map((r) => r.thread_id),
+            tx,
+          );
         }
         return {
           // The ids that were actually ours. The request's own list may name
@@ -256,7 +312,10 @@ export async function messageRoutes(app: FastifyInstance): Promise<void> {
           // event telling every open tab to change a row.
           ids: ownedIds,
           accountIds: affectedAccounts,
-          threadIds: [...new Set(owned.rows.map((r) => r.thread_id))],
+          counts: await countSnapshot(
+            affectedAccounts,
+            async (sql, params) => (await tx.query(sql, params)).rows,
+          ),
         };
       });
 
@@ -282,25 +341,15 @@ export async function messageRoutes(app: FastifyInstance): Promise<void> {
       // ownership here was both an extra query and wrong after a permanent
       // delete, because those rows no longer existed to identify their account.
       if (['flag', 'move', 'delete', 'label'].includes(action.type)) {
-        await refreshCounts(affected.accountIds);
         // And tell the clients. Without this the sidebar's unread numbers were
         // correct in the database and stale on screen until the next sync pass
         // — up to a full interval of watching a count that no longer matched
         // the list beside it.
-        await publishCounts(req.userId, affected.accountIds);
-      }
-      if (['flag', 'move', 'delete'].includes(action.type)) {
-        await refreshThreads(req.userId, affected.threadIds);
+        publish(req.userId, { type: 'counts', ...affected.counts });
       }
 
-      // Nudge the queue rather than waiting for the poll.
-      //
-      // The local index is authoritative for what the user sees, so the response
-      // has already gone back and the UI has already repainted — but leaving the
-      // op to sit for up to a full sync interval means a message moved here is
-      // still in the inbox on your phone two minutes later. `syncNow` claims
-      // through the same advisory lock, so a burst of actions collapses into one
-      // pass instead of stacking up.
+      // The index is already committed. IMAP runs asynchronously under the
+      // account claim, so acknowledgement never waits on the mail server.
       if (action.type !== 'label' && action.type !== 'snooze') {
         for (const accountId of affected.accountIds) syncNow(req.userId, accountId);
       }
@@ -329,6 +378,7 @@ function patchOf(action: MessageAction): Partial<MessageSummary> {
     for (const f of action.remove) {
       if (f === 'seen') patch.seen = false;
       if (f === 'flagged') patch.flagged = false;
+      if (f === 'answered') patch.answered = false;
     }
     return patch;
   }
@@ -443,7 +493,10 @@ function parseAddrHeader(headers: Record<string, string> | null, key: string): A
     const angled = /<([^<>@\s]+@[^<>\s]+)>/.exec(part);
     const address = (angled?.[1] ?? /[^\s<>,]+@[^\s<>,]+/.exec(part)?.[0])?.toLowerCase();
     if (!address) continue;
-    const name = part.slice(0, angled ? part.indexOf('<') : part.length).trim().replace(/^"|"$/g, '');
+    const name = part
+      .slice(0, angled ? part.indexOf('<') : part.length)
+      .trim()
+      .replace(/^"|"$/g, '');
     out.push({ name: name || null, address });
   }
   return out;
