@@ -1,3 +1,9 @@
+## 1.3.4 — 2026-09-10
+
+- fix: status sync (undo/delete/read etc) more reliable
+
+Email reads and deletions now save reliably across refreshes, Undo remains available, sync races are fixed, and threaded inbox loading is about 70× faster in the benchmark.
+
 ## 1.3.3 — 2026-09-06
 
 - fix: Mobile UX tweaks + Auto-add accounts when new
