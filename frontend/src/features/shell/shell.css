@@ -880,6 +880,16 @@
   }
 }
 
+.toast__text {
+  animation: toast-text-in var(--dur-fast);
+}
+
+@keyframes toast-text-in {
+  from {
+    opacity: 0.4;
+  }
+}
+
 .toast__undo {
   display: flex;
   align-items: center;

@@ -146,6 +146,38 @@ await check('conversation Trash requests a receipt and Undo restores hidden memb
   ]);
   assert.ok(calls.slice(1).every((c) => c.options.threaded === false));
 });
+await check('repeated trashes fold into one toast and Undo walks back one action at a time', async () => {
+  store.setState({ result: result([{ ...row }, { ...row, id: 'n' }, { ...row, id: 'o' }]) });
+  const calls = [];
+  transport.act = async (ids, action) => { calls.push({ ids, action }); };
+  await store.getState().trash(['m']);
+  const first = store.getState().toasts[0];
+  await store.getState().trash(['n', 'o']);
+  let { toasts } = store.getState();
+  assert.equal(toasts.length, 1);
+  assert.equal(toasts[0].id, first.id);
+  assert.equal(toasts[0].message, 'Moved to trash · 3 messages');
+  assert.ok(toasts[0].expiresAt >= first.expiresAt);
+  transport.list = async () => result([]);
+  // First press: the latest action only, and the line shrinks by what it covered.
+  toasts[0].undo();
+  await tick();
+  assert.deepEqual(calls.slice(2).map((c) => c.ids), [['n', 'o']]);
+  ({ toasts } = store.getState());
+  assert.equal(toasts.length, 1);
+  assert.equal(toasts[0].id, first.id);
+  assert.equal(toasts[0].message, 'Moved to trash · 1 message');
+  // Second press: the first action, and nothing is left to show.
+  toasts[0].undo();
+  await tick();
+  assert.deepEqual(calls.slice(3).map((c) => c.ids), [['m']]);
+  assert.equal(store.getState().toasts.length, 0);
+  // A line that cannot be undone never merges into one that can.
+  store.setState({ result: result([{ ...row }]) });
+  await store.getState().trash(['m']);
+  store.getState().toast({ key: 'Moved to trash', count: 1, message: (n) => `Moved to trash · ${n}` });
+  assert.equal(store.getState().toasts.length, 2);
+});
 await check('unthreaded Trash does not expand a conversation', async () => {
   store.setState({ query: { ...store.getState().query, threaded: false } });
   let options;

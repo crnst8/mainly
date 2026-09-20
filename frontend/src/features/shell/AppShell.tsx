@@ -245,7 +245,6 @@ function IdentitySwitcher() {
 
 export function Toasts() {
   const toasts = useStore((s) => s.toasts);
-  const dismiss = useStore((s) => s.dismissToast);
 
   if (!toasts.length) return null;
 
@@ -253,15 +252,13 @@ export function Toasts() {
     <div className="toasts" role="status" aria-live="polite">
       {toasts.map((t) => (
         <div className="toast" key={t.id}>
-          <span>{t.message}</span>
+          {/* Keyed on the text so a merged count re-enters and is seen to change. */}
+          <span className="toast__text" key={t.message}>{t.message}</span>
           {t.undo && (
             <button
               type="button"
               className="toast__undo"
-              onClick={() => {
-                t.undo!();
-                dismiss(t.id);
-              }}
+              onClick={() => t.undo!()}
             >
               <Undo size={13} />
               Undo

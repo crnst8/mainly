@@ -181,12 +181,9 @@ export function useKeyboard() {
           return s.setHelp('shortcuts');
         case 'z': {
           e.preventDefault();
-          // Undo the most recent reversible toast.
-          const undoable = [...s.toasts].reverse().find((t) => t.undo);
-          if (undoable) {
-            undoable.undo!();
-            s.dismissToast(undoable.id);
-          }
+          // Undo the most recent reversible step. A merged toast steps back
+          // one action per press and dismisses itself when none remain.
+          [...s.toasts].reverse().find((t) => t.undo)?.undo!();
           return;
         }
       }

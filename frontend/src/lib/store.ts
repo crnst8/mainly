@@ -46,9 +46,26 @@ import type {
 export interface Toast {
   id: string;
   message: string;
-  /** Present when the action is reversible. */
+  /** Present when the action is reversible. Reverses the latest step only and
+   *  keeps the toast honest about what is left: a merged line steps back one
+   *  action per press and goes away when nothing remains. */
   undo?: () => void;
   expiresAt: number;
+  /** Present when repeats of the same action fold into this toast instead of
+   *  stacking beneath it. */
+  group?: ToastGroup;
+}
+
+/** A toast that counts. Raising another with the same key while this one is
+ *  still showing adds to it: nine quick trashes read "Moved to trash · 9
+ *  messages", not nine lines. Undo then walks back through them one action at
+ *  a time, the count falling with each press. */
+export interface ToastGroup {
+  key: string;
+  /** Items this toast accounts for; a merge adds them up. */
+  count: number;
+  /** The line to show for a given count. */
+  message: (count: number) => string;
 }
 
 export interface State {
@@ -280,7 +297,7 @@ interface Actions {
   setHelp(guide: string | null): void;
   setSettings(tab: string | null): void;
   setOnboarding(open: boolean): void;
-  toast(message: string, undo?: () => void): void;
+  toast(message: string | ToastGroup, undo?: () => void): void;
   dismissToast(id: string): void;
 }
 
@@ -309,6 +326,11 @@ let unsubscribeEvents: (() => void) | null = null;
  *  would have dismissed it — otherwise it fires later against an id that is
  *  gone, and `dismissToast` walks the whole list for nothing. */
 const toastTimers = new Map<string, ReturnType<typeof setTimeout>>();
+
+/** The reversible steps behind each toast, newest last. A merged toast holds
+ *  one per action folded into it; each remembers how many messages it covered
+ *  so the line can shrink by exactly that when it is undone. */
+const toastSteps = new Map<string, { count: number; undo: () => void }[]>();
 
 /** There can only be one message held open. Clearing the previous timer when
  *  navigation moves keeps a quick j/k pass from leaving a trail of messages
@@ -997,7 +1019,11 @@ export const useStore = create<State & Actions>((set, get) => ({
         originals.set(m.folderId, group);
       }
       const reversible = !(action.type === 'delete' && action.permanent) && touched.length === ids.length;
-      get().toast(`${label} · ${ids.length} message${ids.length > 1 ? 's' : ''}`, reversible ? () => {
+      get().toast({
+        key: label,
+        count: ids.length,
+        message: (n) => `${label} · ${n} message${n > 1 ? 's' : ''}`,
+      }, reversible ? () => {
         void saving.then(async (receipt) => {
           // The server also moved conversation members that were collapsed out
           // of the list. Restore its exact set, including across accounts.
@@ -1500,13 +1526,39 @@ export const useStore = create<State & Actions>((set, get) => ({
   },
 
   toast(message, undo) {
-    const id = `t_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
     const window = get().prefs?.undoWindowMs ?? 6000;
-    set({ toasts: [...get().toasts, { id, message, undo, expiresAt: Date.now() + window }] });
-    toastTimers.set(
-      id,
-      setTimeout(() => get().dismissToast(id), window),
-    );
+    const expiresAt = Date.now() + window;
+    const group = typeof message === 'string' ? undefined : message;
+    // Same key, same reversibility, still on screen: fold in rather than
+    // stack. Reversibility has to match or the merged Undo would silently
+    // cover only part of what the line claims. The window restarts from the
+    // latest action so the last one gets as long to reconsider as the first.
+    const existing = group && get().toasts.find((t) => t.group?.key === group.key && !!t.undo === !!undo);
+    if (group && existing) {
+      const count = existing.group!.count + group.count;
+      if (undo) toastSteps.get(existing.id)!.push({ count: group.count, undo });
+      set({
+        toasts: get().toasts.map((t) =>
+          t.id === existing.id ? { ...t, message: group.message(count), expiresAt, group: { ...group, count } } : t),
+      });
+      restartToastTimer(existing.id, window, get);
+      return;
+    }
+    const id = `t_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
+    if (undo) toastSteps.set(id, [{ count: group?.count ?? 1, undo }]);
+    set({
+      toasts: [
+        ...get().toasts,
+        {
+          id,
+          message: group ? group.message(group.count) : message as string,
+          undo: undo && (() => undoToastStep(id, window, set, get)),
+          expiresAt,
+          group,
+        },
+      ],
+    });
+    restartToastTimer(id, window, get);
   },
 
   dismissToast(id) {
@@ -1515,6 +1567,7 @@ export const useStore = create<State & Actions>((set, get) => ({
       clearTimeout(timer);
       toastTimers.delete(id);
     }
+    toastSteps.delete(id);
     set({ toasts: get().toasts.filter((t) => t.id !== id) });
   },
 }));
@@ -1563,6 +1616,32 @@ function patchGroup(
 
 type Set_ = (partial: Partial<State>) => void;
 type Get_ = () => State & Actions;
+
+function restartToastTimer(id: string, window: number, get: Get_): void {
+  clearTimeout(toastTimers.get(id));
+  toastTimers.set(id, setTimeout(() => get().dismissToast(id), window));
+}
+
+/** Reverse the latest step behind a toast. The line shrinks by what that step
+ *  covered and the window restarts, so a run of `z` presses can walk all the
+ *  way back; when nothing reversible is left the toast goes with it. */
+function undoToastStep(id: string, window: number, set: Set_, get: Get_): void {
+  const toast = get().toasts.find((t) => t.id === id);
+  const steps = toastSteps.get(id);
+  const step = steps?.pop();
+  if (!toast || !step) return;
+  step.undo();
+  const count = (toast.group?.count ?? 1) - step.count;
+  if (!steps!.length || !toast.group || count <= 0) {
+    get().dismissToast(id);
+    return;
+  }
+  set({
+    toasts: get().toasts.map((t) =>
+      t.id === id ? { ...t, message: toast.group!.message(count), expiresAt: Date.now() + window, group: { ...toast.group!, count } } : t),
+  });
+  restartToastTimer(id, window, get);
+}
 
 /**
  * Coalesced re-read.
