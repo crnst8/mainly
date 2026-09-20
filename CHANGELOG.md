@@ -1,3 +1,7 @@
+## 1.3.6 — 2026-09-21
+
+- fix: delete notifications rolled into one toast
+
 ## 1.3.5 — 2026-09-10
 
 - fix: deletion bug
