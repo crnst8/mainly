@@ -1,3 +1,7 @@
+## 1.3.8 — 2026-10-05
+
+- feat: notifications & custom bins
+
 ## 1.3.7 — 2026-10-04
 
 - docs: release notes for 1.3.7
