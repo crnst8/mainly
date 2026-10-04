@@ -23,7 +23,7 @@ import type { ImapFlow } from 'imapflow';
 import { query, claimAccount } from '../db/index.ts';
 import { config } from '../config.ts';
 import type { Priority } from '../contract/types.ts';
-import { connect, type AccountCredentials } from './pool.ts';
+import { connect, withConnection, type AccountCredentials } from './pool.ts';
 import { replayAccount } from './replay.ts';
 import { syncEnvelopes } from './envelopes.ts';
 import { refreshCounts, publishCounts } from './folders.ts';
@@ -74,6 +74,9 @@ class Watcher {
   private debounce: NodeJS.Timeout | null = null;
   private syncing = false;
   private dirty = false;
+  /** Parked on the inbox right now. The poll loop slows down only while this
+   *  holds, so a watcher in backoff hands its account straight back to it. */
+  live = false;
 
   // Declared and assigned explicitly. Node runs these sources with type
   // stripping, which erases annotations but cannot synthesise the assignments a
@@ -97,6 +100,7 @@ class Watcher {
 
   async stop(): Promise<void> {
     this.stopped = true;
+    this.live = false;
     if (this.debounce) clearTimeout(this.debounce);
     const client = this.client;
     this.client = null;
@@ -144,11 +148,19 @@ class Watcher {
     client.on('flags', wake);
 
     // Resolve when the connection goes away; imapflow keeps IDLE alive itself
-    // while nothing else is using the connection.
-    await new Promise<void>((resolve) => {
+    // while nothing else is using the connection. Listeners go on before `live`
+    // is set, so a connection that dies at once cannot leave it stuck true.
+    const closed = new Promise<void>((resolve) => {
       client.on('close', () => resolve());
       client.on('error', () => resolve());
     });
+    this.live = true;
+    // Catch up once per (re)connect. While the poll loop treats this account as
+    // pushed it polls slowly, so mail that landed between the last poll and
+    // this IDLE starting would otherwise wait for the slow poll.
+    this.schedule();
+    await closed;
+    this.live = false;
 
     this.client = null;
     await client.logout().catch(() => {});
@@ -184,15 +196,19 @@ class Watcher {
           return;
         }
         try {
-          await replayAccount(credentialsOf(this.row));
-          const result = await syncEnvelopes(
-            credentialsOf(this.row),
-            this.row.user_id,
-            this.row.priority,
-            // This folder only. A push about the inbox is not a reason to re-scan
-            // an archive of forty thousand messages.
-            { folderPaths: [this.path] },
-          );
+          const creds = credentialsOf(this.row);
+          // One login for both steps, as in the polling pass.
+          const result = await withConnection(creds, async (client) => {
+            await replayAccount(creds, client);
+            return syncEnvelopes(
+              creds,
+              this.row.user_id,
+              this.row.priority,
+              // This folder only. A push about the inbox is not a reason to re-scan
+              // an archive of forty thousand messages.
+              { folderPaths: [this.path], client },
+            );
+          });
           if (result.indexed || result.updated || result.removed) {
             await refreshCounts(this.row.id);
             await refreshAccountThreads(this.row.id);
@@ -283,6 +299,11 @@ export async function stopIdle(): Promise<void> {
   const all = [...watchers.values()];
   watchers.clear();
   await Promise.all(all.map((w) => w.stop()));
+}
+
+/** Accounts whose inbox is on a live IDLE connection in this process. */
+export function liveWatchers(): string[] {
+  return [...watchers.values()].filter((w) => w.live).map((w) => w.accountId);
 }
 
 export const idleStats = () => ({

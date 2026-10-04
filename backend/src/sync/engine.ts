@@ -14,6 +14,12 @@
  * heard from us; reading flags before pushing ours is how a message you just
  * marked read comes back unread for one poll interval. Folders before envelopes
  * because a folder that does not exist locally has nothing to index into.
+ *
+ * The whole pass shares one IMAP connection, and an account with a live IDLE
+ * watcher is polled on the slower `SYNC_IDLE_INTERVAL_MS`: push already covers
+ * its inbox, so the poll only has to catch changes elsewhere. A failing account
+ * or an unreachable mail host backs off exponentially instead of being retried
+ * every interval; a manual refresh always runs.
  */
 
 import { claimAccount, query } from '../db/index.ts';
@@ -23,7 +29,8 @@ import { syncEnvelopes, evictStaleBodies, type StepReporter } from './envelopes.
 import { refreshAccountThreads } from './threads.ts';
 import { indexPendingBodies } from './body-index.ts';
 import { replayAccount } from './replay.ts';
-import type { AccountCredentials } from './pool.ts';
+import { withConnection, isUnreachable, type AccountCredentials } from './pool.ts';
+import { liveWatchers } from './idle.ts';
 import { publish } from '../modules/events/bus.ts';
 import type { Priority } from '../contract/types.ts';
 import { KeyedWorkQueue } from './work-queue.ts';
@@ -56,6 +63,42 @@ const ACCOUNT_COLUMNS = `
   secret_ciphertext, secret_nonce, secret_tag, secret_key_version,
   last_sync_at
 `;
+
+/* ── Backoff ───────────────────────────────────────────────────────────────── */
+
+/**
+ * In memory, per process. Losing it on restart costs one retry per account,
+ * and with replicas each one backs off on its own — both cheaper than a table
+ * written on every failure.
+ */
+interface Failure {
+  count: number;
+  until: number;
+}
+const accountFailures = new Map<string, Failure>();
+/** Keyed by host:port. 22 accounts on one mail server are one server that is
+ *  down, not 22 separate problems to probe every two minutes. */
+const hostFailures = new Map<string, Failure>();
+const BACKOFF_MAX_MS = 30 * 60_000;
+
+const hostKey = (row: Pick<AccountRow, 'imap_host' | 'imap_port'>) =>
+  `${row.imap_host.toLowerCase()}:${row.imap_port}`;
+
+function fail(map: Map<string, Failure>, key: string): number {
+  const count = (map.get(key)?.count ?? 0) + 1;
+  // Interval, then doubling: 2, 4, 8, 16, 30 minutes at the default interval.
+  const delay = Math.min(BACKOFF_MAX_MS, config.sync.intervalMs * 2 ** (count - 1));
+  map.set(key, { count, until: Date.now() + delay });
+  return delay;
+}
+
+/** Keys whose backoff has not expired. */
+function backedOff(map: Map<string, Failure>): string[] {
+  const now = Date.now();
+  return [...map].filter(([, f]) => f.until > now).map(([key]) => key);
+}
+
+const hostDown = (row: AccountRow) => (hostFailures.get(hostKey(row))?.until ?? 0) > Date.now();
 
 const toCredentials = (r: AccountRow): AccountCredentials => ({
   id: r.id,
@@ -91,20 +134,33 @@ export async function stopSyncLoop(): Promise<void> {
 }
 
 async function runOnce(): Promise<void> {
+  // Exclusions are applied in SQL, not after the LIMIT: a failing account never
+  // advances last_sync_at, so it sorts first forever and would otherwise fill
+  // the batch and starve the accounts that work.
   const due = await query<AccountRow>(
     `
     SELECT ${ACCOUNT_COLUMNS} FROM accounts
      WHERE status <> 'disabled'
        AND (last_sync_at IS NULL OR last_sync_at < now() - ($1 || ' milliseconds')::interval)
+       AND id <> ALL($2::uuid[])
+       AND (lower(imap_host) || ':' || imap_port) <> ALL($3::text[])
+       AND NOT (id = ANY($4::uuid[])
+                AND coalesce(last_sync_at >= now() - ($5 || ' milliseconds')::interval, false))
      -- Never-synced accounts first: a new account showing nothing is the worst
      -- first impression this app can make.
      ORDER BY last_sync_at NULLS FIRST
      LIMIT 20
     `,
-    [config.sync.intervalMs],
+    [
+      config.sync.intervalMs,
+      backedOff(accountFailures),
+      backedOff(hostFailures),
+      liveWatchers(),
+      config.sync.idleIntervalMs,
+    ],
   );
 
-  for (const row of due) enqueueAccount(row);
+  for (const row of due) enqueueAccount(row, false);
 
   // Body cache eviction rides on the sync tick rather than owning a scheduler.
   // It is a single indexed DELETE and there is nothing to gain from running it
@@ -113,8 +169,12 @@ async function runOnce(): Promise<void> {
   if (evicted) console.log({ evicted }, 'evicted cached bodies past their TTL');
 }
 
-function enqueueAccount(row: AccountRow): void {
+function enqueueAccount(row: AccountRow, manual: boolean): void {
   accountQueue.enqueue(row.id, async () => {
+    // Checked again here, not only at selection: the queue runs a few accounts
+    // at a time, and once the first one on a host has found it unreachable the
+    // rest of that host's batch should not each wait out their own timeout.
+    if (!manual && hostDown(row)) return;
     const claim = await claimAccount(row.id);
     if (!claim) return; // another replica owns it
     try {
@@ -157,24 +217,33 @@ export async function syncAccount(row: AccountRow): Promise<void> {
     await setStatus(row.id, 'syncing', null);
     report('Connecting', null);
 
-    // Push what we owe the server before reading its answer back.
-    await replayAccount(creds);
+    const result = await withConnection(creds, async (client) => {
+      // Push what we owe the server before reading its answer back.
+      await replayAccount(creds, client);
 
-    report('Listing folders', 0);
-    await syncFolders(creds);
+      report('Listing folders', 0);
+      const status = await syncFolders(creds, client);
 
-    const onStep: StepReporter = (step, progress) => report(step, progress);
-    const result = await syncEnvelopes(creds, row.user_id, row.priority, { onStep });
+      const onStep: StepReporter = (step, progress) => report(step, progress);
+      const result = await syncEnvelopes(creds, row.user_id, row.priority, {
+        onStep,
+        client,
+        status,
+      });
 
-    // Sidebar counts are derived, not synced. Recomputing once at the end costs
-    // one indexed aggregate and removes any chance of the list and the sidebar
-    // disagreeing about the same folder.
-    await refreshCounts(row.id);
-    await refreshAccountThreads(row.id);
-    await indexPendingBodies(creds, row.id).catch((err: Error) => {
-      console.warn({ account: row.address, err: err.message }, 'body-search backfill failed');
+      // Sidebar counts are derived, not synced. Recomputing once at the end costs
+      // one indexed aggregate and removes any chance of the list and the sidebar
+      // disagreeing about the same folder.
+      await refreshCounts(row.id);
+      await refreshAccountThreads(row.id);
+      await indexPendingBodies(creds, row.id, client).catch((err: Error) => {
+        console.warn({ account: row.address, err: err.message }, 'body-search backfill failed');
+      });
+      return result;
     });
     await refreshBodySearch();
+    accountFailures.delete(row.id);
+    hostFailures.delete(hostKey(row));
 
     await query(
       `UPDATE accounts SET status = 'ok', error = NULL, last_sync_at = now() WHERE id = $1`,
@@ -213,6 +282,8 @@ export async function syncAccount(row: AccountRow): Promise<void> {
     }
   } catch (err) {
     const message = (err as Error).message;
+    const retryInMs = fail(accountFailures, row.id);
+    if (isUnreachable(err)) fail(hostFailures, hostKey(row));
     // Surface the server's own words. "Authentication failed" from Dovecot is
     // more useful than anything we would paraphrase.
     const status = /auth|credential|login/i.test(message) ? 'auth_error' : 'connect_error';
@@ -229,7 +300,7 @@ export async function syncAccount(row: AccountRow): Promise<void> {
         bodySearch,
       },
     });
-    console.error({ account: row.address, err: message }, 'account sync failed');
+    console.error({ account: row.address, err: message, retryInMs }, 'account sync failed');
     if (statusError) {
       console.error(
         { account: row.address, err: statusError.message },
@@ -265,5 +336,5 @@ async function enqueueNow(userId: string, accountId?: string): Promise<void> {
       ORDER BY last_sync_at NULLS FIRST`,
     [userId, accountId ?? null],
   );
-  for (const row of rows) enqueueAccount(row);
+  for (const row of rows) enqueueAccount(row, true);
 }

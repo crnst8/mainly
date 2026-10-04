@@ -144,6 +144,9 @@ export const config = {
   sync: {
     maxConcurrentAccounts: syncMaxConcurrentAccounts,
     intervalMs: num('SYNC_INTERVAL_MS', 120_000),
+    // Poll interval for an account whose inbox is already on a live IDLE
+    // connection. The poll then only catches changes outside the inbox.
+    idleIntervalMs: num('SYNC_IDLE_INTERVAL_MS', 900_000),
     folderIntervalMs: num('SYNC_FOLDER_INTERVAL_MS', 600_000),
     bodyCacheTtlDays: num('BODY_CACHE_TTL_DAYS', 30),
   },

@@ -14,7 +14,7 @@ import {
   type TextPartTarget,
 } from './envelopes.ts';
 import { htmlToText, previewPart, type BodyNode } from './parse.ts';
-import { withConnection, type AccountCredentials } from './pool.ts';
+import { onConnection, type AccountCredentials } from './pool.ts';
 
 const BATCH = 200;
 
@@ -35,22 +35,22 @@ interface PartRow extends PendingRow {
 export async function indexPendingBodies(
   creds: AccountCredentials,
   accountId: string = creds.id,
+  client?: ImapFlow,
 ): Promise<number> {
-  return withConnection(creds, async (client) => {
-    const pending = await query<PendingRow>(
-      `SELECT m.id, coalesce(m.remote_uid, m.uid) AS uid, f.path
-         FROM messages m
-         JOIN folders f ON f.id = coalesce(m.remote_folder_id, m.folder_id)
-        WHERE m.account_id = $1 AND m.body_indexed_at IS NULL
-        ORDER BY m.date DESC, m.id DESC
-        LIMIT $2`,
-      [accountId, BATCH],
-    );
-    if (!pending.length) return 0;
+  const pending = await query<PendingRow>(
+    `SELECT m.id, coalesce(m.remote_uid, m.uid) AS uid, f.path
+       FROM messages m
+       JOIN folders f ON f.id = coalesce(m.remote_folder_id, m.folder_id)
+      WHERE m.account_id = $1 AND m.body_indexed_at IS NULL
+      ORDER BY m.date DESC, m.id DESC
+      LIMIT $2`,
+    [accountId, BATCH],
+  );
+  // Asked before connecting: once the backfill has caught up, most passes have
+  // nothing pending, and logging in to learn that is wasted work.
+  if (!pending.length) return 0;
 
-    const indexed = await indexRows(client, pending);
-    return indexed;
-  });
+  return onConnection(creds, client, (c) => indexRows(c, pending));
 }
 
 async function indexRows(client: ImapFlow, pending: PendingRow[]): Promise<number> {

@@ -31,7 +31,13 @@ It is not an optimisation; it is the only way the product works.
 
 - **Index staleness** between passes. Mitigated by IMAP `IDLE` — a long-lived
   connection per account, push-notified on new mail — for as many accounts as
-  `IMAP_IDLE_MAX_ACCOUNTS` allows. The poll is the floor beneath it.
+  `IMAP_IDLE_MAX_ACCOUNTS` allows. The poll is the floor beneath it: every
+  `SYNC_INTERVAL_MS`, or `SYNC_IDLE_INTERVAL_MS` for an account whose inbox
+  is on a live `IDLE` connection. A pass is one login; on a server with
+  `LIST-STATUS` and `CONDSTORE`, one `LIST` returns every folder's
+  `UIDNEXT`/`HIGHESTMODSEQ`/`MESSAGES`, and only folders that changed are
+  opened. A failing account, or an unreachable mail host, backs off
+  exponentially to 30 minutes; a manual refresh always runs.
 - **Storage.** Metadata for ~46 mailboxes at ~10k messages each is roughly 500k
   rows and 400MB with indexes. Bodies are **not** stored permanently, only
   cached with a TTL.
@@ -188,8 +194,8 @@ credentials and a person should be present.
 
 | Failure | Behaviour |
 | --- | --- |
-| Mail server unreachable | Reads keep working from the index. Sends queue. The account shows `connect_error` with the server's real error string. |
-| Bad mailbox credentials | That account only: `auth_error`, sync stops for it, the sidebar offers a fix. The other accounts are untouched. |
+| Mail server unreachable | Reads keep working from the index. Sends queue. The account shows `connect_error` with the server's real error string. Every account on that host backs off together, doubling from `SYNC_INTERVAL_MS` to 30 minutes. |
+| Bad mailbox credentials | That account only: `auth_error`, retries back off to every 30 minutes, the sidebar offers a fix. Changing the password syncs at once. The other accounts are untouched. |
 | Postgres down | 503 everywhere. The one hard dependency. |
 | Folder deleted server-side | Rows removed on the next folder pass; an open scope falls back to the unified inbox. |
 | `UIDVALIDITY` change | That folder is re-indexed from scratch, and it is logged loudly — it usually means a maildir moved. |

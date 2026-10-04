@@ -45,7 +45,8 @@ import {
   type BodyNode,
 } from './parse.ts';
 import { assignThreads, type Threadable } from './threading.ts';
-import { withConnection, type AccountCredentials } from './pool.ts';
+import { onConnection, type AccountCredentials } from './pool.ts';
+import type { FolderStatus } from './folders.ts';
 
 /** UIDs fetched per round trip. Bounds memory without making the folder pass
  *  chatty: a 12,000-message mailbox is twelve windows, not twelve thousand. */
@@ -104,7 +105,14 @@ export async function syncEnvelopes(
   creds: AccountCredentials,
   userId: string,
   priority: Priority,
-  opts: { folderPaths?: string[]; onStep?: StepReporter } = {},
+  opts: {
+    folderPaths?: string[];
+    onStep?: StepReporter;
+    /** Reuse the caller's connection instead of leasing one. */
+    client?: ImapFlow;
+    /** STATUS from the folder pass. Folders it shows unchanged are not opened. */
+    status?: Map<string, FolderStatus>;
+  } = {},
 ): Promise<EnvelopeSyncResult> {
   const folders = await query<FolderRow>(
     `SELECT id, path, name, role, uidvalidity, uidnext, highest_modseq
@@ -122,11 +130,19 @@ export async function syncEnvelopes(
   const total: EnvelopeSyncResult = { indexed: 0, updated: 0, removed: 0 };
   if (!folders.length) return total;
 
-  return withConnection(creds, async (client) => {
-    for (const [i, folder] of folders.entries()) {
+  const changed: FolderRow[] = [];
+  for (const folder of folders) {
+    if (!(await unchanged(folder, opts.status?.get(folder.path)))) changed.push(folder);
+  }
+  // Nothing to open, so nothing to log in for. On an idle account this is the
+  // whole pass: one LIST, no SELECT, no FETCH.
+  if (!changed.length) return total;
+
+  return onConnection(creds, opts.client, async (client) => {
+    for (const [i, folder] of changed.entries()) {
       const step: StepReporter = (text, p) =>
         // Folder-local progress, scaled into this account's share of the pass.
-        opts.onStep?.(text, (i + (p ?? 0)) / folders.length);
+        opts.onStep?.(text, (i + (p ?? 0)) / changed.length);
 
       try {
         const result = await syncFolder(client, userId, creds.id, priority, folder, step);
@@ -147,6 +163,36 @@ export async function syncEnvelopes(
     }
     return total;
   });
+}
+
+/**
+ * True when STATUS proves the folder is exactly as the last pass left it.
+ *
+ * Every marker has to match. UIDVALIDITY and UIDNEXT cover new mail and a
+ * rebuilt mailbox; HIGHESTMODSEQ covers flag changes made by other clients and,
+ * on CONDSTORE servers, expunges; MESSAGES against the local row count covers
+ * any expunge the modseq did not, and any local row a pending move has not yet
+ * landed. A missing marker is "unknown", never "unchanged" — the cost of a wrong
+ * skip is mail that does not appear until something else changes the folder.
+ */
+async function unchanged(folder: FolderRow, status: FolderStatus | undefined): Promise<boolean> {
+  if (!status) return false;
+  if (
+    status.uidValidity === null ||
+    status.uidNext === null ||
+    status.highestModseq === null ||
+    status.messages === null ||
+    folder.uidvalidity !== status.uidValidity ||
+    folder.uidnext !== status.uidNext ||
+    folder.highest_modseq !== status.highestModseq
+  ) {
+    return false;
+  }
+  const local = await query<{ n: number }>(
+    'SELECT count(*)::int AS n FROM messages WHERE folder_id = $1',
+    [folder.id],
+  );
+  return (local[0]?.n ?? 0) === status.messages;
 }
 
 /* ── One folder ────────────────────────────────────────────────────────────── */

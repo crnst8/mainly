@@ -3,7 +3,8 @@
 import { query, transaction, type QueryRunner } from '../db/index.ts';
 import type { FolderRole } from '../contract/types.ts';
 import { publish } from '../modules/events/bus.ts';
-import { withConnection, type AccountCredentials } from './pool.ts';
+import type { ImapFlow } from 'imapflow';
+import { onConnection, type AccountCredentials } from './pool.ts';
 
 /** IMAP SPECIAL-USE attribute → our role enum. */
 const SPECIAL_USE: Record<string, FolderRole> = {
@@ -47,10 +48,41 @@ const ROLE_ORDER: Record<FolderRole, number> = {
   custom: 100,
 };
 
-export async function syncFolders(creds: AccountCredentials): Promise<number> {
-  return withConnection(creds, async (client) => {
+/** What the server says about a folder without opening it. */
+export interface FolderStatus {
+  messages: number | null;
+  uidNext: number | null;
+  uidValidity: number | null;
+  highestModseq: number | null;
+}
+
+const asNumber = (v: number | bigint | undefined): number | null =>
+  v === undefined || v === null ? null : Number(v);
+
+/**
+ * List folders into the local table, and return each folder's STATUS when the
+ * server can send it inline.
+ *
+ * The STATUS is what lets the envelope pass skip a folder that has not changed
+ * since the last pass instead of opening it to find out. It is only asked for
+ * when it is one round trip (LIST-STATUS) and when it can answer "has anything
+ * changed" completely (CONDSTORE, for flag changes). Without either, imapflow
+ * would fall back to a STATUS per folder whose answer could never be trusted
+ * enough to skip anything, so the map is empty and every folder is opened.
+ */
+export async function syncFolders(
+  creds: AccountCredentials,
+  client?: ImapFlow,
+): Promise<Map<string, FolderStatus>> {
+  return onConnection(creds, client, async (client) => {
+    const caps = client.capabilities;
+    const withStatus = !!caps?.has('LIST-STATUS') && !!caps?.has('CONDSTORE');
     // LIST includes the subscription state.
-    const listed = await client.list();
+    const listed = await client.list(
+      withStatus
+        ? { statusQuery: { messages: true, uidNext: true, uidValidity: true, highestModseq: true } }
+        : {},
+    );
 
     const rows = listed
       .filter((f) => !f.flags.has('\\NoSelect'))
@@ -115,7 +147,17 @@ export async function syncFolders(creds: AccountCredentials): Promise<number> {
       ]);
     });
 
-    return rows.length;
+    const status = new Map<string, FolderStatus>();
+    for (const f of listed) {
+      if (!f.status) continue;
+      status.set(f.path, {
+        messages: asNumber(f.status.messages),
+        uidNext: asNumber(f.status.uidNext),
+        uidValidity: asNumber(f.status.uidValidity),
+        highestModseq: asNumber(f.status.highestModseq),
+      });
+    }
+    return status;
   });
 }
 

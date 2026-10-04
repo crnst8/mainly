@@ -168,6 +168,47 @@ export async function withConnection<T>(
   }
 }
 
+/**
+ * Run `fn` on the caller's connection when it has one, otherwise lease one.
+ *
+ * A polling pass runs replay, the folder list, envelopes and the body backfill
+ * back to back. Each used to lease its own connection, which is one LOGIN per
+ * step — 990 logins an hour for 22 mostly idle accounts. The pass now opens one
+ * and hands it down; the steps still work alone for IDLE and the CLI.
+ */
+export function onConnection<T>(
+  creds: AccountCredentials,
+  client: ImapFlow | undefined,
+  fn: (client: ImapFlow) => Promise<T>,
+): Promise<T> {
+  return client ? fn(client) : withConnection(creds, fn);
+}
+
+/**
+ * Errors that say the mail host is unreachable, as opposed to this account
+ * being wrong. Matched on Node's and imapflow's error codes, not message text:
+ * node-postgres also says "connection timeout", and a database hiccup must not
+ * mark a mail server down.
+ */
+const UNREACHABLE = new Set([
+  'EAI_AGAIN',
+  'ENOTFOUND',
+  'ECONNREFUSED',
+  'ECONNRESET',
+  'ETIMEDOUT',
+  'EHOSTUNREACH',
+  'ENETUNREACH',
+  'CONNECT_TIMEOUT',
+  'GREETING_TIMEOUT',
+  'UPGRADE_TIMEOUT',
+  'ETIMEOUT',
+]);
+
+export function isUnreachable(err: unknown): boolean {
+  const code = (err as { code?: unknown } | null)?.code;
+  return typeof code === 'string' && UNREACHABLE.has(code);
+}
+
 async function waitForSlot(accountId: string): Promise<void> {
   // Simple spin with backoff. A queue would be tidier but this contends on at
   // most a dozen accounts and never on the request path.

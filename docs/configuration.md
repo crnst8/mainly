@@ -47,6 +47,7 @@ directly only if you are pointing at a Postgres you manage yourself.
 | `IMAP_CONNECT_TIMEOUT_MS` | `15000` | |
 | `IMAP_IDLE_MAX_ACCOUNTS` | `12` | Accounts held on a live `IDLE` connection for push. The rest poll. Which accounts get one is chosen by priority and traffic, not arbitrarily. |
 | `SYNC_INTERVAL_MS` | `120000` | The poll floor beneath `IDLE`. |
+| `SYNC_IDLE_INTERVAL_MS` | `900000` | The poll interval for an account whose inbox is on a live `IDLE` connection. Push covers the inbox; this catches changes in other folders. |
 | `SYNC_FOLDER_INTERVAL_MS` | `600000` | How often folders are re-listed. |
 | `BODY_CACHE_TTL_DAYS` | `30` | Bodies are cached, not stored. |
 | `SYNC_MAX_CONCURRENT_ACCOUNTS` | `min(4, DATABASE_POOL_MAX - 2)` | Must be a positive integer below `DATABASE_POOL_MAX`. Each account sync holds an advisory-lock connection, so this leaves reserved capacity for API queries. |

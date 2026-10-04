@@ -18,7 +18,7 @@
 import type { ImapFlow } from 'imapflow';
 import { query, transaction } from '../db/index.ts';
 import type { Flag, MessageAction } from '../contract/types.ts';
-import { withConnection, takeRefusal, type AccountCredentials } from './pool.ts';
+import { onConnection, takeRefusal, type AccountCredentials } from './pool.ts';
 
 /** Ops attempted per pass. Bounded so one account with a thousand queued moves
  *  cannot hold the connection while every other account waits. */
@@ -69,13 +69,16 @@ const IMAP_FLAG: Partial<Record<Flag, string>> = {
  * logging — a failure here never fails the pass, because the envelope sync
  * behind it is still worth running.
  */
-export async function replayAccount(creds: AccountCredentials): Promise<number> {
+export async function replayAccount(
+  creds: AccountCredentials,
+  client?: ImapFlow,
+): Promise<number> {
   const ops = await dueOps(creds.id);
   if (!ops.length) return 0;
 
   let done = 0;
   try {
-    done = await withConnection(creds, (client) => replayOps(client, creds.id, ops));
+    done = await onConnection(creds, client, (c) => replayOps(c, creds.id, ops));
   } catch (err) {
     // Could not connect at all. Nothing was attempted, so nothing is charged an
     // attempt: this is the server's outage, not the op's fault, and burning the

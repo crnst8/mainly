@@ -87,6 +87,9 @@ const asRecipients = (list: Addr[]): string[] =>
 
 export interface SendResult {
   messageId: string;
+  /** Accounts whose IMAP state the send changed: the sender's (Sent copy) and,
+   *  for a reply, the original's (`\Answered`). Not part of the response. */
+  accountIds: string[];
 }
 
 export async function sendDraft(userId: string, draftId: string): Promise<SendResult> {
@@ -196,16 +199,19 @@ export async function sendDraft(userId: string, draftId: string): Promise<SendRe
   );
 
   /* 3. Mark the original answered, locally and on the server. */
+  const accountIds = [row.account_id];
   if (row.in_reply_to) {
-    await markAnswered(userId, row.in_reply_to).catch((err: Error) =>
-      console.warn({ err: err.message }, 'could not flag the original as answered'),
-    );
+    const original = await markAnswered(userId, row.in_reply_to).catch((err: Error) => {
+      console.warn({ err: err.message }, 'could not flag the original as answered');
+      return null;
+    });
+    if (original && original !== row.account_id) accountIds.push(original);
   }
 
   /* 4. Only now is the draft safe to remove. */
   await query('DELETE FROM drafts WHERE user_id = $1 AND id = $2', [userId, draftId]);
 
-  return { messageId };
+  return { messageId, accountIds };
 }
 
 /**
@@ -249,7 +255,8 @@ async function appendToSent(creds: AccountCredentials, raw: Buffer): Promise<voi
 
 /** Local flag plus a queued IMAP op, the same path a click through the UI takes,
  *  so replay handles the round trip and its retries. */
-async function markAnswered(userId: string, messageId: string): Promise<void> {
+/** Returns the original's account, or null when it is no longer indexed. */
+async function markAnswered(userId: string, messageId: string): Promise<string | null> {
   const row = await one<{ id: string; account_id: string; uid: number; path: string }>(
     `SELECT m.id, m.account_id, m.uid, f.path
        FROM messages m
@@ -258,7 +265,7 @@ async function markAnswered(userId: string, messageId: string): Promise<void> {
       WHERE a.user_id = $1 AND m.id = $2`,
     [userId, messageId],
   );
-  if (!row) return;
+  if (!row) return null;
 
   await query('UPDATE messages SET answered = true WHERE id = $1', [row.id]);
   await query('INSERT INTO sync_ops (account_id, kind, payload) VALUES ($1, $2, $3)', [
@@ -270,6 +277,7 @@ async function markAnswered(userId: string, messageId: string): Promise<void> {
       action: { type: 'flag', add: ['answered'], remove: [] },
     }),
   ]);
+  return row.account_id;
 }
 
 /* ── Row → contract ────────────────────────────────────────────────────────── */

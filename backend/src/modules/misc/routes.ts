@@ -329,11 +329,12 @@ export async function draftRoutes(app: FastifyInstance): Promise<void> {
   });
 
   app.post<{ Params: { id: string } }>('/drafts/:id/send', async (req) => {
-    const result = await sendDraft(req.userId, req.params.id);
+    const { messageId, accountIds } = await sendDraft(req.userId, req.params.id);
     // The Sent copy is now on the server but not in the index until the next
     // pass. Nudging sync means it shows up in Sent within seconds rather than
-    // within the poll interval.
-    syncNow(req.userId);
-    return result;
+    // within the poll interval. Only the accounts the send touched: nudging
+    // every account turned one send into a login per mailbox.
+    for (const accountId of accountIds) syncNow(req.userId, accountId);
+    return { messageId };
   });
 }

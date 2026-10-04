@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
 import { query, close } from '../src/db/index.ts';
 import { applyOp, dueOps, replayOps } from '../src/sync/replay.ts';
-import { applyFlags, upsert, syncFolder } from '../src/sync/envelopes.ts';
+import { applyFlags, upsert, syncFolder, syncEnvelopes } from '../src/sync/envelopes.ts';
 const BASE = process.env.SMOKE_BASE ?? 'http://127.0.0.1:5284/api';
 let cookie = '',
   csrf = '',
@@ -334,6 +334,61 @@ try {
     action: { type: 'flag', add: ['seen'], remove: ['seen'] },
   });
   check('conflicting flags fail before changing data', () => assert.equal(invalid.status, 400));
+  // A polling pass opens only the folders STATUS shows changed, and logs in not
+  // at all when none did. The account's credentials are unusable on purpose:
+  // leasing a connection for an unchanged account would throw.
+  const [quiet, busy] = await query(
+    `INSERT INTO folders(account_id,path,name,role,uidvalidity,uidnext,highest_modseq)
+    VALUES ($1,'Quiet','Quiet','custom',7,10,50),($1,'Busy','Busy','custom',7,10,50) RETURNING *`,
+    [accountId],
+  );
+  await add(quiet, 1, 'quiet-1');
+  await add(quiet, 2, 'quiet-2');
+  const statusOf = (over = {}) =>
+    new Map([
+      ['Quiet', { uidValidity: 7, uidNext: 10, highestModseq: 50, messages: 2, ...over.quiet }],
+      ['Busy', { uidValidity: 7, uidNext: 10, highestModseq: 50, messages: 0, ...over.busy }],
+    ]);
+  const opened = [];
+  const statusClient = {
+    capabilities: new Set(['CONDSTORE']),
+    async mailboxOpen(path) {
+      opened.push(path);
+      return { uidValidity: 7n, uidNext: 10, highestModseq: 51n, exists: path === 'Quiet' ? 2 : 0 };
+    },
+    async *fetch() {},
+  };
+  const creds = { id: accountId, address: email };
+  const folderPaths = ['Quiet', 'Busy'];
+  const idle = await syncEnvelopes(creds, userId, 'normal', { folderPaths, status: statusOf() });
+  check('an account STATUS shows unchanged is not logged in to', () =>
+    assert.deepEqual(idle, { indexed: 0, updated: 0, removed: 0 }),
+  );
+  await syncEnvelopes(creds, userId, 'normal', {
+    folderPaths,
+    client: statusClient,
+    status: statusOf({ busy: { highestModseq: 51 } }),
+  });
+  check('only the folder whose HIGHESTMODSEQ moved is opened', () =>
+    assert.deepEqual(opened, ['Busy']),
+  );
+  opened.length = 0;
+  await syncEnvelopes(creds, userId, 'normal', {
+    folderPaths,
+    client: statusClient,
+    // Busy now holds the 51 its pass recorded.
+    status: statusOf({ quiet: { messages: 1 }, busy: { highestModseq: 51 } }),
+  });
+  check('a MESSAGES count that disagrees with the index opens the folder', () =>
+    assert.deepEqual(opened, ['Quiet']),
+  );
+  opened.length = 0;
+  await syncEnvelopes(creds, userId, 'normal', {
+    folderPaths,
+    client: statusClient,
+    status: statusOf({ quiet: { highestModseq: null }, busy: { highestModseq: 51 } }),
+  });
+  check('a missing marker is treated as changed', () => assert.deepEqual(opened, ['Quiet']));
   console.log(
     `consistency-check: ${passed} passed; local action acknowledgements ${timings.map((ms) => Math.round(ms) + 'ms').join(', ')}`,
   );
