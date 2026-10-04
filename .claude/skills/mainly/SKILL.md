@@ -83,12 +83,13 @@ frontend/   React 19 + Zustand + Vite + motion. PWA.
 backend/    Fastify + pg + imapflow + nodemailer + mailparser + argon2
   src/contract/     byte-identical copies of frontend types.ts and search.ts
   src/modules/      auth · accounts · messages · unsubscribe · domains ·
-                    onboarding · events · misc
+                    onboarding · events · push · misc
   src/sync/         pool · engine · folders · envelopes · threading · threads ·
                     bodies · body-index · replay · idle · mailboxes · parse
   src/smtp/         outbound send
+  src/push/         Web Push: encrypt (pure, RFC-tested) · webpush · notify
   src/cli/          create-user · token · domain · seed
-  migrations/       numbered, forward-only SQL (001…014)
+  migrations/       numbered, forward-only SQL (001…015)
   scripts/          smoke · query-check · index-check · check-contract ·
                     static-check · auth-check · consistency-check · database-benchmark
 mcp/        MCP server over stdio — the same HTTP API, exposed to agents
@@ -122,6 +123,10 @@ Ignore `frontend/backend/` — empty directories left by `tsc -b`, not source.
 | Request-forgery guard | `backend/src/lib/net-guard.ts` · `ip.ts` |
 | Domain control (optional) | `backend/src/modules/domains/` + `scripts/mainly-provision` |
 | MCP tools | `mcp/src/index.ts` |
+| Spam filing + new-mail hook | `backend/src/sync/arrivals.ts` (fed by `envelopes.ts` arrivals) |
+| Missing Trash/Junk creation | `backend/src/sync/folders.ts` |
+| Push notifications | `backend/src/push/` · `modules/push/routes.ts` · `frontend/src/lib/notifications.ts` · `frontend/public/sw.js` |
+| Notification / spam settings | `frontend/src/features/settings/Notifications.tsx` |
 | Config / env | `backend/src/config.ts` · `.env.example` · `docs/configuration.md` |
 
 ## Mutation consistency
@@ -242,6 +247,9 @@ demo are built by `scripts/build-site.sh` and deployed by `deploy-site.sh`.
   deleting an account are closed to tokens at every scope.
 - Domain control is off unless connected, and the allowlist that decides lives
   on the mail server in a file this app cannot write.
+- Push endpoints are an outbound-request surface: accepted and contacted only
+  on known browser push-service hosts (`backend/src/push/encrypt.ts`), with
+  redirects refused. Push routes are `sessionOnly`; tokens cannot add devices.
 - Vulnerabilities go through `SECURITY.md`, never a public issue.
 
 ## Gotchas
@@ -269,6 +277,7 @@ demo are built by `scripts/build-site.sh` and deployed by `deploy-site.sh`.
 | `docs/self-hosting.md` | Install, TLS, proxies, private-network mail, backups |
 | `docs/search.md` | The query syntax users type |
 | `docs/mcp.md` | MCP server and agent tokens |
+| `docs/notifications.md` | Push notifications, spam filing, missing Trash/Junk |
 | `docs/domain-control.md` | Optional address create/remove on Postfix+Dovecot |
 | `scripts/mainly-provision.md` | The mail-server half of domain control |
 

@@ -616,6 +616,114 @@ export interface Preferences {
   accountGroups: AccountGroup[];
   /** Touch-shell behaviour. */
   mobile: MobilePreferences;
+  /** What the sync worker files and creates on the user's behalf. */
+  mailHandling: MailHandlingPreferences;
+  /** New-mail notifications on devices that subscribed to them. */
+  notifications: NotificationPreferences;
+}
+
+/**
+ * Work the sync worker does on the server for the user.
+ *
+ * Both are IMAP operations any desktop client performs — CREATE a mailbox,
+ * MOVE a message — so they need no access to the mail host beyond the
+ * account's own login.
+ */
+export interface MailHandlingPreferences {
+  /** Create Trash and Junk on accounts whose server has neither. Without a
+   *  Trash folder, Move to trash has nowhere to go and is refused. */
+  createMissingFolders: boolean;
+  /** Move new Inbox mail the server marked as spam (a `***SPAM***` subject
+   *  tag or `X-Spam-Flag: YES`) into Junk. */
+  spamFilter: boolean;
+  /** Accounts the spam filter leaves alone. */
+  spamFilterExcluded: Id[];
+}
+
+export const DEFAULT_MAIL_HANDLING: MailHandlingPreferences = {
+  createMissingFolders: true,
+  spamFilter: true,
+  spamFilterExcluded: [],
+};
+
+/** What a notification shows on a lock screen. */
+export type NotificationContent = 'full' | 'sender' | 'count';
+
+export interface NotificationPreferences {
+  /** Master switch. Off sends nothing to any device. */
+  enabled: boolean;
+  content: NotificationContent;
+  /** Priority tiers that notify. An account's tier decides. */
+  tiers: Priority[];
+  /** Accounts that never notify, whatever their tier. */
+  mutedAccounts: Id[];
+  /** Inbox only, or every folder that is not Sent, Drafts, Junk or Trash. */
+  folders: 'inbox' | 'all';
+  /** One notification per mailbox that counts up, instead of one per message. */
+  group: boolean;
+  /** Show without sound or vibration. */
+  silent: boolean;
+  quietHours: QuietHours;
+}
+
+/** A daily window with no notifications. `start` after `end` wraps midnight.
+ *  The zone is the device's, captured when the window is saved, because the
+ *  server deciding "is it 23:00" has no other way to know whose 23:00. */
+export interface QuietHours {
+  enabled: boolean;
+  /** HH:MM, 24-hour. */
+  start: string;
+  end: string;
+  timeZone: string;
+}
+
+export const DEFAULT_NOTIFICATIONS: NotificationPreferences = {
+  enabled: true,
+  content: 'full',
+  tiers: ['critical', 'high', 'normal'],
+  mutedAccounts: [],
+  folders: 'inbox',
+  group: true,
+  silent: false,
+  quietHours: { enabled: false, start: '22:00', end: '07:00', timeZone: 'UTC' },
+};
+
+/** One device that receives push notifications. The endpoint and keys stay on
+ *  the server; the client sees enough to recognise and remove a device. */
+export interface PushDevice {
+  id: Id;
+  /** The browser's own description, captured at subscribe time. */
+  label: string;
+  createdAt: IsoDate;
+  lastUsedAt: IsoDate | null;
+}
+
+/** What the server needs from `PushManager.subscribe()`. */
+export interface PushSubscriptionInput {
+  endpoint: string;
+  keys: { p256dh: string; auth: string };
+  label: string;
+}
+
+/** The JSON a push carries to the service worker. */
+export interface PushPayload {
+  /** Notifications with the same tag replace each other. */
+  tag: string;
+  title: string;
+  body: string;
+  /** App-relative URL opened on click. */
+  url: string;
+  silent: boolean;
+  /** Messages this notification accounts for. */
+  count: number;
+  /**
+   * Present when notifications are grouped per mailbox. A push arriving while
+   * an earlier one with the same tag is still showing replaces it, and the
+   * worker words the merged notification from these: the mailbox's name, a
+   * line about the newest message at the chosen level of detail (absent at
+   * `count`), and where the merged one opens.
+   */
+  group?: { mailbox: string; latest: string | null; url: string };
 }
 
 /** Touch-shell defaults: swipe left to archive, right to mark read. */
@@ -679,11 +787,13 @@ export const DEFAULT_PREFERENCES: Preferences = {
   search: DEFAULT_SEARCH_PREFERENCES,
   accountGroups: [],
   mobile: DEFAULT_MOBILE_PREFERENCES,
+  mailHandling: DEFAULT_MAIL_HANDLING,
+  notifications: DEFAULT_NOTIFICATIONS,
 };
 
 /** Merge stored preferences over the defaults. Nested objects are merged one
- *  level deep — `theme` is the only nested shape and it is flat below that.
- *  `search` is two deep, so it brings its own merge from `search.ts`. */
+ *  level deep. `search` is two deep, so it brings its own merge from
+ *  `search.ts`; `notifications.quietHours` is merged here. */
 export function withPreferenceDefaults(stored: Partial<Preferences> | null | undefined): Preferences {
   return {
     ...DEFAULT_PREFERENCES,
@@ -692,6 +802,18 @@ export function withPreferenceDefaults(stored: Partial<Preferences> | null | und
     defaultQuery: { ...DEFAULT_PREFERENCES.defaultQuery, ...stored?.defaultQuery },
     search: withSearchDefaults(stored?.search),
     mobile: { ...DEFAULT_MOBILE_PREFERENCES, ...stored?.mobile },
+    mailHandling: {
+      ...DEFAULT_MAIL_HANDLING,
+      ...stored?.mailHandling,
+      spamFilterExcluded: stored?.mailHandling?.spamFilterExcluded ?? [],
+    },
+    notifications: {
+      ...DEFAULT_NOTIFICATIONS,
+      ...stored?.notifications,
+      tiers: stored?.notifications?.tiers ?? DEFAULT_NOTIFICATIONS.tiers,
+      mutedAccounts: stored?.notifications?.mutedAccounts ?? [],
+      quietHours: { ...DEFAULT_NOTIFICATIONS.quietHours, ...stored?.notifications?.quietHours },
+    },
     // Arrays replace rather than merge, but a stored `null` must not become
     // `null` on a field every caller maps over.
     accountGroups: stored?.accountGroups ?? [],

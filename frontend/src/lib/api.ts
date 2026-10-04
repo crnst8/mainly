@@ -22,6 +22,8 @@ import type {
   MessageActionOptions,
   MessageActionResult,
   Preferences,
+  PushDevice,
+  PushSubscriptionInput,
   SavedView,
   ServerEvent,
   DomainGrant,
@@ -110,6 +112,17 @@ export interface MailApi {
   deleteView(id: Id): Promise<void>;
   getPreferences(): Promise<Preferences>;
   savePreferences(prefs: Preferences): Promise<Preferences>;
+
+  /* Push notifications. Session only; agent tokens are refused. */
+
+  /** The install's VAPID public key, which `PushManager.subscribe` needs. */
+  pushKey(): Promise<string>;
+  listPushDevices(): Promise<PushDevice[]>;
+  /** Register this browser, or refresh it; the endpoint identifies it. */
+  addPushDevice(input: PushSubscriptionInput): Promise<PushDevice>;
+  removePushDevice(id: Id): Promise<void>;
+  /** Send a sample notification to one device. */
+  testPushDevice(id: Id): Promise<void>;
 
 
   /* Domain control — optional, off unless a domain has been connected from a

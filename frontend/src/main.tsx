@@ -1,6 +1,7 @@
 import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 import App from './App';
+import { watchNotifications } from './lib/notifications';
 import './styles/base.css';
 
 // Follow the OS when the user has chosen "system".
@@ -24,4 +25,5 @@ if (import.meta.env.PROD && 'serviceWorker' in navigator) {
     const base = import.meta.env.BASE_URL;
     navigator.serviceWorker.register(`${base}sw.js`, { scope: base }).catch(() => {});
   });
+  watchNotifications();
 }

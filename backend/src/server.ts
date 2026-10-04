@@ -34,6 +34,7 @@ import {
   viewRoutes,
 } from './modules/misc/routes.ts';
 import { unsubscribeRoutes } from './modules/unsubscribe/routes.ts';
+import { pushRoutes } from './modules/push/routes.ts';
 import { startSyncLoop, stopSyncLoop } from './sync/engine.ts';
 import { startIdle, stopIdle } from './sync/idle.ts';
 
@@ -245,6 +246,7 @@ export async function build() {
       await draftRoutes(authed);
       await viewRoutes(authed);
       await preferenceRoutes(authed);
+      await pushRoutes(authed);
       await syncRoutes(authed);
       await eventRoutes(authed);
     },

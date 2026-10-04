@@ -65,6 +65,12 @@ export const Junk = (p: P) => (
   </Svg>
 );
 
+export const Bell = (p: P) => (
+  <Svg {...p}>
+    <path d="M4 11V7a4 4 0 0 1 8 0v4l1.5 1.5h-11zM6.5 14a1.5 1.5 0 0 0 3 0" />
+  </Svg>
+);
+
 export const Star = ({ filled, ...p }: P & { filled?: boolean }) => (
   <Svg {...p} fill={filled ? 'currentColor' : 'none'}>
     <path d="m8 2 1.85 3.9 4.15.6-3 3 .7 4.3L8 11.8 4.3 13.8l.7-4.3-3-3 4.15-.6z" />

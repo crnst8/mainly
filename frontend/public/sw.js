@@ -96,3 +96,92 @@ self.addEventListener('fetch', (event) => {
     return;
   }
 });
+
+/* ── Notifications ──────────────────────────────────────────────────────────
+   The server encrypts each push to this browser and sends a PushPayload (see
+   types.ts). Everything about which mail notifies is decided there; this only
+   draws it. */
+
+/* WebKit revokes a subscription whose pushes do not each show a notification,
+   so on Safari one is always shown. Elsewhere a push that lands while the app
+   is open and in front is dropped: the list is already showing the mail. */
+const MUST_SHOW =
+  /AppleWebKit/.test(self.navigator.userAgent) &&
+  !/Chrome|Chromium|CriOS|Edg|Firefox|FxiOS/.test(self.navigator.userAgent);
+
+self.addEventListener('push', (event) => {
+  let payload = null;
+  try {
+    payload = event.data ? event.data.json() : null;
+  } catch {
+    /* an unreadable payload still has to show something on WebKit */
+  }
+  event.waitUntil(show(payload || { tag: 'mail', title: 'Mainly', body: 'New mail', url: '', silent: false, count: 1 }));
+});
+
+async function show(p) {
+  const windows = await self.clients.matchAll({ type: 'window', includeUncontrolled: true });
+  if (!MUST_SHOW && p.tag !== 'test' && windows.some((c) => c.focused && c.visibilityState === 'visible')) return;
+
+  let title = p.title;
+  let body = p.body;
+  let url = p.url;
+  let count = p.count || 1;
+
+  // Grouped: add to whatever is still showing under this mailbox's tag, so a
+  // run of deliveries reads "5 new messages" rather than replacing each other.
+  if (p.group) {
+    const showing = await self.registration.getNotifications({ tag: p.tag });
+    const prior = showing.reduce((n, x) => n + ((x.data && x.data.count) || 0), 0);
+    count += prior;
+    if (count > 1) {
+      title = `${count} new messages`;
+      body = p.group.latest ? `${p.group.mailbox} · ${p.group.latest}` : p.group.mailbox;
+      url = p.group.url;
+    }
+  }
+
+  await self.registration.showNotification(title, {
+    body,
+    tag: p.tag,
+    // Without this a replacement under the same tag arrives silently.
+    renotify: true,
+    silent: !!p.silent,
+    icon: `${BASE}icon-192.png`,
+    timestamp: Date.now(),
+    data: { url, count },
+  });
+  await updateBadge();
+}
+
+/** The app icon's badge is the number of messages the notifications on screen
+ *  account for. Not every platform has one; those that do not ignore it. */
+async function updateBadge() {
+  if (!('setAppBadge' in self.navigator)) return;
+  const showing = await self.registration.getNotifications();
+  const total = showing.reduce((n, x) => n + ((x.data && x.data.count) || 0), 0);
+  await (total ? self.navigator.setAppBadge(total) : self.navigator.clearAppBadge()).catch(() => undefined);
+}
+
+self.addEventListener('notificationclose', (event) => {
+  event.waitUntil(updateBadge());
+});
+
+self.addEventListener('notificationclick', (event) => {
+  event.notification.close();
+  const url = new URL(`${BASE}${(event.notification.data && event.notification.data.url) || ''}`, self.location.origin);
+  event.waitUntil(
+    (async () => {
+      await updateBadge();
+      const windows = await self.clients.matchAll({ type: 'window', includeUncontrolled: true });
+      const open = windows.find((c) => new URL(c.url).pathname.startsWith(BASE));
+      if (open) {
+        // The app routes it without a reload; see lib/notifications.ts.
+        open.postMessage({ type: 'mainly:open', path: url.pathname + url.search });
+        await open.focus().catch(() => undefined);
+        return;
+      }
+      await self.clients.openWindow(url.href);
+    })(),
+  );
+});

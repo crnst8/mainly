@@ -100,13 +100,15 @@ backend/src/
   sync/
     pool.ts            IMAP connection pool with per-account limits
     engine.ts          the sync loop: claim → sync → release
-    folders.ts         LIST/LSUB → folder rows
+    folders.ts         LIST/LSUB → folder rows; creates missing Trash/Junk
     envelopes.ts       incremental envelope fetch — the bulk of the work
     threading.ts       thread assembly
     bodies.ts          on-demand body fetch, sanitise, cache
+    arrivals.ts        after indexing: file spam into Junk, then notify
     replay.ts          outbound flags, moves, deletes
     idle.ts            IDLE connections for push
   smtp/                outbound send
+  push/                Web Push: VAPID, RFC 8291 encryption, notification rules
 ```
 
 **Business logic never imports Fastify. Transport never imports `imapflow`.**

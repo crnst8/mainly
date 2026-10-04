@@ -35,6 +35,7 @@ import {
   decodePart,
   firstAddr,
   htmlToText,
+  isMarkedSpam,
   normaliseSubject,
   cleanId,
   parseReferences,
@@ -63,6 +64,25 @@ export interface EnvelopeSyncResult {
   indexed: number;
   updated: number;
   removed: number;
+  /** Rows this pass inserted, for the spam filter and notifications. */
+  arrivals: Arrival[];
+}
+
+/** A message the index had not seen before this pass. */
+export interface Arrival {
+  id: string;
+  folderId: string;
+  role: string;
+  /** The receiving server marked it as spam. */
+  spam: boolean;
+  seen: boolean;
+  date: Date;
+  /**
+   * The folder had been indexed before, so this is mail that arrived since,
+   * not the backlog of a first sync or of a UIDVALIDITY rebuild. Only these
+   * are news; the rest were already there.
+   */
+  fresh: boolean;
 }
 
 export type StepReporter = (step: string, progress: number | null) => void;
@@ -97,6 +117,7 @@ interface Indexed extends Threadable {
   previewEncoding: string | undefined;
   previewCharset: string | undefined;
   bodyText: string | null;
+  spam: boolean;
 }
 
 /* ── Entry point ───────────────────────────────────────────────────────────── */
@@ -127,7 +148,7 @@ export async function syncEnvelopes(
     [creds.id, opts.folderPaths ?? null],
   );
 
-  const total: EnvelopeSyncResult = { indexed: 0, updated: 0, removed: 0 };
+  const total: EnvelopeSyncResult = { indexed: 0, updated: 0, removed: 0, arrivals: [] };
   if (!folders.length) return total;
 
   const changed: FolderRow[] = [];
@@ -149,6 +170,7 @@ export async function syncEnvelopes(
         total.indexed += result.indexed;
         total.updated += result.updated;
         total.removed += result.removed;
+        total.arrivals.push(...result.arrivals);
       } catch (err) {
         // One unreadable folder must not cost the account its other 20. A
         // mailbox can disappear between the folder pass and this one, and
@@ -205,7 +227,7 @@ export async function syncFolder(
   folder: FolderRow,
   step: StepReporter,
 ): Promise<EnvelopeSyncResult> {
-  const result: EnvelopeSyncResult = { indexed: 0, updated: 0, removed: 0 };
+  const result: EnvelopeSyncResult = { indexed: 0, updated: 0, removed: 0, arrivals: [] };
 
   const mailbox = await client.mailboxOpen(folder.path, { readOnly: true });
   const uidValidity = Number(mailbox.uidValidity);
@@ -218,6 +240,7 @@ export async function syncFolder(
   // otherwise corrupts the index silently, so the folder is re-indexed. Logged
   // loudly because on Maildir it almost always means the directory was moved.
   let fromUid = 1;
+  const fresh = folder.uidvalidity === uidValidity && folder.uidnext !== null;
   if (folder.uidvalidity !== null && folder.uidvalidity !== uidValidity) {
     console.warn(
       { folder: folder.path, was: folder.uidvalidity, now: uidValidity },
@@ -250,7 +273,22 @@ export async function syncFolder(
       await fillPreviews(client, batch);
       for (let i = 0; i < batch.length; i += BATCH) {
         const slice = batch.slice(i, i + BATCH);
-        result.indexed += await upsert(userId, accountId, folder.id, priority, slice);
+        const written = await upsert(userId, accountId, folder.id, priority, slice);
+        result.indexed += written.count;
+        const byUid = new Map(slice.map((m) => [m.uid, m]));
+        for (const row of written.inserted) {
+          const m = byUid.get(row.uid);
+          if (!m) continue;
+          result.arrivals.push({
+            id: row.id,
+            folderId: folder.id,
+            role: folder.role,
+            spam: m.spam,
+            seen: m.seen,
+            date: m.date,
+            fresh,
+          });
+        }
       }
       step(
         `Indexing ${folder.name} ${result.indexed.toLocaleString()}`,
@@ -375,7 +413,9 @@ async function fetchEnvelopes(
       // header that actually threads a conversation — In-Reply-To alone loses
       // the chain the moment one message in the middle is missing. One extra
       // header line per message is the cheapest correctness there is.
-      headers: ['references'],
+      // X-Spam-Flag rides along for the spam filter: one more header line
+      // instead of a body fetch per message to read the server's verdict.
+      headers: ['references', 'x-spam-flag'],
     },
     { uid: true },
   )) {
@@ -392,7 +432,8 @@ async function fetchEnvelopes(
     const subject = (env.subject ?? '').trim();
     const subjectNormalised = normaliseSubject(subject);
     const inReplyTo = cleanId(env.inReplyTo);
-    const references = parseReferences(msg.headers?.toString('utf8'));
+    const headerBlock = msg.headers?.toString('utf8');
+    const references = parseReferences(headerBlock);
 
     const from = firstAddr(env.from);
     const to = toAddrs(env.to);
@@ -434,6 +475,7 @@ async function fetchEnvelopes(
       previewEncoding: preview?.node.encoding,
       previewCharset: preview?.node.parameters?.charset,
       bodyText: null,
+      spam: isMarkedSpam(subject, headerBlock),
     });
   }
 
@@ -580,7 +622,8 @@ WHERE NOT EXISTS (
 )
 -- labels, snoozed_until and body_cached_at are ours, not the server's, and are
 -- deliberately absent from the update list.
-RETURNING id
+-- xmax is zero only on a row this statement inserted rather than updated.
+RETURNING id, uid, (xmax = 0) AS inserted
 `;
 
 export async function upsert(
@@ -589,7 +632,7 @@ export async function upsert(
   folderId: string,
   priority: Priority,
   batch: Indexed[],
-): Promise<number> {
+): Promise<{ count: number; inserted: { id: string; uid: number }[] }> {
   const threads = await assignThreads(userId, batch);
 
   const payload = batch.map((m) => ({
@@ -619,7 +662,7 @@ export async function upsert(
     userId,
     async (tx) =>
       (
-        await tx.query<{ id: string }>(UPSERT_SQL, [
+        await tx.query<{ id: string; uid: string; inserted: boolean }>(UPSERT_SQL, [
           accountId,
           folderId,
           priority,
@@ -627,7 +670,11 @@ export async function upsert(
         ])
       ).rows,
   );
-  return rows.length;
+  return {
+    count: rows.length,
+    // bigint arrives as a string from pg.
+    inserted: rows.filter((r) => r.inserted).map((r) => ({ id: r.id, uid: Number(r.uid) })),
+  };
 }
 
 /**

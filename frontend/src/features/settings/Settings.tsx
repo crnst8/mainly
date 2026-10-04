@@ -9,11 +9,13 @@
 import { useState } from 'react';
 import { SenderAvatar } from '@/components/SenderAvatar';
 import {
+  Bell,
   Check,
   Chevron,
   Close,
   Command,
   Globe,
+  Junk,
   Key,
   Layout,
   Palette as PaletteIcon,
@@ -25,6 +27,7 @@ import {
 } from '@/components/icons';
 import { Button, Field, IconButton, Row, Segmented, Spinner, Toggle } from '@/components/ui';
 import { MailServer } from './MailServer';
+import { Filtering, Notifications } from './Notifications';
 import { SHORTCUTS } from '@/lib/keyboard';
 import { relative } from '@/lib/format';
 import { senderDomains, senderImageUrl } from '@/lib/sender';
@@ -52,6 +55,8 @@ const TABS = [
   { id: 'senders', label: 'Senders', icon: <User size={15} /> },
   { id: 'search', label: 'Search', icon: <SearchIcon size={15} /> },
   { id: 'accounts', label: 'Accounts', icon: <User size={15} /> },
+  { id: 'notifications', label: 'Notifications', icon: <Bell size={15} /> },
+  { id: 'filtering', label: 'Spam & folders', icon: <Junk size={15} /> },
   // Distinct from Accounts above: that is the forty-five mailboxes this app
   // reads, this is the one machine it may write to. Named for the machine
   // because "Domains" already means the sidebar grouping.
@@ -176,6 +181,8 @@ export function Settings() {
             {tab === 'senders' && <SenderSettings />}
             {tab === 'search' && <SearchSettings />}
             {tab === 'accounts' && <Accounts focus={raw.startsWith('account:') ? raw.slice(8) : null} />}
+            {tab === 'notifications' && <Notifications />}
+            {tab === 'filtering' && <Filtering />}
             {tab === 'mailserver' && <MailServer />}
             {tab === 'mobile' && <MobileSettings />}
             {tab === 'keyboard' && <Keyboard />}

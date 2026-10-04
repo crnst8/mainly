@@ -144,6 +144,21 @@
   color: var(--text-muted);
 }
 
+/* ── Notifications ───────────────────────────────────────────────────────── */
+
+.notif__device,
+.notif__hours {
+  display: flex;
+  align-items: center;
+  gap: var(--s-4);
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.notif__hours .input {
+  width: 7.5em;
+}
+
 /* ── Sender identities ───────────────────────────────────────────────────── */
 
 .sender-form {

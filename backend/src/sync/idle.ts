@@ -25,6 +25,7 @@ import { config } from '../config.ts';
 import type { Priority } from '../contract/types.ts';
 import { connect, withConnection, type AccountCredentials } from './pool.ts';
 import { replayAccount } from './replay.ts';
+import { handleArrivals } from './arrivals.ts';
 import { syncEnvelopes } from './envelopes.ts';
 import { refreshCounts, publishCounts } from './folders.ts';
 import { refreshAccountThreads } from './threads.ts';
@@ -200,7 +201,7 @@ class Watcher {
           // One login for both steps, as in the polling pass.
           const result = await withConnection(creds, async (client) => {
             await replayAccount(creds, client);
-            return syncEnvelopes(
+            const pass = await syncEnvelopes(
               creds,
               this.row.user_id,
               this.row.priority,
@@ -208,6 +209,8 @@ class Watcher {
               // an archive of forty thousand messages.
               { folderPaths: [this.path], client },
             );
+            await handleArrivals(creds, this.row.user_id, client, pass.arrivals);
+            return pass;
           });
           if (result.indexed || result.updated || result.removed) {
             await refreshCounts(this.row.id);

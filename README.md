@@ -34,7 +34,7 @@ Instead of leaning on IMAP, Mainly uses Postgres to store metadata from the mail
 
 - Things like labels, snooze and saved views are implemented in the app precisely so that nothing has to be reconfigured on the mail host.
 
-- Zero telemetry, advertising, scraping, tracking or server-side calls that you do not control. 
+- Zero telemetry, advertising, scraping, tracking or server-side calls that you do not control. The one exception is opt-in: a device that turns on notifications receives them through its browser’s push service, end-to-end encrypted. 
 
 
 #### there’s also a lot of visual & workflow optimizations for the multi-domain user:
@@ -47,6 +47,8 @@ Instead of leaning on IMAP, Mainly uses Postgres to store metadata from the mail
 - makes sort, grouping, density and the row contents **yours to set**
 - is **keyboard-first**, with `⌘K` for anything you have not memorised
 - most things have a **right-click-to-change** for customisation and settings
+- **new-mail notifications** on any device that opts in, grouped per mailbox, with per-mailbox, priority-tier and quiet-hours controls
+- files server-marked **spam** (`***SPAM***`, `X-Spam-Flag`) into Junk, and creates **Trash and Junk** on mailboxes that lack them — see [docs/notifications.md](docs/notifications.md)
 
 
 
@@ -85,6 +87,8 @@ without browser chrome.
 | Android | Chrome → menu → **Install app** |
 | Desktop | Chrome or Edge → install icon in the address bar |
 
+> Notifications on iPhone and iPad work only from the Home Screen app. See [docs/notifications.md](docs/notifications.md).
+>
 > If hosting on a server, you’ll need `https://` for Chrome PWA installation. Check  self_hosting.md for more detail.
 > 
 

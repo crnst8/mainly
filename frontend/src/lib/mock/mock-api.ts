@@ -38,6 +38,7 @@ import type {
   MessageActionResult,
   MessageSummary,
   Preferences,
+  PushDevice,
   Priority,
   SavedView,
   ServerConfig,
@@ -730,6 +731,30 @@ export class MockApi implements MailApi {
     this.prefs = structuredClone(prefs);
     localStorage.setItem('mail.prefs', JSON.stringify(prefs));
     return structuredClone(prefs);
+  }
+
+  /* ── Push ───────────────────────────────────────────────────────────────── */
+
+  // There is no server to send from, so subscribing says so instead of
+  // pretending: a device list that fills up and never notifies is worse.
+  async pushKey(): Promise<string> {
+    await sleep(LATENCY.fast);
+    throw new Error('Notifications need a Mainly server; this demo has none');
+  }
+
+  async listPushDevices(): Promise<PushDevice[]> {
+    await sleep(LATENCY.fast);
+    return [];
+  }
+
+  async addPushDevice(): Promise<PushDevice> {
+    throw new Error('Notifications need a Mainly server; this demo has none');
+  }
+
+  async removePushDevice() {}
+
+  async testPushDevice() {
+    throw new Error('Notifications need a Mainly server; this demo has none');
   }
 
   /* ── Domain control ─────────────────────────────────────────────────────── */

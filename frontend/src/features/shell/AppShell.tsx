@@ -1,4 +1,5 @@
-import { Check, Chevron, Command, Inbox, Plus, Refresh, Undo } from '@/components/icons';
+import { useEffect, useState } from 'react';
+import { Check, Chevron, Close, Command, Inbox, Plus, Refresh, Undo } from '@/components/icons';
 import { Button, IconButton, Kbd, PopLabel, Popover } from '@/components/ui';
 import { useKeyboard } from '@/lib/keyboard';
 import { useIsStacked } from '@/lib/media';
@@ -243,30 +244,93 @@ function IdentitySwitcher() {
 
 /* ── Toasts ───────────────────────────────────────────────────────────────── */
 
+/** Cards drawn behind the newest while the stack is closed. More would only
+ *  thicken the edge. */
+const STACK_DEPTH = 3;
+
+/**
+ * Notifications, stacked.
+ *
+ * Repeats of one action already fold into a single counting line (see
+ * `ToastGroup`). Different actions in quick succession — archive two, bin
+ * three, label one — used to pile up as a column climbing the screen over the
+ * list. Closed, the newest sits in front with the rest as edges behind it;
+ * pointing at the stack, focusing into it or tapping it opens it into a
+ * column so any line's Undo can be reached.
+ */
 export function Toasts() {
   const toasts = useStore((s) => s.toasts);
+  const dismiss = useStore((s) => s.dismissToast);
+  const [open, setOpen] = useState(false);
+
+  // A stack that empties closes, so the next one starts closed.
+  useEffect(() => {
+    if (toasts.length < 2) setOpen(false);
+  }, [toasts.length]);
 
   if (!toasts.length) return null;
+  const expanded = open || toasts.length === 1;
 
   return (
-    <div className="toasts" role="status" aria-live="polite">
-      {toasts.map((t) => (
-        <div className="toast" key={t.id}>
-          {/* Keyed on the text so a merged count re-enters and is seen to change. */}
-          <span className="toast__text" key={t.message}>{t.message}</span>
-          {t.undo && (
+    <div
+      className="toasts"
+      role="status"
+      aria-live="polite"
+      data-open={expanded || undefined}
+      style={{ '--count': Math.min(toasts.length, expanded ? toasts.length : STACK_DEPTH) } as React.CSSProperties}
+      onPointerEnter={(e) => e.pointerType === 'mouse' && setOpen(true)}
+      onPointerLeave={(e) => e.pointerType === 'mouse' && setOpen(false)}
+      onFocus={() => setOpen(true)}
+      onBlur={(e) => {
+        if (!e.currentTarget.contains(e.relatedTarget as Node | null)) setOpen(false);
+      }}
+    >
+      {toasts.map((t, i) => {
+        const depth = toasts.length - 1 - i;
+        return (
+          <div
+            className="toast"
+            key={t.id}
+            data-depth={depth}
+            data-hidden={(!expanded && depth >= STACK_DEPTH) || undefined}
+            aria-hidden={(!expanded && depth > 0) || undefined}
+            style={{ '--depth': depth } as React.CSSProperties}
+            // Touch has no hover: a tap on a closed stack opens it.
+            onClick={(e) => {
+              if (!expanded && !(e.target as HTMLElement).closest('button')) setOpen(true);
+            }}
+          >
+            {/* Keyed on the text so a merged count re-enters and is seen to change. */}
+            <span className="toast__text" key={t.message}>{t.message}</span>
+            {t.undo && (
+              <button
+                type="button"
+                className="toast__undo"
+                tabIndex={!expanded && depth > 0 ? -1 : undefined}
+                onClick={() => t.undo!()}
+              >
+                <Undo size={13} />
+                Undo
+                {depth === 0 && <Kbd>z</Kbd>}
+              </button>
+            )}
             <button
               type="button"
-              className="toast__undo"
-              onClick={() => t.undo!()}
+              className="toast__close"
+              aria-label="Dismiss"
+              tabIndex={!expanded && depth > 0 ? -1 : undefined}
+              onClick={() => dismiss(t.id)}
             >
-              <Undo size={13} />
-              Undo
-              <Kbd>z</Kbd>
+              <Close size={12} />
             </button>
-          )}
-        </div>
-      ))}
+          </div>
+        );
+      })}
+      {!expanded && toasts.length > 1 && (
+        <span className="toasts__more" aria-hidden="true">
+          {toasts.length}
+        </span>
+      )}
     </div>
   );
 }

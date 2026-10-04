@@ -29,6 +29,7 @@ import { syncEnvelopes, evictStaleBodies, type StepReporter } from './envelopes.
 import { refreshAccountThreads } from './threads.ts';
 import { indexPendingBodies } from './body-index.ts';
 import { replayAccount } from './replay.ts';
+import { handleArrivals } from './arrivals.ts';
 import { withConnection, isUnreachable, type AccountCredentials } from './pool.ts';
 import { liveWatchers } from './idle.ts';
 import { publish } from '../modules/events/bus.ts';
@@ -230,6 +231,7 @@ export async function syncAccount(row: AccountRow): Promise<void> {
         client,
         status,
       });
+      await handleArrivals(creds, row.user_id, client, result.arrivals);
 
       // Sidebar counts are derived, not synced. Recomputing once at the end costs
       // one indexed aggregate and removes any chance of the list and the sidebar

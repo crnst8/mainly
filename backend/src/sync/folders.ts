@@ -5,6 +5,7 @@ import type { FolderRole } from '../contract/types.ts';
 import { publish } from '../modules/events/bus.ts';
 import type { ImapFlow } from 'imapflow';
 import { onConnection, type AccountCredentials } from './pool.ts';
+import { preferencesOf } from './preferences.ts';
 
 /** IMAP SPECIAL-USE attribute → our role enum. */
 const SPECIAL_USE: Record<string, FolderRole> = {
@@ -23,8 +24,8 @@ const BY_NAME: [RegExp, FolderRole][] = [
   [/^inbox$/i, 'inbox'],
   [/^(drafts?|entw[üu]rfe)$/i, 'drafts'],
   [/^(sent|sent items|sent mail)$/i, 'sent'],
-  [/^(trash|deleted items|bin)$/i, 'trash'],
-  [/^(junk|spam|bulk mail)$/i, 'junk'],
+  [/^(trash|deleted items|deleted messages|bin)$/i, 'trash'],
+  [/^(junk|junk e-?mail|spam|bulk mail)$/i, 'junk'],
   [/^(archive|all mail)$/i, 'archive'],
 ];
 
@@ -47,6 +48,67 @@ const ROLE_ORDER: Record<FolderRole, number> = {
   all: 7,
   custom: 100,
 };
+
+/** Folders every account should have, and the name each is created under.
+ *  Dovecot's stock config and most others give these names their special-use
+ *  attribute; where they do not, `BY_NAME` still recognises them. */
+const REQUIRED: [FolderRole, string][] = [
+  ['trash', 'Trash'],
+  ['junk', 'Junk'],
+];
+
+/** Account and role pairs the server refused to create. Kept for the process
+ *  lifetime so a server that forbids CREATE is asked once, not every pass. */
+const refused = new Set<string>();
+
+/**
+ * Create Trash and Junk where the server has neither.
+ *
+ * Without a Trash folder, Move to trash has nowhere to go and is refused; without
+ * Junk, the spam filter has nowhere to file. Many servers declare both but only
+ * create them when a client asks (Dovecot without `auto = create`), so a mailbox
+ * nobody has opened in another client has neither. Returns true when anything
+ * was created, so the caller lists again.
+ */
+async function createMissing(
+  creds: AccountCredentials,
+  client: ImapFlow,
+  listed: Awaited<ReturnType<ImapFlow['list']>>,
+): Promise<boolean> {
+  const present = new Set(
+    listed.map((f) => {
+      const raw = f.name || f.path.split(f.delimiter || '.').at(-1) || f.path;
+      return roleOf(f.specialUse, raw, f.path);
+    }),
+  );
+  const missing = REQUIRED.filter(
+    ([role]) => !present.has(role) && !refused.has(`${creds.id}:${role}`),
+  );
+  if (!missing.length) return false;
+  if (!(await preferencesOf(creds.id)).mailHandling.createMissingFolders) return false;
+
+  let created = false;
+  for (const [role, name] of missing) {
+    try {
+      // imapflow applies the account's namespace prefix, as for Sent.
+      await client.mailboxCreate(name);
+      await client.mailboxSubscribe(name).catch(() => {});
+      console.log({ account: creds.address, folder: name }, `created a missing ${role} folder`);
+      created = true;
+    } catch (err) {
+      const message = (err as Error).message;
+      refused.add(`${creds.id}:${role}`);
+      // Present but hidden from LIST, which some servers do for empty folders.
+      // Listing again is still right: if it shows up, the role is filled.
+      if (/already exists/i.test(message)) {
+        created = true;
+        continue;
+      }
+      console.warn({ account: creds.address, folder: name, err: message }, `could not create a ${role} folder`);
+    }
+  }
+  return created;
+}
 
 /** What the server says about a folder without opening it. */
 export interface FolderStatus {
@@ -78,11 +140,14 @@ export async function syncFolders(
     const caps = client.capabilities;
     const withStatus = !!caps?.has('LIST-STATUS') && !!caps?.has('CONDSTORE');
     // LIST includes the subscription state.
-    const listed = await client.list(
-      withStatus
-        ? { statusQuery: { messages: true, uidNext: true, uidValidity: true, highestModseq: true } }
-        : {},
-    );
+    const list = () =>
+      client.list(
+        withStatus
+          ? { statusQuery: { messages: true, uidNext: true, uidValidity: true, highestModseq: true } }
+          : {},
+      );
+    let listed = await list();
+    if (await createMissing(creds, client, listed)) listed = await list();
 
     const rows = listed
       .filter((f) => !f.flags.has('\\NoSelect'))

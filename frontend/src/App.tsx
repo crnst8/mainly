@@ -4,6 +4,8 @@ import { Login } from '@/features/shell/Login';
 import { MobileShell } from '@/features/mobile/MobileShell';
 import { useIsMobile } from '@/lib/media';
 import { useStore } from '@/lib/store';
+import { getApi } from '@/lib/api';
+import { thisDevice } from '@/lib/notifications';
 import { Empty, Spinner } from '@/components/ui';
 
 export default function App() {
@@ -17,6 +19,13 @@ export default function App() {
   useEffect(() => {
     void boot();
   }, [boot, attempt]);
+
+  // Keep this browser's push registration current once signed in. Quiet on
+  // failure: notifications are a convenience, and Settings shows the state.
+  const signedIn = ready && !error;
+  useEffect(() => {
+    if (signedIn) void getApi().then(thisDevice).catch(() => undefined);
+  }, [signedIn]);
 
   const retry = useCallback(() => {
     useStore.setState({ ready: false, error: null });

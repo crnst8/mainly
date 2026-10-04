@@ -846,31 +846,110 @@
 
 /* ── Toasts ───────────────────────────────────────────────────────────────── */
 
+/* All cards share one grid cell so the stack has one width — the widest
+   line's — and its edges line up. Depth is the card's distance from the
+   newest; closed, each step back is a little higher, smaller and fainter, and
+   open, each step is one card height plus the gap. */
 .toasts {
+  --toast-h: 36px;
+  --toast-step: calc(var(--toast-h) + var(--s-3));
   position: fixed;
   left: 50%;
   bottom: var(--s-8);
   z-index: var(--z-toast);
-  display: flex;
-  flex-direction: column-reverse;
-  gap: var(--s-3);
+  display: grid;
+  max-width: calc(100vw - 2 * var(--s-6));
   transform: translateX(-50%);
   pointer-events: none;
 }
 
 .toast {
+  --depth: 0;
+  grid-area: 1 / 1;
   display: flex;
   align-items: center;
   gap: var(--s-6);
-  padding: 0 var(--s-4) 0 var(--s-6);
-  height: 36px;
+  min-width: 0;
+  padding: 0 var(--s-2) 0 var(--s-6);
+  height: var(--toast-h);
   border-radius: var(--radius);
   background: var(--bg-inverse);
   color: var(--text-inverse);
   font-size: var(--t-sm);
   box-shadow: var(--shadow-pop);
   pointer-events: auto;
+  z-index: calc(100 - var(--depth));
+  transform-origin: 50% 0;
+  transform: translateY(calc(var(--depth) * -6px)) scale(calc(1 - var(--depth) * 0.05));
+  opacity: calc(1 - var(--depth) * 0.25);
+  transition:
+    transform var(--dur-base) var(--ease-spring),
+    opacity var(--dur-base);
   animation: toast-in var(--dur-slow) var(--ease-spring);
+}
+
+/* Behind the front card only its edge shows; its text would bleed through. */
+.toasts:not([data-open]) .toast:not([data-depth='0']) > * {
+  visibility: hidden;
+}
+
+.toasts:not([data-open]) .toast:not([data-depth='0']) {
+  cursor: pointer;
+}
+
+.toast[data-hidden] {
+  opacity: 0;
+  pointer-events: none;
+}
+
+.toasts[data-open] .toast {
+  transform: translateY(calc(var(--depth) * -1 * var(--toast-step)));
+  opacity: 1;
+}
+
+.toast__text {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.toast__close {
+  display: grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  flex-shrink: 0;
+  border-radius: var(--radius-sm);
+  color: var(--text-inverse);
+  opacity: 0.55;
+  transition: opacity var(--dur-fast), background var(--dur-fast);
+}
+
+.toast__close:hover {
+  opacity: 1;
+  background: oklch(100% 0 0 / 0.12);
+}
+
+/* How many lines a closed stack holds, on its top-right corner. */
+.toasts__more {
+  grid-area: 1 / 1;
+  align-self: start;
+  justify-self: end;
+  z-index: 101;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 var(--s-2);
+  margin: calc(-9px - 2 * 6px) calc(-1 * var(--s-3)) 0 0;
+  border-radius: 9px;
+  background: var(--accent);
+  color: var(--accent-ink);
+  font-size: var(--t-xs);
+  font-weight: var(--w-medium);
+  line-height: 18px;
+  text-align: center;
+  pointer-events: none;
 }
 
 @keyframes toast-in {

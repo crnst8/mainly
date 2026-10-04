@@ -79,6 +79,30 @@ export function parseReferences(raw: string | null | undefined): string[] {
   return out;
 }
 
+/** One header's value out of a raw header block, unfolded. Null when absent.
+ *  The envelope fetch asks for a few headers in one block, so each reader
+ *  has to pick its own out rather than scan the whole block. */
+export function headerValue(raw: string | null | undefined, name: string): string | null {
+  if (!raw) return null;
+  const lines = raw.replace(/\r\n/g, '\n').replace(/\n[ \t]+/g, ' ').split('\n');
+  const prefix = `${name.toLowerCase()}:`;
+  const line = lines.find((l) => l.toLowerCase().startsWith(prefix));
+  return line === undefined ? null : line.slice(prefix.length).trim();
+}
+
+/**
+ * Whether the receiving server marked a message as spam.
+ *
+ * Two conventions cover the filters people run: SpamAssassin and Rspamd both
+ * rewrite the subject to `***SPAM*** …` when configured to, and SpamAssassin
+ * sets `X-Spam-Flag: YES`. Only the server's own verdict counts; this app
+ * makes no judgement of its own about what is spam.
+ */
+export function isMarkedSpam(subject: string, headers: string | null | undefined): boolean {
+  if (/^\s*\*{3}\s*spam\s*\*{3}/i.test(subject)) return true;
+  return /^yes\b/i.test(headerValue(headers, 'x-spam-flag') ?? '');
+}
+
 /* ── Body structure ────────────────────────────────────────────────────────── */
 
 export interface BodyNode {

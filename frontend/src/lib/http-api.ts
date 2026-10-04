@@ -22,6 +22,8 @@ import type {
   MessageActionOptions,
   MessageActionResult,
   Preferences,
+  PushDevice,
+  PushSubscriptionInput,
   SavedView,
   DomainGrant,
   DomainOp,
@@ -155,6 +157,13 @@ export class HttpApi implements MailApi {
     method: 'PUT',
     body: JSON.stringify(prefs),
   });
+
+  /* Push */
+  pushKey = async () => (await this.req<{ publicKey: string }>('/push/key')).publicKey;
+  listPushDevices = () => this.req<PushDevice[]>('/push/devices');
+  addPushDevice = (input: PushSubscriptionInput) => this.post<PushDevice>('/push/devices', input);
+  removePushDevice = (id: Id) => this.req<void>(`/push/devices/${id}`, { method: 'DELETE' });
+  testPushDevice = (id: Id) => this.post<void>(`/push/devices/${id}/test`);
 
   /* Domain control */
   listDomains = () => this.req<ManagedDomain[]>('/domains');

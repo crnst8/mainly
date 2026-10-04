@@ -4,6 +4,8 @@ import { randomUUID } from 'node:crypto';
 import { query, close } from '../src/db/index.ts';
 import { applyOp, dueOps, replayOps } from '../src/sync/replay.ts';
 import { applyFlags, upsert, syncFolder, syncEnvelopes } from '../src/sync/envelopes.ts';
+import { handleArrivals } from '../src/sync/arrivals.ts';
+import { syncFolders } from '../src/sync/folders.ts';
 const BASE = process.env.SMOKE_BASE ?? 'http://127.0.0.1:5284/api';
 let cookie = '',
   csrf = '',
@@ -362,7 +364,7 @@ try {
   const folderPaths = ['Quiet', 'Busy'];
   const idle = await syncEnvelopes(creds, userId, 'normal', { folderPaths, status: statusOf() });
   check('an account STATUS shows unchanged is not logged in to', () =>
-    assert.deepEqual(idle, { indexed: 0, updated: 0, removed: 0 }),
+    assert.deepEqual(idle, { indexed: 0, updated: 0, removed: 0, arrivals: [] }),
   );
   await syncEnvelopes(creds, userId, 'normal', {
     folderPaths,
@@ -389,6 +391,154 @@ try {
     status: statusOf({ quiet: { highestModseq: null }, busy: { highestModseq: 51 } }),
   });
   check('a missing marker is treated as changed', () => assert.deepEqual(opened, ['Quiet']));
+  // ── Spam filing ──────────────────────────────────────────────────────────
+  // A separate mailbox, so the inbox census below cannot see the rows above.
+  const setPrefs = (data) =>
+    query(
+      `INSERT INTO preferences(user_id, data) VALUES ($1, $2)
+       ON CONFLICT (user_id) DO UPDATE SET data = EXCLUDED.data`,
+      [userId, JSON.stringify(data)],
+    );
+  const [{ id: spamAccount }] = await query(
+    `INSERT INTO accounts(user_id,address,domain,label,imap_host,imap_port,smtp_host,smtp_port,username,secret_ciphertext,secret_nonce,secret_tag,status)
+    VALUES ($1,$2,'example.test','Spam','invalid',993,'invalid',587,$2,'x','x','x','disabled') RETURNING id`,
+    [userId, `spam-${email}`],
+  );
+  const [spamInbox, junk] = await query(
+    `INSERT INTO folders(account_id,path,name,role,uidvalidity,uidnext,position)
+    VALUES ($1,'INBOX','Inbox','inbox',1,1,0),($1,'Junk','Junk','junk',1,1,1) RETURNING *`,
+    [spamAccount],
+  );
+  const arriving = [
+    { uid: 1, subject: '***SPAM*** Win a prize', headers: '' },
+    { uid: 2, subject: 'Lunch?', headers: '' },
+    { uid: 3, subject: 'Quarterly numbers', headers: 'X-Spam-Flag: YES\r\n' },
+  ];
+  const inboxPeer = (list) => ({
+    capabilities: new Set(),
+    mailboxOpen: async () => ({ uidValidity: 1n, uidNext: list.at(-1).uid + 1, exists: list.length }),
+    async *fetch(_range, what) {
+      for (const a of list) {
+        if (!what.envelope) {
+          yield { uid: a.uid, flags: new Set() };
+          continue;
+        }
+        yield {
+          uid: a.uid,
+          flags: new Set(),
+          size: 10,
+          envelope: {
+            subject: a.subject,
+            messageId: `<spam-check-${a.uid}@example.test>`,
+            from: [{ address: 'sender@example.test' }],
+            date: new Date(),
+          },
+          headers: Buffer.from(a.headers),
+        };
+      }
+    },
+  });
+  const spamCreds = { id: spamAccount, address: `spam-${email}` };
+  const spamMoves = [];
+  const junkPeer = {
+    capabilities: new Set(['UIDPLUS']),
+    mailbox: { uidValidity: 1n, permanentFlags: new Set(['\\*']) },
+    async getMailboxLock(path) {
+      this.mailbox.path = path;
+      return { release() {} };
+    },
+    async messageMove(uids, target) {
+      spamMoves.push([this.mailbox.path, [...uids], target]);
+      return { uidValidity: 1n, uidMap: new Map(uids.map((uid) => [uid, uid + 500])) };
+    },
+  };
+  await setPrefs({});
+  const pass = await syncFolder(inboxPeer(arriving), userId, spamAccount, 'normal', spamInbox, () => {});
+  const filed = await handleArrivals(spamCreds, userId, junkPeer, pass.arrivals);
+  const where = await query(
+    `SELECT m.subject, m.uid, f.path FROM messages m JOIN folders f ON f.id = m.folder_id
+      WHERE m.account_id = $1 ORDER BY m.subject`,
+    [spamAccount],
+  );
+  check('server-marked spam is filed into Junk and replayed; other mail stays', () => {
+    assert.equal(pass.arrivals.length, 3);
+    assert.ok(pass.arrivals.every((a) => a.fresh));
+    assert.equal(filed.filed, 2);
+    assert.deepEqual(
+      where.map((r) => [r.subject, r.path, Number(r.uid)]),
+      [
+        ['***SPAM*** Win a prize', 'Junk', 501],
+        ['Lunch?', 'INBOX', 2],
+        ['Quarterly numbers', 'Junk', 503],
+      ],
+    );
+    // UIDs travel in row-id order, which is random; the set is what matters.
+    assert.deepEqual(
+      spamMoves.map(([from, uids, to]) => [from, [...uids].sort(), to]),
+      [['INBOX', [1, 3], 'Junk']],
+    );
+  });
+  const rescued = (
+    await query(`SELECT id FROM messages WHERE account_id = $1 AND uid = 501`, [spamAccount])
+  )[0];
+  await act([rescued.id], { type: 'move', folderId: spamInbox.id });
+  for (const op of await dueOps(spamAccount)) await applyOp(junkPeer, spamAccount, op);
+  await query('DELETE FROM sync_ops WHERE account_id=$1', [spamAccount]);
+  const rescuedUid = Number((await query('SELECT uid FROM messages WHERE id=$1', [rescued.id]))[0].uid);
+  const again = await upsert(userId, spamAccount, spamInbox.id, 'normal', [
+    { ...indexed, uid: rescuedUid, messageId: 'spam-check-1@example.test', subject: '***SPAM*** Win a prize' },
+  ]);
+  check('mail moved back out of Junk is an update, not an arrival to file again', () =>
+    assert.deepEqual(again.inserted, []),
+  );
+  await setPrefs({ mailHandling: { spamFilterExcluded: [spamAccount] } });
+  const later = await syncFolder(
+    inboxPeer([{ uid: 4, subject: '***SPAM*** Again', headers: '' }]),
+    userId,
+    spamAccount,
+    'normal',
+    (await query('SELECT * FROM folders WHERE id=$1', [spamInbox.id]))[0],
+    () => {},
+  );
+  const skipped = await handleArrivals(spamCreds, userId, junkPeer, later.arrivals);
+  check('an excluded mailbox keeps its spam in the inbox', () => {
+    assert.equal(later.arrivals.length, 1);
+    assert.equal(skipped.filed, 0);
+  });
+
+  // ── Missing Trash and Junk ───────────────────────────────────────────────
+  const [{ id: bareAccount }] = await query(
+    `INSERT INTO accounts(user_id,address,domain,label,imap_host,imap_port,smtp_host,smtp_port,username,secret_ciphertext,secret_nonce,secret_tag,status)
+    VALUES ($1,$2,'example.test','Bare','invalid',993,'invalid',587,$2,'x','x','x','disabled') RETURNING id`,
+    [userId, `bare-${email}`],
+  );
+  const bareCreds = { id: bareAccount, address: `bare-${email}` };
+  const serverFolders = [{ path: 'INBOX', name: 'INBOX', delimiter: '.', flags: new Set(), subscribed: true }];
+  const created = [];
+  const barePeer = {
+    capabilities: new Set(),
+    list: async () => serverFolders.map((f) => ({ ...f })),
+    async mailboxCreate(path) {
+      created.push(path);
+      serverFolders.push({ path, name: path, delimiter: '.', flags: new Set(), subscribed: true });
+    },
+    mailboxSubscribe: async () => true,
+  };
+  await setPrefs({ mailHandling: { createMissingFolders: false } });
+  await syncFolders(bareCreds, barePeer);
+  check('missing folders are left alone when the preference is off', () => assert.deepEqual(created, []));
+  await setPrefs({});
+  await syncFolders(bareCreds, barePeer);
+  const roles = (
+    await query('SELECT role::text FROM folders WHERE account_id=$1 ORDER BY role', [bareAccount])
+  ).map((r) => r.role);
+  check('a mailbox with no Trash or Junk gets both', () => {
+    assert.deepEqual(created, ['Trash', 'Junk']);
+    assert.deepEqual([...roles].sort(), ['inbox', 'junk', 'trash']);
+  });
+  await syncFolders(bareCreds, barePeer);
+  check('folders that exist are not created twice', () => assert.equal(created.length, 2));
+
   console.log(
     `consistency-check: ${passed} passed; local action acknowledgements ${timings.map((ms) => Math.round(ms) + 'ms').join(', ')}`,
   );
