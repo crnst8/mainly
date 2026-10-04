@@ -23,7 +23,7 @@
     "fastify": "^5.2.0",
     "imapflow": "^1.0.171",
     "mailparser": "^3.9.23",
-    "nodemailer": "^9.1.1",
+    "nodemailer": "^10.0.14",
     "pg": "^8.13.1",
     "sanitize-html": "^2.14.0",
     "ssh2": "^1.17.0"

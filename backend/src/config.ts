@@ -1,3 +1,6 @@
+import { isIP } from 'node:net';
+import { isPrivateAddress } from './lib/ip.ts';
+
 /**
  * Environment parsed and validated at boot.
  */
@@ -17,15 +20,32 @@ const num = (key: string, fallback: number): number => {
 };
 
 /**
- * `TRUST_PROXY`: unset/`false` → trust nobody. A number → that many hops. `true`
- * → the whole chain. Anything else → a comma-separated list of proxy addresses
- * or CIDRs, which is what Fastify hands to proxy-addr.
+ * `TRUST_PROXY`: unset/`false` → trust nobody. A number → that many hops, when
+ * the connection itself comes from a private or loopback address. `true` → the
+ * whole chain. Anything else → a comma-separated list of proxy addresses or
+ * CIDRs, which is what Fastify hands to proxy-addr.
+ *
+ * Fastify 5.12 stopped honouring a bare hop count, because it trusts the
+ * immediate peer without looking at it: a client that reaches the port directly
+ * sends one forged `X-Forwarded-For` and picks its own `req.ip`. Passing the
+ * number through would now trust nothing, so every client behind the proxy
+ * would share the proxy's address and one login rate limit. The check on hop 0
+ * keeps `1` and `2` meaning what `.env.example` says. A reverse proxy on this
+ * host, the compose network or a tailnet is private, and a direct public client
+ * gets nothing. A proxy that reaches the app from a public address has to be
+ * named by CIDR.
  */
-const trustProxy = (): boolean | number | string[] => {
+const trustProxy = (): boolean | string[] | ((address: string, hop: number) => boolean) => {
   const v = process.env.TRUST_PROXY?.trim();
   if (!v || v === 'false' || v === '0') return false;
   if (v === 'true') return true;
-  if (/^\d+$/.test(v)) return Number(v);
+  if (/^\d+$/.test(v)) {
+    const hops = Number(v);
+    // isPrivateAddress treats unparseable input as private, which is right for
+    // refusing a connection and wrong for trusting one, hence isIP first.
+    return (address, hop) =>
+      hop < hops && (hop > 0 || (isIP(address) !== 0 && isPrivateAddress(address)));
+  }
   return v.split(',').map((s) => s.trim()).filter(Boolean);
 };
 
