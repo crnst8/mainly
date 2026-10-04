@@ -1,3 +1,10 @@
+## 1.3.7 — 2026-10-04
+
+- fix: sync sends far fewer IMAP requests
+- fix: bump fastify, nodemailer, mailparser past high advisories
+
+Sync logs in about a tenth as often. Each pass uses one connection, folders that have not changed are not opened, accounts on push poll every 15 minutes, and an unreachable mail server is retried with backoff instead of every two minutes. New setting: `SYNC_IDLE_INTERVAL_MS`. A numeric `TRUST_PROXY` is now honoured only when the connection comes from a private, loopback or Tailscale address; a proxy on a public address needs its CIDR.
+
 ## 1.3.6 — 2026-09-21
 
 - fix: delete notifications rolled into one toast
