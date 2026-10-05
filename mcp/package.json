@@ -12,11 +12,11 @@
     "typecheck": "tsc -b --noEmit"
   },
   "dependencies": {
-    "@modelcontextprotocol/sdk": "^1.29.0",
+    "@modelcontextprotocol/sdk": "^1.31.0",
     "zod": "^3.24.1"
   },
   "devDependencies": {
-    "@types/node": "^22.10.2",
+    "@types/node": "^22.20.5",
     "typescript": "^5.7.2"
   }
 }
