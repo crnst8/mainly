@@ -10,11 +10,8 @@ description: >-
   and mailbox credentials, the reader / printing / sender colour relighting,
   compose or SMTP, the mobile touch shell, settings or design tokens, the MCP
   tools, agent tokens, domain control, migrations, `dev.sh` / `mainly.sh` /
-  `publish.sh`, the demo site, or releases. It tells you what the app is, the
-  one decision the architecture follows from, where each concern lives, what
-  the gate is, and which rules are non-negotiable — so you change the right
-  file and do not break a contract. It does NOT restate current code; always
-  read the file named below for implementation detail.
+  `publish.sh`, the demo site, or releases. It does NOT restate current code;
+  read the named file for implementation detail.
 ---
 
 # mainly — repo orientation
