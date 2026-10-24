@@ -1,6 +1,6 @@
 /**
  * The Filtered folder: whether it files on arrival, how readily, with which
- * model, and the senders and lists it has learned.
+ * provider and model, and the senders and lists it has learned.
  *
  * Preferences are saved like every other setting. What the filter learned is
  * not a preference — it is the record of what the user filed — so it is read
@@ -33,11 +33,24 @@ export function FilteredSettings() {
 
   const reload = async () => {
     try {
-      setStatus(await (await getApi()).filterStatus());
+      const next = await (await getApi()).filterStatus();
+      setStatus(next);
+      return next;
     } catch (e) {
       setFailure(e instanceof Error ? e.message : 'Could not read the filter');
+      return null;
     }
   };
+
+  /** After the key changes: list the new provider's models, and drop a chosen
+   *  model when requests now go to a different host that may not have it. */
+  async function providerChanged() {
+    const before = status?.llm.host ?? null;
+    const next = await reload();
+    setModels(null);
+    setTrial(null);
+    if (next && next.llm.host !== before && f.llmModel) set({ llmModel: null });
+  }
 
   useEffect(() => {
     void reload();
@@ -162,7 +175,7 @@ export function FilteredSettings() {
           </div>
           <Row
             title="Ask a model when unsure"
-            desc={llm.available ? `Sends sender, subject and preview to ${llm.host}` : 'No model configured on this server'}
+            desc={llm.available ? `Sends sender, subject and preview to ${llm.host}` : undefined}
           >
             <Toggle
               label="Ask a language model when unsure"
@@ -172,6 +185,7 @@ export function FilteredSettings() {
               }}
             />
           </Row>
+          <ProviderKey llm={llm} onChanged={providerChanged} />
           {llm.available && (
             <Row title="Model" desc={trial ? `${trial.model || llm.defaultModel} · ${trial.detail}${trial.ms ? ` · ${trial.ms} ms` : ''}` : undefined}>
               <div className="notif__device">
@@ -184,7 +198,7 @@ export function FilteredSettings() {
                     set({ llmModel: e.target.value || null });
                   }}
                 >
-                  <option value="">{`Default · ${llm.defaultModel}`}</option>
+                  <option value="">{llm.defaultModel ? `Default · ${llm.defaultModel}` : 'Choose a model'}</option>
                   {(models ?? []).map((id) => (
                     <option key={id} value={id}>
                       {id}
@@ -194,7 +208,11 @@ export function FilteredSettings() {
                     <option value={f.llmModel}>{f.llmModel}</option>
                   )}
                 </select>
-                <Button size="sm" disabled={busy !== null} onClick={() => void tryModel()}>
+                <Button
+                  size="sm"
+                  disabled={busy !== null || (!f.llmModel && !llm.defaultModel)}
+                  onClick={() => void tryModel()}
+                >
                   {busy === 'try' ? <Spinner /> : null}
                   Try
                 </Button>
@@ -220,6 +238,134 @@ export function FilteredSettings() {
         />
       )}
     </>
+  );
+}
+
+/** Presets for the OpenAI-compatible providers docs/filtering.md lists. A null
+ *  URL is OpenCode Go, the server's own default. */
+const PROVIDERS = [
+  { id: 'opencode', label: 'OpenCode Go', url: null, host: 'opencode.ai' },
+  { id: 'openrouter', label: 'OpenRouter', url: 'https://openrouter.ai/api/v1', host: 'openrouter.ai' },
+  { id: 'openai', label: 'OpenAI', url: 'https://api.openai.com/v1', host: 'api.openai.com' },
+  { id: 'custom', label: 'Other', url: '', host: null },
+] as const;
+type ProviderId = (typeof PROVIDERS)[number]['id'];
+
+const providerOf = (host: string | null): ProviderId =>
+  PROVIDERS.find((p) => p.host && p.host === host)?.id ?? (host ? 'custom' : 'opencode');
+
+/**
+ * The user's own provider and key. The key is write-only: the server never
+ * sends it back, so the field is always empty and "Saved" is all there is to
+ * show for it.
+ */
+function ProviderKey({ llm, onChanged }: { llm: FilterStatus['llm']; onChanged: () => Promise<void> }) {
+  const own = llm.source === 'own';
+  const [provider, setProvider] = useState<ProviderId>(() => (own ? providerOf(llm.host) : 'opencode'));
+  const [url, setUrl] = useState('');
+  const [key, setKey] = useState('');
+  const [busy, setBusy] = useState<'save' | 'remove' | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  const preset = PROVIDERS.find((p) => p.id === provider)!;
+  const target = provider === 'custom' ? url.trim() : preset.url;
+  const canSave = busy === null && (key.trim() !== '' || (provider === 'custom' && url.trim() !== ''));
+
+  async function save() {
+    setBusy('save');
+    setError(null);
+    try {
+      await (await getApi()).setFilterKey({ url: target || null, key: key.trim() });
+      // Cleared, so a second Save cannot replace the key with an empty one.
+      setKey('');
+      setUrl('');
+      await onChanged();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Could not save the key');
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  async function remove() {
+    setBusy('remove');
+    setError(null);
+    try {
+      await (await getApi()).removeFilterKey();
+      setProvider('opencode');
+      setUrl('');
+      await onChanged();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Could not remove the key');
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  return (
+    <form
+      className="filter-key"
+      onSubmit={(e) => {
+        e.preventDefault();
+        if (canSave) void save();
+      }}
+    >
+      <Row title="Provider">
+        <select
+          className="input mselect"
+          aria-label="Provider"
+          value={provider}
+          onChange={(e) => {
+            setProvider(e.target.value as ProviderId);
+            setError(null);
+          }}
+        >
+          {PROVIDERS.map((p) => (
+            <option key={p.id} value={p.id}>
+              {p.label}
+            </option>
+          ))}
+        </select>
+      </Row>
+      {provider === 'custom' && (
+        <Row title="URL">
+          <input
+            className="input filter-key__input"
+            type="url"
+            aria-label="Provider URL"
+            autoComplete="off"
+            spellCheck={false}
+            placeholder={own && providerOf(llm.host) === 'custom' && llm.host ? llm.host : 'https://host/v1'}
+            value={url}
+            onChange={(e) => setUrl(e.target.value)}
+          />
+        </Row>
+      )}
+      <Row title="API key" desc={own ? `Saved · ${llm.host}` : llm.source === 'server' ? "Using the server's" : undefined}>
+        <div className="notif__device">
+          <input
+            className="input filter-key__input"
+            type="password"
+            aria-label="API key"
+            autoComplete="off"
+            spellCheck={false}
+            placeholder={own ? 'Replace key' : 'Paste key'}
+            value={key}
+            onChange={(e) => setKey(e.target.value)}
+          />
+          <Button size="sm" type="submit" disabled={!canSave}>
+            {busy === 'save' ? <Spinner /> : null}
+            Save
+          </Button>
+          {own && (
+            <IconButton label="Remove API key" disabled={busy !== null} onClick={() => void remove()}>
+              {busy === 'remove' ? <Spinner /> : <Trash size={14} />}
+            </IconButton>
+          )}
+        </div>
+      </Row>
+      {error && <p className="settings__note settings__note--error">{error}</p>}
+    </form>
   );
 }
 

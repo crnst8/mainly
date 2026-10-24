@@ -20,8 +20,11 @@
  */
 
 import { createHmac } from 'node:crypto';
-import { config } from '../config.ts';
+import { OPENCODE_GO_CHAT, OPENCODE_GO_MODEL, OPENCODE_GO_MODELS, config } from '../config.ts';
 import type { Addr } from '../contract/types.ts';
+import { one, query } from '../db/index.ts';
+import { open, seal } from '../lib/crypto.ts';
+import { assertPublicHost } from '../lib/net-guard.ts';
 
 export interface LlmMessage {
   from: Addr;
@@ -49,15 +52,108 @@ export const LLM_BATCH = 20;
 const MAX_EXAMPLES_EACH = 20;
 const MAX_RESPONSE_BYTES = 256 * 1024;
 
-export function llmAvailable(): boolean {
-  return !!config.filter.llm.key;
+/* ── Provider ───────────────────────────────────────────────────────────── */
+
+/**
+ * Where one user's requests go, and with which key.
+ *
+ * A user's own provider (Settings → Filtered) wins over the server's, so a
+ * person can bring their own key on an install whose operator configured none,
+ * or pay for their own use on one that did.
+ */
+export interface Provider {
+  baseUrl: string;
+  modelsUrl: string | null;
+  /** Empty for a local server that needs none. */
+  key: string;
+  source: 'own' | 'server';
+  /** Null when the endpoint is the user's own and no default is known. */
+  defaultModel: string | null;
+}
+
+const serverProvider = (): Provider | null => {
+  const { baseUrl, modelsUrl, key, model } = config.filter.llm;
+  return key ? { baseUrl, modelsUrl, key, source: 'server', defaultModel: model } : null;
+};
+
+/** A user's own provider, before it is saved or once it is read back. */
+export function ownProvider(url: string | null, key: string): Provider {
+  return url
+    ? { baseUrl: url, modelsUrl: null, key, source: 'own', defaultModel: null }
+    : { baseUrl: OPENCODE_GO_CHAT, modelsUrl: OPENCODE_GO_MODELS, key, source: 'own', defaultModel: OPENCODE_GO_MODEL };
+}
+
+export async function providerFor(userId: string): Promise<Provider | null> {
+  const row = await one<{
+    base_url: string | null;
+    secret_ciphertext: Buffer;
+    secret_nonce: Buffer;
+    secret_tag: Buffer;
+    secret_key_version: number;
+  }>(
+    `SELECT base_url, secret_ciphertext, secret_nonce, secret_tag, secret_key_version
+       FROM filter_llm_keys WHERE user_id = $1`,
+    [userId],
+  );
+  if (!row) return serverProvider();
+  try {
+    const key = open({
+      ciphertext: row.secret_ciphertext,
+      nonce: row.secret_nonce,
+      tag: row.secret_tag,
+      keyVersion: row.secret_key_version,
+    });
+    return ownProvider(row.base_url, key);
+  } catch (err) {
+    // A SECRET_KEY rotated without keeping the old one. The user sees the
+    // server's provider, or none, until they enter their key again.
+    console.warn({ userId, err: (err as Error).message }, 'filter model key unreadable');
+    return serverProvider();
+  }
+}
+
+/**
+ * The API base a user typed, normalised, or an error message.
+ *
+ * http is allowed because Ollama and LM Studio serve plain http on a LAN; the
+ * address guard below is what keeps a typed URL from reaching this server's
+ * own network, unless the operator allowed private hosts.
+ */
+export function normaliseBaseUrl(input: string): string | { error: string } {
+  let url: URL;
+  try {
+    url = new URL(input.trim());
+  } catch {
+    return { error: 'Not a valid URL' };
+  }
+  if (url.protocol !== 'https:' && url.protocol !== 'http:') return { error: 'The URL must start with https://' };
+  if (url.username || url.password) return { error: 'Put the key in the key field, not the URL' };
+  if (url.search || url.hash) return { error: 'The URL cannot have a query or fragment' };
+  return `${url.origin}${url.pathname}`.replace(/\/+$/, '');
+}
+
+export async function saveOwnProvider(userId: string, url: string | null, key: string): Promise<void> {
+  const sealed = seal(key);
+  await query(
+    `INSERT INTO filter_llm_keys (user_id, base_url, secret_ciphertext, secret_nonce, secret_tag, secret_key_version)
+     VALUES ($1, $2, $3, $4, $5, $6)
+     ON CONFLICT (user_id) DO UPDATE
+       SET base_url = EXCLUDED.base_url, secret_ciphertext = EXCLUDED.secret_ciphertext,
+           secret_nonce = EXCLUDED.secret_nonce, secret_tag = EXCLUDED.secret_tag,
+           secret_key_version = EXCLUDED.secret_key_version, updated_at = now()`,
+    [userId, url, sealed.ciphertext, sealed.nonce, sealed.tag, sealed.keyVersion],
+  );
+}
+
+export async function removeOwnProvider(userId: string): Promise<void> {
+  await query('DELETE FROM filter_llm_keys WHERE user_id = $1', [userId]);
 }
 
 /** Where requests go, for the settings screen. A host, not a URL, so a path
  *  that happens to carry a token is never shown. */
-export function llmHost(): string | null {
+export function llmHost(provider: Provider): string | null {
   try {
-    return new URL(config.filter.llm.baseUrl).host;
+    return new URL(provider.baseUrl).host;
   } catch {
     return null;
   }
@@ -177,9 +273,24 @@ export function clientHeaders(url: string, userId: string | null): Record<string
   return headers;
 }
 
-async function request(url: string, init: RequestInit, userId: string | null = null): Promise<unknown> {
-  const { key, timeoutMs } = config.filter.llm;
-  if (!key) throw new LlmError('No language model is configured on this server');
+async function request(
+  provider: Provider,
+  url: string,
+  init: RequestInit,
+  userId: string | null = null,
+): Promise<unknown> {
+  const { timeoutMs } = config.filter.llm;
+  const { key } = provider;
+  // A user's own URL is checked on every request, as pool.ts checks a mail
+  // server on every connection: a name that resolved publicly when it was
+  // saved can resolve to this server's network later.
+  if (provider.source === 'own') {
+    try {
+      await assertPublicHost(new URL(url).hostname, 'The model provider');
+    } catch (err) {
+      throw new LlmError((err as Error).message);
+    }
+  }
   let res: Response;
   try {
     res = await fetch(url, {
@@ -190,7 +301,7 @@ async function request(url: string, init: RequestInit, userId: string | null = n
       headers: {
         ...init.headers,
         ...clientHeaders(url, userId),
-        authorization: `Bearer ${key}`,
+        ...(key ? { authorization: `Bearer ${key}` } : {}),
         accept: 'application/json',
       },
     });
@@ -235,9 +346,9 @@ async function request(url: string, init: RequestInit, userId: string | null = n
 }
 
 /** Model ids the provider offers, sorted. */
-export async function listModels(): Promise<string[]> {
-  const { baseUrl, modelsUrl } = config.filter.llm;
-  const json = (await request(modelsUrl ?? `${baseUrl}/models`, { method: 'GET' })) as {
+export async function listModels(provider: Provider): Promise<string[]> {
+  const { baseUrl, modelsUrl } = provider;
+  const json = (await request(provider, modelsUrl ?? `${baseUrl}/models`, { method: 'GET' })) as {
     data?: { id?: unknown }[];
   } | null;
   if (!Array.isArray(json?.data)) throw new LlmError('The provider sent an unreadable model list');
@@ -248,13 +359,14 @@ export async function listModels(): Promise<string[]> {
 /** One request for up to `LLM_BATCH` messages. Throws on transport failure;
  *  an unreadable answer is a row of nulls, not an error. */
 export async function classify(
+  provider: Provider,
   userId: string,
   model: string,
   messages: readonly LlmMessage[],
   examples: readonly LlmExample[],
 ): Promise<(LlmVerdict | null)[]> {
   if (!messages.length) return [];
-  const json = (await request(`${config.filter.llm.baseUrl}/chat/completions`, {
+  const json = (await request(provider, `${provider.baseUrl}/chat/completions`, {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify({

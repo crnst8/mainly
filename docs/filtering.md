@@ -81,15 +81,17 @@ folder is for.
 | Sensitivity | The classifier and model thresholds above. |
 | Inbox mail from filtered senders → File now | Applies your rules to up to 5,000 of the newest messages in each inbox. Rules only; the classifier and the model never move existing mail. |
 | Learned | How many examples you have given, whether the classifier is trained, how much it filed by itself and how much of that you took back, and the threshold it currently needs. |
-| Ask a model when unsure | Step 4. Available only when the server has a model configured. |
+| Ask a model when unsure | Step 4. Available once you have saved an API key, or the server has one configured. |
+| Provider · API key | Your own provider and key. See [Your own key](#your-own-key). |
 | Model | Any model the provider lists. **Try** sends one made-up message (never your mail) and shows the model's answer and how long it took. |
 | Filtered senders and lists / Kept in the inbox | Every rule, newest first. The bin forgets all examples from that sender or list. |
 | Filter in | Mailboxes the filter leaves alone. |
 
 ## Language model
 
-The server operator configures the provider; each user only chooses a model
-from its list and turns the feature on for themselves. See
+Each user turns the feature on for themselves and chooses a model from the
+provider's list. The provider is the user's own, from **Settings → Filtered**,
+or else the one the server operator configured. See
 [configuration.md](configuration.md#filtered-folder) for the variables.
 
 Any OpenAI-compatible `chat/completions` endpoint works:
@@ -137,13 +139,41 @@ user: an HMAC of the user id under this install's `SESSION_SECRET`. It is the
 same for every request from that user and means nothing outside this install.
 Other providers do not receive it.
 
+### Your own key
+
+**Settings → Filtered → Provider · API key** saves a provider for your user
+only. It replaces the server's provider for you, and works on a server that has
+none configured.
+
+| Provider | URL sent |
+| --- | --- |
+| OpenCode Go | OpenCode Go's own endpoints; default model `minimax-m3.1-flash` |
+| OpenRouter | `https://openrouter.ai/api/v1` |
+| OpenAI | `https://api.openai.com/v1` |
+| Other | Any OpenAI-compatible base URL you type, such as `http://<host>:11434/v1` for Ollama |
+
+- **Save** checks the key by listing the provider's models with it. A key the
+  provider refuses is not saved, and the provider's error is shown.
+- The key is encrypted under `SECRET_KEY` (AES-256-GCM, as mailbox passwords
+  are) and never returned by any endpoint. The screen shows only that a key is
+  saved and the host it goes to. Enter a new key to replace it; the bin removes
+  it, and the server's provider, if any, applies again.
+- With **Other**, the key may be left empty for a local server that needs none.
+  A URL on a private or reserved address is refused unless the operator set
+  `ALLOW_PRIVATE_IMAP_HOSTS`, and the address is checked again on every request.
+- With **Other** there is no default model; choose one from the list.
+- The routes that save, remove, list or try are session only. An agent token
+  cannot reach them at any scope.
+- Changing provider clears the chosen model when the new host differs.
+
 ### Limits
 
 - At most `FILTER_LLM_HOURLY_MAX` messages per user per hour (default 120).
 - Requests time out after `FILTER_LLM_TIMEOUT_MS` (default 12 s).
 - A timeout, an error, or an answer the filter cannot read leaves the mail in
   the inbox.
-- The key is sent only to the configured host; redirects are refused.
+- The key is sent only to the provider's host; redirects are refused.
+- The hourly cap applies to your own key too.
 
 Mail text is untrusted input to the model. A message written to manipulate the
 model can at most move itself into or out of Filtered, which you can see and

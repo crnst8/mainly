@@ -69,8 +69,11 @@ export type Role = 'api' | 'sync' | 'all';
 
 /** OpenCode Go serves chat completions and its model list under different
  *  prefixes (https://opencode.ai/docs/go). */
-const OPENCODE_GO_CHAT = 'https://opencode.ai/inference/go/openai/v1';
-const OPENCODE_GO_MODELS = 'https://opencode.ai/inference/go/v1/models';
+export const OPENCODE_GO_CHAT = 'https://opencode.ai/inference/go/openai/v1';
+export const OPENCODE_GO_MODELS = 'https://opencode.ai/inference/go/v1/models';
+/** Fastest of the three models that passed all 30 synthetic decisions in the
+ *  2026-10-24 benchmark. See docs/filtering.md for the limits. */
+export const OPENCODE_GO_MODEL = 'minimax-m3.1-flash';
 
 const databasePoolMax = num('DATABASE_POOL_MAX', 10);
 const syncMaxConcurrentAccounts = num(
@@ -160,9 +163,9 @@ export const config = {
      unsure of. Any OpenAI-compatible chat completions endpoint works: OpenCode
      Go by default, or OpenRouter, OpenAI, Ollama, LM Studio, vLLM. Without a
      key (a local server that needs none can be given any value) the feature
-     is unavailable and nothing leaves this server. The operator sets the
-     provider, because the URL is an outbound-request surface and the key is a
-     bill; each user only picks a model from the provider's own list. */
+     is unavailable to users who have not added their own, and nothing leaves
+     this server for them. A user's own provider, from Settings → Filtered,
+     replaces this one for that user only (filter/llm.ts). */
   filter: {
     llm: {
       // `||`, not `??`: compose passes an unset variable as an empty string.
@@ -171,9 +174,7 @@ export const config = {
         process.env.FILTER_LLM_MODELS_URL ||
         (process.env.FILTER_LLM_URL ? null : OPENCODE_GO_MODELS),
       key: process.env.FILTER_LLM_KEY || null,
-      // Fastest of the three models that passed all 30 synthetic decisions
-      // in the 2026-10-24 benchmark. See docs/filtering.md for the limits.
-      model: process.env.FILTER_LLM_MODEL || 'minimax-m3.1-flash',
+      model: process.env.FILTER_LLM_MODEL || OPENCODE_GO_MODEL,
       timeoutMs: num('FILTER_LLM_TIMEOUT_MS', 12_000),
       hourlyMax: num('FILTER_LLM_HOURLY_MAX', 120),
     },

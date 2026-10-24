@@ -679,12 +679,13 @@ export interface FilterPreferences {
   /**
    * Ask a language model about new mail the classifier is unsure of.
    *
-   * Off by default and only possible when the server has a model configured,
-   * because it sends the sender, subject and the first lines of each such
-   * message to that provider. See docs/filtering.md.
+   * Off by default and only possible with a provider — the user's own key,
+   * or one the server configured — because it sends the sender, subject and
+   * the first lines of each such message to that provider. See
+   * docs/filtering.md.
    */
   llm: boolean;
-  /** A model id from the provider's list. Null uses the server's default. */
+  /** A model id from the provider's list. Null uses the provider's default. */
   llmModel: string | null;
   /** Accounts the filter leaves alone. */
   excluded: Id[];
@@ -726,10 +727,27 @@ export interface FilterStatus {
   /** The probability the classifier currently needs before filing, after the
    *  rescue rate has raised it. */
   threshold: number;
-  /** Whether the server has a language model configured, and where. Never
+  /** Whether a language model is available to this user, and where. Never
    *  includes the key. */
-  llm: { available: boolean; host: string | null; defaultModel: string | null };
+  llm: {
+    available: boolean;
+    host: string | null;
+    defaultModel: string | null;
+    /** `own`: the user's key from Settings. `server`: the operator's. */
+    source: 'own' | 'server' | null;
+    /** Whether the server has a provider to fall back to without one. */
+    server: boolean;
+  };
   sources: FilterSource[];
+}
+
+/** A user's own model provider. The key is write-only: no endpoint returns it. */
+export interface FilterKeyInput {
+  /** An OpenAI-compatible API base, ending before `/chat/completions`. Null
+   *  is OpenCode Go. */
+  url: string | null;
+  /** May be empty with a `url`, for a local server that needs none. */
+  key: string;
 }
 
 /** One trial classification against a model, from the settings screen. */

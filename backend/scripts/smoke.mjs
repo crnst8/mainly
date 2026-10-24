@@ -197,6 +197,25 @@ check('preferences round-trip', prefs.status === 200 && prefs.body?.layout === '
 const sync = await call('/sync');
 check('sync state responds', sync.status === 200 && !!sync.body?.accounts, `${sync.status}`);
 
+/* ── The filter's own-key routes ────────────────────────────────────────────
+   Refusals only: saving a key needs a provider to accept it, and this suite
+   contacts nothing outside the machine. */
+
+const badScheme = await call('/filter/llm/key', { method: 'PUT', body: { url: 'ftp://models.example/v1', key: 'k' } });
+check('model key refuses a non-http URL', badScheme.status === 400, `${badScheme.status} ${badScheme.text}`);
+const badKey = await call('/filter/llm/key', { method: 'PUT', body: { url: null, key: 'two words' } });
+check('model key refuses a key with whitespace', badKey.status === 400, `${badKey.status} ${badKey.text}`);
+const noKey = await call('/filter/llm/key', { method: 'PUT', body: { url: null, key: '' } });
+check('model key requires a key for the default provider', noKey.status === 400, `${noKey.status} ${noKey.text}`);
+const removed = await call('/filter/llm/key', { method: 'DELETE' });
+check('model key removal succeeds with none saved', removed.status === 204, `${removed.status} ${removed.text}`);
+const filterStatus = await call('/filter/status');
+check(
+  'filter status reports no own provider',
+  filterStatus.status === 200 && filterStatus.body?.llm?.source !== 'own' && typeof filterStatus.body?.llm?.server === 'boolean',
+  `${filterStatus.status} ${filterStatus.text?.slice(0, 300)}`,
+);
+
 // CSRF must actually be enforced, not merely issued.
 const saved = csrf;
 csrf = 'wrong-token';

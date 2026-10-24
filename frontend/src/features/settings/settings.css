@@ -851,6 +851,18 @@
   }
 }
 
+/* ── Filtered: provider and key ──────────────────────────────────────────── */
+
+.filter-key__input {
+  width: 180px;
+}
+
+/* The form wraps its rows, so the last one is a last child even when the
+   Model row follows it in the same section. */
+.filter-key:not(:last-child) .row:last-of-type {
+  border-bottom: 1px solid var(--line-soft);
+}
+
 /* ── Mobile preferences ───────────────────────────────────────────────────── */
 
 .mselect {

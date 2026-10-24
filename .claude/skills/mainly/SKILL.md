@@ -89,7 +89,7 @@ backend/    Fastify + pg + imapflow + nodemailer + mailparser + argon2
   src/filter/       Filtered folder: features · classifier (pure, tested) ·
                     llm · model · decide · training
   src/cli/          create-user · token · domain · seed
-  migrations/       numbered, forward-only SQL (001…016)
+  migrations/       numbered, forward-only SQL (001…017)
   scripts/          smoke · query-check · index-check · check-contract ·
                     static-check · auth-check · consistency-check · database-benchmark · filter-benchmark
 mcp/        MCP server over stdio — the same HTTP API, exposed to agents
@@ -127,7 +127,7 @@ Ignore `frontend/backend/` — empty directories left by `tsc -b`, not source.
 | Moves made for the user (Junk, Filtered) | `backend/src/sync/filing.ts` |
 | Filtered folder: what files on arrival | `backend/src/filter/decide.ts` (rules → correspondence → classifier → LLM) |
 | Filtered folder: learning from moves | `backend/src/filter/training.ts`, called from the move case in `modules/messages/routes.ts` |
-| Filtered folder: optional LLM | `backend/src/filter/llm.ts` (OpenAI-compatible; operator key in env, see `config.ts`) |
+| Filtered folder: optional LLM | `backend/src/filter/llm.ts` (OpenAI-compatible; user's own key from Settings in `filter_llm_keys`, else operator key in env, see `config.ts`) |
 | Synthetic model benchmark (manual, operator key in env) | `backend/scripts/filter-benchmark.mjs` · results in `docs/filtering.md` |
 | Filtered settings / Filter out action | `frontend/src/features/settings/FilteredSettings.tsx` · `filter()` in `store.ts` |
 | Missing Trash/Junk creation | `backend/src/sync/folders.ts` |
@@ -256,11 +256,13 @@ demo are built by `scripts/build-site.sh` and deployed by `deploy-site.sh`.
 - Push endpoints are an outbound-request surface: accepted and contacted only
   on known browser push-service hosts (`backend/src/push/encrypt.ts`), with
   redirects refused. Push routes are `sessionOnly`; tokens cannot add devices.
-- The Filtered folder's language model is configured by the operator only
-  (`FILTER_LLM_*` env): users pick a model, never a URL or key. It is off per
-  user by default, sends sender/subject/preview only (never bodies), refuses
-  redirects, and is capped per user per hour. The model list and Try routes
-  are `sessionOnly`.
+- The Filtered folder's language model uses the user's own provider (Settings →
+  Filtered; key sealed like mailbox credentials in `filter_llm_keys`, never
+  returned) or else the operator's (`FILTER_LLM_*` env). A user's URL is an
+  outbound-request surface: `net-guard` checks it on save and on every
+  request. It is off per user by default, sends sender/subject/preview only
+  (never bodies), refuses redirects, and is capped per user per hour. The key,
+  model list and Try routes are `sessionOnly`.
 - Vulnerabilities go through `SECURITY.md`, never a public issue.
 
 ## Gotchas

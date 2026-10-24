@@ -24,6 +24,7 @@ import type {
   Preferences,
   PushDevice,
   PushSubscriptionInput,
+  FilterKeyInput,
   FilterModelTrial,
   FilterSource,
   FilterStatus,
@@ -135,7 +136,11 @@ export interface MailApi {
   forgetFilterSource(source: Pick<FilterSource, 'kind' | 'value'>): Promise<void>;
   /** File inbox mail the rules already cover. Returns how many moved. */
   sweepFiltered(): Promise<{ filed: number }>;
-  /** Model ids the server's provider offers. Empty when none is configured. */
+  /** Save the user's own model provider, after the provider accepts the key. */
+  setFilterKey(input: FilterKeyInput): Promise<void>;
+  /** Remove it; the server's provider, if any, applies again. */
+  removeFilterKey(): Promise<void>;
+  /** Model ids the user's provider offers. Empty when there is none. */
   listFilterModels(): Promise<string[]>;
   /** Classify one made-up message with a model, to see that it works. */
   tryFilterModel(model: string | null): Promise<FilterModelTrial>;

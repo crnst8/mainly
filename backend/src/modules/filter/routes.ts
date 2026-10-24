@@ -5,16 +5,18 @@
  * Teaching the filter has no endpoint. It learns from moves into and out of
  * Filtered, through `/messages/actions` like any other move.
  *
- * The model routes are session only. Listing and trying models spends the
- * operator's key on a request the caller chooses the timing of; an agent token
- * has no reason to.
+ * The model routes are session only. Listing and trying models spends a key
+ * on a request the caller chooses the timing of, and the key routes handle a
+ * plaintext credential; an agent token has no reason to do either.
  */
 
 import type { FastifyInstance } from 'fastify';
 import { one, query } from '../../db/index.ts';
 import { badRequest, upstream } from '../../lib/errors.ts';
+import { assertPublicHost } from '../../lib/net-guard.ts';
 import {
   withPreferenceDefaults,
+  type FilterKeyInput,
   type FilterModelTrial,
   type FilterSource,
   type FilterStatus,
@@ -23,7 +25,17 @@ import {
 import { config } from '../../config.ts';
 import { BASE_THRESHOLD, effectiveThreshold, trained } from '../../filter/classifier.ts';
 import { decide, fileDecisions } from '../../filter/decide.ts';
-import { classify, listModels, llmAvailable, llmHost, LlmError } from '../../filter/llm.ts';
+import {
+  classify,
+  listModels,
+  llmHost,
+  LlmError,
+  normaliseBaseUrl,
+  ownProvider,
+  providerFor,
+  removeOwnProvider,
+  saveOwnProvider,
+} from '../../filter/llm.ts';
 import { FILTER_ROW_COLUMNS, modelFor, trackRecord, type FilterRow } from '../../filter/model.ts';
 import { publishCounts } from '../../sync/folders.ts';
 import { syncNow } from '../../sync/engine.ts';
@@ -43,7 +55,7 @@ async function prefsOf(userId: string): Promise<Preferences> {
 export async function filterRoutes(app: FastifyInstance): Promise<void> {
   app.get('/filter/status', async (req) => {
     const prefs = await prefsOf(req.userId);
-    const [examples, model, record, sources] = await Promise.all([
+    const [examples, model, record, sources, provider] = await Promise.all([
       query<{ verdict: 'filter' | 'keep'; n: number }>(
         `SELECT verdict, count(*)::int AS n FROM filter_examples WHERE user_id = $1 GROUP BY verdict`,
         [req.userId],
@@ -70,6 +82,7 @@ export async function filterRoutes(app: FastifyInstance): Promise<void> {
           LIMIT 500`,
         [req.userId],
       ),
+      providerFor(req.userId),
     ]);
     const count = (v: 'filter' | 'keep') => examples.find((e) => e.verdict === v)?.n ?? 0;
     return {
@@ -83,9 +96,11 @@ export async function filterRoutes(app: FastifyInstance): Promise<void> {
         record.model.rescued,
       ),
       llm: {
-        available: llmAvailable(),
-        host: llmAvailable() ? llmHost() : null,
-        defaultModel: llmAvailable() ? config.filter.llm.model : null,
+        available: !!provider,
+        host: provider ? llmHost(provider) : null,
+        defaultModel: provider?.defaultModel ?? null,
+        source: provider?.source ?? null,
+        server: !!config.filter.llm.key,
       },
       sources: sources.map(
         (s): FilterSource => ({
@@ -161,10 +176,56 @@ export async function filterRoutes(app: FastifyInstance): Promise<void> {
     return { filed };
   });
 
-  app.get('/filter/models', sessionOnly, async () => {
-    if (!llmAvailable()) return [];
+  /**
+   * Save the user's own provider. The key is checked by listing the
+   * provider's models with it, so a mistyped key fails here, where the user
+   * can see it, rather than as mail quietly left unfiltered.
+   */
+  app.put<{ Body: Partial<FilterKeyInput> }>(
+    '/filter/llm/key',
+    { config: { rateLimit: { max: 30, timeWindow: '1 hour' }, sessionOnly: true } },
+    async (req, reply) => {
+      const { url: rawUrl, key: rawKey } = req.body ?? {};
+      if (rawUrl != null && typeof rawUrl !== 'string') throw badRequest('url must be a string or null');
+      if (typeof rawKey !== 'string') throw badRequest('key is required');
+      const key = rawKey.trim();
+      // A key is one header value; anything with whitespace inside is a paste
+      // that caught something else.
+      if (key.length > 4096 || /\s/.test(key)) throw badRequest('That does not look like an API key');
+      let url: string | null = null;
+      if (rawUrl?.trim()) {
+        if (rawUrl.length > 2048) throw badRequest('The URL is too long');
+        const normalised = normaliseBaseUrl(rawUrl);
+        if (typeof normalised !== 'string') throw badRequest(normalised.error);
+        url = normalised;
+      }
+      if (!key && !url) throw badRequest('Enter an API key');
+      // Refused here with its own message, not as the provider's answer below.
+      if (url) await assertPublicHost(new URL(url).hostname, 'The model provider');
+
+      try {
+        await listModels(ownProvider(url, key));
+      } catch (err) {
+        throw badRequest(
+          `The provider did not accept it: ${err instanceof LlmError ? err.message : 'the request failed'}`,
+        );
+      }
+      await saveOwnProvider(req.userId, url, key);
+      return reply.code(204).send();
+    },
+  );
+
+  /** Remove the user's own provider. The server's, if any, applies again. */
+  app.delete('/filter/llm/key', sessionOnly, async (req, reply) => {
+    await removeOwnProvider(req.userId);
+    return reply.code(204).send();
+  });
+
+  app.get('/filter/models', sessionOnly, async (req) => {
+    const provider = await providerFor(req.userId);
+    if (!provider) return [];
     try {
-      return await listModels();
+      return await listModels(provider);
     } catch (err) {
       throw upstream(`The model provider did not list its models: ${(err as Error).message}`);
     }
@@ -176,11 +237,14 @@ export async function filterRoutes(app: FastifyInstance): Promise<void> {
    * trying a model should not send anything of theirs anywhere.
    */
   app.post<{ Body: { model?: string } }>('/filter/models/try', sessionOnly, async (req) => {
-    if (!llmAvailable()) throw badRequest('No language model is configured on this server');
-    const model = String(req.body?.model || config.filter.llm.model).slice(0, 200);
+    const provider = await providerFor(req.userId);
+    if (!provider) throw badRequest('Add an API key first');
+    const model = String(req.body?.model || provider.defaultModel || '').slice(0, 200);
+    if (!model) throw badRequest('Choose a model first');
     const started = Date.now();
     try {
       const [verdict] = await classify(
+        provider,
         req.userId,
         model,
         [

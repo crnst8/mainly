@@ -776,7 +776,7 @@ export class MockApi implements MailApi {
       autoFiled: 0,
       rescued: 0,
       threshold: 0.92,
-      llm: { available: false, host: null, defaultModel: null },
+      llm: { available: false, host: null, defaultModel: null, source: null, server: false },
       sources: [...sources.values()].reverse(),
     };
   }
@@ -801,6 +801,12 @@ export class MockApi implements MailApi {
     }
     return { filed };
   }
+
+  async setFilterKey(): Promise<void> {
+    throw new Error('Language models need a Mainly server; this demo has none');
+  }
+
+  async removeFilterKey(): Promise<void> {}
 
   async listFilterModels(): Promise<string[]> {
     return [];

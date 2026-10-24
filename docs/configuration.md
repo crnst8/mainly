@@ -55,8 +55,9 @@ directly only if you are pointing at a Postgres you manage yourself.
 ## Filtered folder
 
 All optional. Without `FILTER_LLM_KEY` the filter runs on rules and its own
-classifier, and the language-model setting is shown as unavailable. See
-[filtering.md](filtering.md).
+classifier until a user saves their own key in **Settings → Filtered**. A
+user's own key replaces these settings for that user. See
+[filtering.md](filtering.md#your-own-key).
 
 | Variable | Default | Notes |
 | --- | --- | --- |

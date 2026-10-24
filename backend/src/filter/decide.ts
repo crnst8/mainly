@@ -26,9 +26,8 @@ import {
   trained,
 } from './classifier.ts';
 import { featuresOf } from './features.ts';
-import { LLM_BATCH, classify, llmAvailable, takeBudget, type LlmMessage } from './llm.ts';
+import { LLM_BATCH, classify, providerFor, takeBudget, type LlmMessage } from './llm.ts';
 import { correspondence, inputOf, keyOf, modelFor, rulesFor, trackRecord, type FilterRow } from './model.ts';
-import { config } from '../config.ts';
 import { fileByRole } from '../sync/filing.ts';
 
 export interface Candidate {
@@ -98,15 +97,17 @@ export async function decide(
 
   /* 4. The language model. */
   const examples = model.examples;
-  if (!prefs.llm || !llmAvailable() || !unsure.length || !examples.some((e) => e.verdict === 'filter')) return out;
+  if (!prefs.llm || !unsure.length || !examples.some((e) => e.verdict === 'filter')) return out;
+  const provider = await providerFor(userId);
+  const name = prefs.llmModel || provider?.defaultModel;
+  if (!provider || !name) return out;
   const granted = takeBudget(userId, unsure.length);
   const asked = unsure.slice(0, granted);
-  const name = prefs.llmModel || config.filter.llm.model;
   const needed = effectiveThreshold(LLM_THRESHOLD[prefs.sensitivity], record.llm.autoFiled, record.llm.rescued);
   for (let i = 0; i < asked.length; i += LLM_BATCH) {
     const batch = asked.slice(i, i + LLM_BATCH);
     try {
-      const verdicts = await classify(userId, name, batch.map((c) => llmMessage(c.row)), examples);
+      const verdicts = await classify(provider, userId, name, batch.map((c) => llmMessage(c.row)), examples);
       verdicts.forEach((v, j) => {
         if (v?.filter && v.confidence >= needed)
           out.push({ id: batch[j]!.row.id, stage: 'llm', score: v.confidence, model: name });

@@ -24,6 +24,7 @@ import type {
   Preferences,
   PushDevice,
   PushSubscriptionInput,
+  FilterKeyInput,
   FilterModelTrial,
   FilterSource,
   FilterStatus,
@@ -173,6 +174,9 @@ export class HttpApi implements MailApi {
   forgetFilterSource = (source: Pick<FilterSource, 'kind' | 'value'>) =>
     this.post<void>('/filter/forget', source);
   sweepFiltered = () => this.post<{ filed: number }>('/filter/sweep');
+  setFilterKey = (input: FilterKeyInput) =>
+    this.req<void>('/filter/llm/key', { method: 'PUT', body: JSON.stringify(input) });
+  removeFilterKey = () => this.req<void>('/filter/llm/key', { method: 'DELETE' });
   listFilterModels = () => this.req<string[]>('/filter/models');
   tryFilterModel = (model: string | null) => this.post<FilterModelTrial>('/filter/models/try', { model });
 
