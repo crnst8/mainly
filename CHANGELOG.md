@@ -1,3 +1,9 @@
+## 1.4.0 — 2026-10-24
+
+- feat: Filtered folder — filter out, learned filing, optional language model
+- feat: model provider and API key in Settings → Filtered
+- chore: dependency updates, Node 26 image
+
 ## 1.3.8 — 2026-10-05
 
 - feat: notifications & custom bins
