@@ -91,7 +91,7 @@ backend/    Fastify + pg + imapflow + nodemailer + mailparser + argon2
   src/cli/          create-user · token · domain · seed
   migrations/       numbered, forward-only SQL (001…016)
   scripts/          smoke · query-check · index-check · check-contract ·
-                    static-check · auth-check · consistency-check · database-benchmark
+                    static-check · auth-check · consistency-check · database-benchmark · filter-benchmark
 mcp/        MCP server over stdio — the same HTTP API, exposed to agents
 site/       landing page + hosted demo shell
 scripts/    build-site · deploy-site · release · mainly-provision (+ its .md)
@@ -128,6 +128,7 @@ Ignore `frontend/backend/` — empty directories left by `tsc -b`, not source.
 | Filtered folder: what files on arrival | `backend/src/filter/decide.ts` (rules → correspondence → classifier → LLM) |
 | Filtered folder: learning from moves | `backend/src/filter/training.ts`, called from the move case in `modules/messages/routes.ts` |
 | Filtered folder: optional LLM | `backend/src/filter/llm.ts` (OpenAI-compatible; operator key in env, see `config.ts`) |
+| Synthetic model benchmark (manual, operator key in env) | `backend/scripts/filter-benchmark.mjs` · results in `docs/filtering.md` |
 | Filtered settings / Filter out action | `frontend/src/features/settings/FilteredSettings.tsx` · `filter()` in `store.ts` |
 | Missing Trash/Junk creation | `backend/src/sync/folders.ts` |
 | Push notifications | `backend/src/push/` · `modules/push/routes.ts` · `frontend/src/lib/notifications.ts` · `frontend/public/sw.js` |

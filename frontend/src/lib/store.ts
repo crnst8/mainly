@@ -1179,9 +1179,11 @@ export const useStore = create<State & Actions>((set, get) => ({
   async filter(ids) {
     const target = ids ?? targetIds(get());
     const rows = get().result?.messages ?? [];
+    const message = (id: Id) => rows.find((m) => m.id === id)
+      ?? (get().openMessage?.id === id ? get().openMessage : null);
     const byAccount = new Map<Id, Id[]>();
     for (const id of target) {
-      const row = rows.find((m) => m.id === id) ?? (get().openMessage?.id === id ? get().openMessage : null);
+      const row = message(id);
       if (!row) continue;
       const members = byAccount.get(row.accountId) ?? [];
       members.push(id);
@@ -1190,7 +1192,7 @@ export const useStore = create<State & Actions>((set, get) => ({
     await Promise.all([...byAccount].map(async ([accountId, members]) => {
       const folder = get().folders.find((f) => f.role === 'filtered' && f.accountId === accountId);
       // Already in Filtered, filtering again means "out of my sight": Trash.
-      if (folder && members.every((id) => rows.find((m) => m.id === id)?.folderId === folder.id)) {
+      if (folder && members.every((id) => message(id)?.folderId === folder.id)) {
         await get().act(members, { type: 'delete', permanent: false }, 'Moved to trash');
         return;
       }

@@ -5,6 +5,7 @@ import { query, close } from '../src/db/index.ts';
 import { applyOp, dueOps, replayOps } from '../src/sync/replay.ts';
 import { applyFlags, upsert, syncFolder, syncEnvelopes } from '../src/sync/envelopes.ts';
 import { handleArrivals } from '../src/sync/arrivals.ts';
+import { fileDecisions } from '../src/filter/decide.ts';
 import { syncFolders } from '../src/sync/folders.ts';
 const BASE = process.env.SMOKE_BASE ?? 'http://127.0.0.1:5284/api';
 let cookie = '',
@@ -677,6 +678,19 @@ try {
     assert.equal(photos.folder_id, filteredFolder.id);
   });
 
+  // A decision can finish after the user archived the mail and replay caught
+  // up. Automatic filing must recheck the current folder inside its write.
+  await settle();
+  const [filterArchive] = await query(
+    `INSERT INTO folders(account_id,path,name,role,uidvalidity) VALUES ($1,'Archive','Archive','archive',1) RETURNING id`,
+    [filterAccount],
+  );
+  const raced = await byUid(3);
+  await act([raced.id], { type: 'move', folderId: filterArchive.id });
+  await settle();
+  const late = await fileDecisions(userId, filterAccount, [{ id: raced.id, stage: 'llm', score: 1, model: 'test' }]);
+  check('a late automatic decision leaves user-archived mail alone', () => assert.deepEqual(late, []));
+
   // ── Missing Trash and Junk ───────────────────────────────────────────────
   const [{ id: bareAccount }] = await query(
     `INSERT INTO accounts(user_id,address,domain,label,imap_host,imap_port,smtp_host,smtp_port,username,secret_ciphertext,secret_nonce,secret_tag,status)
@@ -710,6 +724,25 @@ try {
   });
   await syncFolders(bareCreds, barePeer);
   check('folders that exist are not created twice', () => assert.equal(created.length, 3));
+
+  for (const delimiter of ['.', '/']) {
+    const paths = ['INBOX', `INBOX${delimiter}Filtered`, `INBOX${delimiter}Filtered${delimiter}Receipts`, 'Projects.v1', `Projects.v1${delimiter}Notes`];
+    const peer = {
+      ...barePeer,
+      list: async () => paths.map((path) => ({ path, name: path.split(delimiter).at(-1), delimiter, flags: new Set(), subscribed: true })),
+    };
+    await setPrefs({ mailHandling: { createMissingFolders: false }, filtering: { enabled: false } });
+    await syncFolders(bareCreds, peer);
+    const tree = await query(`SELECT child.path, parent.path AS parent FROM folders child
+      LEFT JOIN folders parent ON parent.id=child.parent_id WHERE child.account_id=$1`, [bareAccount]);
+    check(`folder parents follow the server's ${delimiter} delimiter`, () => {
+      const parents = new Map(tree.map((r) => [r.path, r.parent]));
+      assert.equal(parents.get(`INBOX${delimiter}Filtered`), 'INBOX');
+      assert.equal(parents.get(`INBOX${delimiter}Filtered${delimiter}Receipts`), `INBOX${delimiter}Filtered`);
+      assert.equal(parents.get(`Projects.v1${delimiter}Notes`), 'Projects.v1');
+      assert.equal(parents.get('Projects.v1'), null);
+    });
+  }
 
   console.log(
     `consistency-check: ${passed} passed; local action acknowledgements ${timings.map((ms) => Math.round(ms) + 'ms').join(', ')}`,

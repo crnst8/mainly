@@ -206,20 +206,15 @@ export async function syncFolders(
         );
       }
 
-      // Resolve parents after all folder rows exist.
+      // Use LIST's delimiter-derived parent path, including literal dots or
+      // SQL wildcard characters in folder names. Missing parents become null.
       await tx.query(
-        `
-        UPDATE folders child
-           SET parent_id = parent.id
-          FROM folders parent
-         WHERE child.account_id = $1
-           AND parent.account_id = $1
-           AND parent.id <> child.id
-           AND (child.path LIKE parent.path || '.%' OR child.path LIKE parent.path || '/%')
-           AND length(child.path) - length(replace(child.path, '.', ''))
-             = length(parent.path) - length(replace(parent.path, '.', '')) + 1
-        `,
-        [creds.id],
+        `UPDATE folders child
+            SET parent_id = parent.id
+           FROM jsonb_to_recordset($2::jsonb) AS r(path text, parent_path text)
+           LEFT JOIN folders parent ON parent.account_id = $1 AND parent.path = r.parent_path
+          WHERE child.account_id = $1 AND child.path = r.path`,
+        [creds.id, JSON.stringify(rows.map((r) => ({ path: r.path, parent_path: r.parentPath })))],
       );
 
       // Folders that vanished server-side. Their messages cascade away with

@@ -77,7 +77,7 @@ folder is for.
 | Setting | Effect |
 | --- | --- |
 | Filter new mail | Master switch. Off: no Filtered folder is created and nothing is filed on arrival. Filter out still moves mail into an existing Filtered folder. |
-| Learn | Step 3. Off: rules and correspondence only. |
+| Learn | Step 3. Off: skips the classifier; the optional language model can still run. |
 | Sensitivity | The classifier and model thresholds above. |
 | Inbox mail from filtered senders → File now | Applies your rules to up to 5,000 of the newest messages in each inbox. Rules only; the classifier and the model never move existing mail. |
 | Learned | How many examples you have given, whether the classifier is trained, how much it filed by itself and how much of that you took back, and the threshold it currently needs. |
@@ -102,11 +102,26 @@ Any OpenAI-compatible `chat/completions` endpoint works:
 | Ollama | `http://<host>:11434/v1` |
 | LM Studio | `http://<host>:1234/v1` |
 
-On OpenCode Go only models served on its chat completions endpoint work; models
-it serves only through its Messages or Responses endpoints fail in **Try**. The
-default, `mimo-v2.6-flash`, was the cheapest chat completions model with the
-largest monthly allowance in October 2026 ($0.14 in / $0.28 out per million
-tokens). `glm-5.3-flash` is the alternative at a similar price.
+The default is `minimax-m3.1-flash`. On 2026-10-24 it classified all ten
+synthetic messages correctly in each of three runs (2.4–2.9 s per batch),
+including keeping personal mail, security alerts, deliveries and bills.
+`glm-5.3-flash` and `mimo-v2.6-flash` also passed all three runs, taking
+4.6–8.7 s and 6.5–7.7 s respectively. This small fixture checks compatibility
+and basic behavior; it does not establish accuracy on your mailbox.
+
+Single runs of `deepseek-v4.1-flash`, `longcat-2.5-preview-free`, `mimo-v2.5`
+and `qwen3.8-flash` also passed, but Qwen took longer than the default timeout.
+`hy3` returned no readable verdicts. Availability depends on the provider and
+workspace settings; use **Try** before selecting another model. The model list
+shows the provider’s advertised ids; **Try** checks whether each one can return
+a usable classification through chat completions.
+
+To repeat the synthetic benchmark without sending any mail, export
+`FILTER_LLM_KEY` in your shell, then run from the repository root:
+
+```sh
+node --experimental-strip-types backend/scripts/filter-benchmark.mjs minimax-m3.1-flash glm-5.3-flash mimo-v2.6-flash
+```
 
 ### What is sent
 

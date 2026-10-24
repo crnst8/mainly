@@ -83,8 +83,13 @@ export function FilteredSettings() {
   }
 
   async function forget(source: FilterSource) {
-    await (await getApi()).forgetFilterSource(source);
-    await reload();
+    setFailure(null);
+    try {
+      await (await getApi()).forgetFilterSource(source);
+      await reload();
+    } catch (e) {
+      setFailure(e instanceof Error ? e.message : 'Could not forget this source');
+    }
   }
 
   const llm = status?.llm;

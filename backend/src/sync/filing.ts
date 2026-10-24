@@ -44,7 +44,7 @@ export async function fileByRole(
            FROM messages m JOIN folders f ON f.id = m.folder_id
           WHERE m.account_id = $1 AND m.id = ANY($2::uuid[])
             AND m.remote_folder_id IS NULL AND m.uid IS NOT NULL
-            AND m.folder_id <> $3
+            AND m.folder_id <> $3 AND f.role = 'inbox'
           ORDER BY m.id FOR UPDATE OF m`,
         [accountId, ids, folder.id],
       )

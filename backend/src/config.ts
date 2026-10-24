@@ -171,11 +171,9 @@ export const config = {
         process.env.FILTER_LLM_MODELS_URL ||
         (process.env.FILTER_LLM_URL ? null : OPENCODE_GO_MODELS),
       key: process.env.FILTER_LLM_KEY || null,
-      // Cheapest chat-completions model on OpenCode Go with the largest monthly
-      // allowance as of 2026-10 ($0.14 / $0.28 per million tokens, $60 limit).
-      // Runner-up: glm-5.3-flash ($0.15 / $0.50). A classification is a few
-      // hundred tokens in and a few dozen out, so price per call dominates.
-      model: process.env.FILTER_LLM_MODEL || 'mimo-v2.6-flash',
+      // Fastest of the three models that passed all 30 synthetic decisions
+      // in the 2026-10-24 benchmark. See docs/filtering.md for the limits.
+      model: process.env.FILTER_LLM_MODEL || 'minimax-m3.1-flash',
       timeoutMs: num('FILTER_LLM_TIMEOUT_MS', 12_000),
       hourlyMax: num('FILTER_LLM_HOURLY_MAX', 120),
     },

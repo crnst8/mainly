@@ -198,8 +198,28 @@ async function request(url: string, init: RequestInit, userId: string | null = n
     const e = err as Error;
     throw new LlmError(e.name === 'TimeoutError' ? `No answer within ${timeoutMs / 1000}s` : e.message);
   }
-  const raw = await res.text();
-  if (raw.length > MAX_RESPONSE_BYTES) throw new LlmError('The provider sent an oversized response');
+  // Bound bytes while reading: checking text() afterwards has already
+  // buffered an arbitrarily large provider response.
+  const reader = res.body?.getReader();
+  const chunks: Uint8Array[] = [];
+  let size = 0;
+  if (reader) {
+    try {
+      for (;;) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        size += value.byteLength;
+        if (size > MAX_RESPONSE_BYTES) {
+          await reader.cancel();
+          throw new LlmError('The provider sent an oversized response');
+        }
+        chunks.push(value);
+      }
+    } finally {
+      reader.releaseLock();
+    }
+  }
+  const raw = Buffer.concat(chunks).toString('utf8');
   let json: unknown = null;
   try {
     json = raw ? JSON.parse(raw) : null;
@@ -220,7 +240,8 @@ export async function listModels(): Promise<string[]> {
   const json = (await request(modelsUrl ?? `${baseUrl}/models`, { method: 'GET' })) as {
     data?: { id?: unknown }[];
   } | null;
-  const ids = (json?.data ?? []).map((m) => m?.id).filter((id): id is string => typeof id === 'string');
+  if (!Array.isArray(json?.data)) throw new LlmError('The provider sent an unreadable model list');
+  const ids = json.data.map((m) => m?.id).filter((id): id is string => typeof id === 'string' && id.length > 0);
   return [...new Set(ids)].sort();
 }
 
