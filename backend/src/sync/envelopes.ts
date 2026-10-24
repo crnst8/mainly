@@ -35,7 +35,9 @@ import {
   decodePart,
   firstAddr,
   htmlToText,
+  isBulk,
   isMarkedSpam,
+  listIdOf,
   normaliseSubject,
   cleanId,
   parseReferences,
@@ -118,6 +120,8 @@ interface Indexed extends Threadable {
   previewCharset: string | undefined;
   bodyText: string | null;
   spam: boolean;
+  listId: string | null;
+  bulk: boolean;
 }
 
 /* ── Entry point ───────────────────────────────────────────────────────────── */
@@ -414,8 +418,10 @@ async function fetchEnvelopes(
       // the chain the moment one message in the middle is missing. One extra
       // header line per message is the cheapest correctness there is.
       // X-Spam-Flag rides along for the spam filter: one more header line
-      // instead of a body fetch per message to read the server's verdict.
-      headers: ['references', 'x-spam-flag'],
+      // instead of a body fetch per message to read the server's verdict. The
+      // list headers are the same bargain for the Filtered folder, which keys
+      // its rules on List-Id and weighs whether mail was sent in bulk.
+      headers: ['references', 'x-spam-flag', 'list-id', 'list-unsubscribe', 'precedence'],
     },
     { uid: true },
   )) {
@@ -476,6 +482,8 @@ async function fetchEnvelopes(
       previewCharset: preview?.node.parameters?.charset,
       bodyText: null,
       spam: isMarkedSpam(subject, headerBlock),
+      listId: listIdOf(headerBlock),
+      bulk: isBulk(headerBlock),
     });
   }
 
@@ -567,7 +575,7 @@ INSERT INTO messages (
   subject, subject_normalised, preview, date,
   body_search, body_indexed_at,
   seen, flagged, answered, draft_flag,
-  has_attachments, attachment_count, size, priority
+  has_attachments, attachment_count, size, priority, list_id, bulk
 )
 SELECT $1::uuid, $2::uuid, r.uid, r.message_id, r.thread_id, r.in_reply_to,
        coalesce(r.references_, '{}'),
@@ -577,14 +585,15 @@ SELECT $1::uuid, $2::uuid, r.uid, r.message_id, r.thread_id, r.in_reply_to,
              ELSE setweight(to_tsvector('english', r.body_text), 'D') END,
         CASE WHEN r.body_text IS NULL THEN NULL ELSE now() END,
         r.seen, r.flagged, r.answered, r.draft_flag,
-       r.attachment_count > 0, r.attachment_count, r.size, $3::priority_t
+       r.attachment_count > 0, r.attachment_count, r.size, $3::priority_t,
+       r.list_id, coalesce(r.bulk, false)
   FROM jsonb_to_recordset($4::jsonb) AS r(
     uid bigint, message_id text, thread_id text, in_reply_to text, references_ text[],
     from_name text, from_address text, to_addrs jsonb, cc_addrs jsonb,
      subject text, subject_normalised text, preview text, date timestamptz,
      body_text text,
     seen bool, flagged bool, answered bool, draft_flag bool,
-    attachment_count int, size int
+    attachment_count int, size int, list_id text, bulk bool
   )
 WHERE NOT EXISTS (
   SELECT 1 FROM sync_ops o
@@ -615,7 +624,9 @@ ON CONFLICT (folder_id, uid) DO UPDATE SET
   draft_flag = EXCLUDED.draft_flag,
   has_attachments = EXCLUDED.has_attachments,
   attachment_count = EXCLUDED.attachment_count,
-  size = EXCLUDED.size
+  size = EXCLUDED.size,
+  list_id = EXCLUDED.list_id,
+  bulk = EXCLUDED.bulk
 WHERE NOT EXISTS (
   SELECT 1 FROM sync_ops o WHERE o.account_id = messages.account_id
     AND o.kind = 'flag' AND o.payload->'ids' ? messages.id::text
@@ -656,6 +667,8 @@ export async function upsert(
     draft_flag: m.draft,
     attachment_count: m.attachmentCount,
     size: m.size,
+    list_id: m.listId,
+    bulk: m.bulk,
   }));
 
   const rows = await messageTransaction(

@@ -13,6 +13,7 @@ import {
   Chevron,
   Close,
   Dot,
+  Filtered,
   Group as GroupIcon,
   Layout,
   Refresh,
@@ -531,6 +532,7 @@ function SelectionBar() {
   const setFlag = useStore((s) => s.setFlag);
   const archive = useStore((s) => s.archive);
   const trash = useStore((s) => s.trash);
+  const filter = useStore((s) => s.filter);
 
   const ids = [...selected];
   const rows = (messages ?? []).filter((m) => selected.has(m.id));
@@ -582,6 +584,9 @@ function SelectionBar() {
       </IconButton>
       <IconButton label="Move to trash" hint="#" onClick={() => void trash()}>
         <Trash size={15} />
+      </IconButton>
+      <IconButton label="Filter out" hint="⌘⌫" onClick={() => void filter()}>
+        <Filtered size={15} />
       </IconButton>
     </div>
   );

@@ -236,6 +236,9 @@ interface Actions {
   markAccountsRead(accountIds: Id[], label: string, folderIds?: Id[]): Promise<void>;
   archive(ids?: Id[]): Promise<void>;
   trash(ids?: Id[]): Promise<void>;
+  /** Move to each account's Filtered folder. The server learns the sender or
+   *  list from the move, and files their next mail there on arrival. */
+  filter(ids?: Id[]): Promise<void>;
 
   setIdentity(accountId: Id): void;
   compose(seed?: Partial<Draft>): void;
@@ -1171,6 +1174,29 @@ export const useStore = create<State & Actions>((set, get) => ({
   async trash(ids) {
     const target = ids ?? targetIds(get());
     await get().act(target, { type: 'delete', permanent: false }, 'Moved to trash');
+  },
+
+  async filter(ids) {
+    const target = ids ?? targetIds(get());
+    const rows = get().result?.messages ?? [];
+    const byAccount = new Map<Id, Id[]>();
+    for (const id of target) {
+      const row = rows.find((m) => m.id === id) ?? (get().openMessage?.id === id ? get().openMessage : null);
+      if (!row) continue;
+      const members = byAccount.get(row.accountId) ?? [];
+      members.push(id);
+      byAccount.set(row.accountId, members);
+    }
+    await Promise.all([...byAccount].map(async ([accountId, members]) => {
+      const folder = get().folders.find((f) => f.role === 'filtered' && f.accountId === accountId);
+      // Already in Filtered, filtering again means "out of my sight": Trash.
+      if (folder && members.every((id) => rows.find((m) => m.id === id)?.folderId === folder.id)) {
+        await get().act(members, { type: 'delete', permanent: false }, 'Moved to trash');
+        return;
+      }
+      if (!folder) { get().toast('No Filtered folder on that account yet'); return; }
+      await get().act(members, { type: 'move', folderId: folder.id }, 'Filtered');
+    }));
   },
 
   /* ── Compose ────────────────────────────────────────────────────────────── */

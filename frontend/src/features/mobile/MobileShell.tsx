@@ -187,7 +187,7 @@ function ScopeSheet({ open, onClose }: { open: boolean; onClose: () => void }) {
     onClose();
   };
 
-  const roles: FolderRole[] = ['inbox', 'flagged', 'sent', 'drafts', 'archive', 'trash', 'junk'];
+  const roles: FolderRole[] = ['inbox', 'filtered', 'flagged', 'sent', 'drafts', 'archive', 'trash', 'junk'];
 
   return (
     <Sheet open={open} onClose={onClose} title="Show emails for">

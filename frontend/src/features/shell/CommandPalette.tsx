@@ -13,6 +13,7 @@ import {
   Clock,
   Command,
   Contrast,
+  Filtered,
   Folder as FolderIcon,
   Globe,
   Group as GroupIcon,
@@ -283,6 +284,14 @@ function useCommands(close: () => void): Cmd[] {
           icon: <Trash size={15} />,
           hint: ['#'],
           run: run(() => void s.trash()),
+        },
+        {
+          id: 'act:filter',
+          label: `Filter out ${n} message${n > 1 ? 's' : ''}`,
+          group: 'Act',
+          icon: <Filtered size={15} />,
+          hint: ['⌘', '⌫'],
+          run: run(() => void s.filter()),
         },
         {
           id: 'act:read',

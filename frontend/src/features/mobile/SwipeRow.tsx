@@ -11,7 +11,7 @@
  */
 
 import { useEffect, useRef, useState } from 'react';
-import { Archive, Dot, Star, Trash } from '@/components/icons';
+import { Archive, Dot, Filtered, Star, Trash } from '@/components/icons';
 import { useStore } from '@/lib/store';
 import type { MessageSummary, SwipeAction } from '@/lib/types';
 
@@ -46,6 +46,7 @@ interface Act {
 interface SwipeHandlers {
   archive: (ids?: string[]) => Promise<void>;
   trash: (ids?: string[]) => Promise<void>;
+  filter: (ids?: string[]) => Promise<void>;
   toggleRead: (ids?: string[]) => Promise<void>;
   toggleFlag: (ids?: string[]) => Promise<void>;
 }
@@ -58,6 +59,9 @@ function actOf(a: SwipeAction, h: SwipeHandlers): Act | null {
     case 'trash':
       return { label: 'Trash', tone: 'danger', icon: <Trash size={18} />, removes: true,
                run: (id) => void h.trash([id]) };
+    case 'filter':
+      return { label: 'Filter out', tone: 'neutral', icon: <Filtered size={18} />, removes: true,
+               run: (id) => void h.filter([id]) };
     case 'read':
       return { label: 'Read', tone: 'neutral', icon: <Dot size={14} />, removes: false,
                run: (id) => void h.toggleRead([id]) };
@@ -96,6 +100,7 @@ export function SwipeRow({
   const longSwipeCommits = mobile?.longSwipeCommits ?? true;
   const archive = useStore((s) => s.archive);
   const trash = useStore((s) => s.trash);
+  const filter = useStore((s) => s.filter);
   const toggleRead = useStore((s) => s.toggleRead);
   const toggleFlag = useStore((s) => s.toggleFlag);
 
@@ -128,7 +133,7 @@ export function SwipeRow({
     [id],
   );
 
-  const h = { archive, trash, toggleRead, toggleFlag };
+  const h = { archive, trash, filter, toggleRead, toggleFlag };
   // Swiping the content right reveals the left pane; swiping left reveals the right.
   const leftAct = actOf(swipeRight, h);
   const rightAct = actOf(swipeLeft, h);

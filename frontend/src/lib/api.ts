@@ -24,6 +24,9 @@ import type {
   Preferences,
   PushDevice,
   PushSubscriptionInput,
+  FilterModelTrial,
+  FilterSource,
+  FilterStatus,
   SavedView,
   ServerEvent,
   DomainGrant,
@@ -123,6 +126,19 @@ export interface MailApi {
   removePushDevice(id: Id): Promise<void>;
   /** Send a sample notification to one device. */
   testPushDevice(id: Id): Promise<void>;
+
+  /* The Filtered folder. It learns from moves into and out of it, through
+     `act`; these are for looking at what it learned and changing it. */
+
+  filterStatus(): Promise<FilterStatus>;
+  /** Forget every example from one sender or list. */
+  forgetFilterSource(source: Pick<FilterSource, 'kind' | 'value'>): Promise<void>;
+  /** File inbox mail the rules already cover. Returns how many moved. */
+  sweepFiltered(): Promise<{ filed: number }>;
+  /** Model ids the server's provider offers. Empty when none is configured. */
+  listFilterModels(): Promise<string[]>;
+  /** Classify one made-up message with a model, to see that it works. */
+  tryFilterModel(model: string | null): Promise<FilterModelTrial>;
 
 
   /* Domain control — optional, off unless a domain has been connected from a

@@ -25,6 +25,7 @@ export const ROLE_LABEL: Record<FolderRole, string> = {
   archive: 'Archive',
   flagged: 'Flagged',
   all: 'All folders',
+  filtered: 'Filtered',
   custom: 'Folder',
 };
 

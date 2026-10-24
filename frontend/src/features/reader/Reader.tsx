@@ -6,6 +6,7 @@ import {
   Clock,
   Contrast,
   Eye,
+  Filtered,
   Forward,
   Printer,
   Reply,
@@ -265,6 +266,7 @@ function ReaderBar({ message }: { message: Message }) {
   const toggleRead = useStore((s) => s.toggleRead);
   const archive = useStore((s) => s.archive);
   const trash = useStore((s) => s.trash);
+  const filter = useStore((s) => s.filter);
   const reply = useStore((s) => s.reply);
   const forward = useStore((s) => s.forward);
   // `?? []` inside the selector allocates a fresh array on every call whenever
@@ -314,6 +316,9 @@ function ReaderBar({ message }: { message: Message }) {
       </IconButton>
       <IconButton label="Move to trash" hint="#" onClick={() => void trash([message.id])}>
         <Trash size={15} />
+      </IconButton>
+      <IconButton label="Filter out" hint="⌘⌫" onClick={() => void filter([message.id])}>
+        <Filtered size={15} />
       </IconButton>
 
       <span className="listbar__divider" />

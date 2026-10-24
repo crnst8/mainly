@@ -52,6 +52,21 @@ directly only if you are pointing at a Postgres you manage yourself.
 | `BODY_CACHE_TTL_DAYS` | `30` | Bodies are cached, not stored. |
 | `SYNC_MAX_CONCURRENT_ACCOUNTS` | `min(4, DATABASE_POOL_MAX - 2)` | Must be a positive integer below `DATABASE_POOL_MAX`. Each account sync holds an advisory-lock connection, so this leaves reserved capacity for API queries. |
 
+## Filtered folder
+
+All optional. Without `FILTER_LLM_KEY` the filter runs on rules and its own
+classifier, and the language-model setting is shown as unavailable. See
+[filtering.md](filtering.md).
+
+| Variable | Default | Notes |
+| --- | --- | --- |
+| `FILTER_LLM_KEY` | unset | API key for the provider. Required to enable the model; a local server that needs none can be given any value. Never returned by the API or logged. |
+| `FILTER_LLM_URL` | `https://opencode.ai/inference/go/openai/v1` | Base URL of an OpenAI-compatible API. `/chat/completions` and `/models` are appended. Works with OpenCode Go, OpenRouter, OpenAI, Ollama (`http://host:11434/v1`), LM Studio and vLLM. |
+| `FILTER_LLM_MODELS_URL` | OpenCode Go's model list, or `FILTER_LLM_URL/models` when `FILTER_LLM_URL` is set | Where the settings screen reads model ids from. Only needed when a provider lists models somewhere else. |
+| `FILTER_LLM_MODEL` | `mimo-v2.6-flash` | The model used when a user has not picked one. |
+| `FILTER_LLM_TIMEOUT_MS` | `12000` | Per request. A timeout leaves the mail in the inbox. |
+| `FILTER_LLM_HOURLY_MAX` | `120` | Messages sent to the model per user per hour. Past it, unsure mail stays in the inbox until the next hour. |
+
 ## Database
 
 | Variable | Default | Notes |

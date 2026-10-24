@@ -41,7 +41,8 @@ only in production builds.
 
 Only mail that arrives after a folder's first sync notifies. A new account's
 backlog does not, and neither does unread mail older than 48 hours that another
-client moves into the inbox. Spam never notifies.
+client moves into the inbox. Spam never notifies, and neither does mail filed
+into Filtered ([filtering.md](filtering.md)).
 
 When the app is open and in front on a device, that device's notification is
 skipped, except on Safari, which requires every push to show one. Opening the

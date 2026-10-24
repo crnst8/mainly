@@ -96,19 +96,22 @@ backend/src/
     drafts/            compose state
     views/             saved views
     unsubscribe/       List-Unsubscribe handling
+    filter/            the Filtered folder's status, forget, sweep and model routes
     events/            SSE fan-out
   sync/
     pool.ts            IMAP connection pool with per-account limits
     engine.ts          the sync loop: claim → sync → release
-    folders.ts         LIST/LSUB → folder rows; creates missing Trash/Junk
+    folders.ts         LIST/LSUB → folder rows; creates missing Trash/Junk/Filtered
     envelopes.ts       incremental envelope fetch — the bulk of the work
     threading.ts       thread assembly
     bodies.ts          on-demand body fetch, sanitise, cache
-    arrivals.ts        after indexing: file spam into Junk, then notify
+    arrivals.ts        after indexing: file spam into Junk, filter into Filtered, then notify
+    filing.ts          moves made on the user's behalf, through the replay queue
     replay.ts          outbound flags, moves, deletes
     idle.ts            IDLE connections for push
   smtp/                outbound send
   push/                Web Push: VAPID, RFC 8291 encryption, notification rules
+  filter/              the Filtered folder: features, classifier, rules, model client, training
 ```
 
 **Business logic never imports Fastify. Transport never imports `imapflow`.**

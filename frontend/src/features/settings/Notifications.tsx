@@ -314,7 +314,7 @@ export function Filtering() {
 
 /** One switch per mailbox, with all-on and all-off for the forty-five-mailbox
  *  case where flipping each is the slow way. */
-function AccountChecklist({
+export function AccountChecklist({
   title,
   ariaVerb,
   isOn,

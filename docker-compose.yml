@@ -70,6 +70,14 @@ services:
       SYNC_INTERVAL_MS: ${SYNC_INTERVAL_MS:-120000}
       SYNC_IDLE_INTERVAL_MS: ${SYNC_IDLE_INTERVAL_MS:-900000}
       IMAP_IDLE_MAX_ACCOUNTS: ${IMAP_IDLE_MAX_ACCOUNTS:-12}
+      # Optional: a language model the Filtered folder may ask about mail it is
+      # unsure of. Unset key = off. See docs/filtering.md.
+      FILTER_LLM_URL: ${FILTER_LLM_URL:-}
+      FILTER_LLM_MODELS_URL: ${FILTER_LLM_MODELS_URL:-}
+      FILTER_LLM_KEY: ${FILTER_LLM_KEY:-}
+      FILTER_LLM_MODEL: ${FILTER_LLM_MODEL:-}
+      FILTER_LLM_TIMEOUT_MS: ${FILTER_LLM_TIMEOUT_MS:-12000}
+      FILTER_LLM_HOURLY_MAX: ${FILTER_LLM_HOURLY_MAX:-120}
       APP_VERSION: ${MAINLY_VERSION:-latest}
     ports:
       - '${BIND_ADDRESS:-127.0.0.1}:${PORT:-5274}:5274'

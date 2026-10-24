@@ -19,6 +19,7 @@ import {
   Archive,
   Chevron,
   Draft,
+  Filtered,
   Folder as FolderIcon,
   Inbox,
   Junk,
@@ -43,6 +44,7 @@ const ROLE_ICON: Record<FolderRole, typeof Inbox> = {
   archive: Archive,
   junk: Junk,
   trash: Trash,
+  filtered: Filtered,
   flagged: Star,
   all: FolderIcon,
   custom: FolderIcon,
@@ -50,6 +52,7 @@ const ROLE_ICON: Record<FolderRole, typeof Inbox> = {
 
 const UNIFIED_ROLES: { role: FolderRole; label: string }[] = [
   { role: 'inbox', label: 'Inbox' },
+  { role: 'filtered', label: 'Filtered' },
   { role: 'drafts', label: 'Drafts' },
   { role: 'sent', label: 'Sent' },
   { role: 'archive', label: 'Archive' },

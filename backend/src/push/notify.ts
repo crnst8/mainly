@@ -16,8 +16,9 @@ import { deliver, type PushOptions, type PushTarget } from './webpush.ts';
 const NEWS_WINDOW_MS = 48 * 3600_000;
 /** Past this many separate notifications in one pass, one summary says the rest. */
 const MAX_SEPARATE = 4;
-/** Roles that never notify under "all folders". */
-const QUIET_ROLES = new Set(['sent', 'drafts', 'junk', 'trash']);
+/** Roles that never notify under "all folders". Filtered is mail the user
+ *  asked to stop seeing, so it is quiet for the same reason Junk is. */
+const QUIET_ROLES = new Set(['sent', 'drafts', 'junk', 'trash', 'filtered']);
 
 /** Whether `now` falls inside the quiet window, read in the window's own zone.
  *  Exported for the unit test. */

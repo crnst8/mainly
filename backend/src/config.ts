@@ -67,6 +67,11 @@ const hostMap = (raw: string | undefined): Map<string, string> => {
 
 export type Role = 'api' | 'sync' | 'all';
 
+/** OpenCode Go serves chat completions and its model list under different
+ *  prefixes (https://opencode.ai/docs/go). */
+const OPENCODE_GO_CHAT = 'https://opencode.ai/inference/go/openai/v1';
+const OPENCODE_GO_MODELS = 'https://opencode.ai/inference/go/v1/models';
+
 const databasePoolMax = num('DATABASE_POOL_MAX', 10);
 const syncMaxConcurrentAccounts = num(
   'SYNC_MAX_CONCURRENT_ACCOUNTS',
@@ -149,6 +154,31 @@ export const config = {
     idleIntervalMs: num('SYNC_IDLE_INTERVAL_MS', 900_000),
     folderIntervalMs: num('SYNC_FOLDER_INTERVAL_MS', 600_000),
     bodyCacheTtlDays: num('BODY_CACHE_TTL_DAYS', 30),
+  },
+
+  /* The language model the Filtered folder may ask about mail its classifier is
+     unsure of. Any OpenAI-compatible chat completions endpoint works: OpenCode
+     Go by default, or OpenRouter, OpenAI, Ollama, LM Studio, vLLM. Without a
+     key (a local server that needs none can be given any value) the feature
+     is unavailable and nothing leaves this server. The operator sets the
+     provider, because the URL is an outbound-request surface and the key is a
+     bill; each user only picks a model from the provider's own list. */
+  filter: {
+    llm: {
+      // `||`, not `??`: compose passes an unset variable as an empty string.
+      baseUrl: (process.env.FILTER_LLM_URL || OPENCODE_GO_CHAT).replace(/\/+$/, ''),
+      modelsUrl:
+        process.env.FILTER_LLM_MODELS_URL ||
+        (process.env.FILTER_LLM_URL ? null : OPENCODE_GO_MODELS),
+      key: process.env.FILTER_LLM_KEY || null,
+      // Cheapest chat-completions model on OpenCode Go with the largest monthly
+      // allowance as of 2026-10 ($0.14 / $0.28 per million tokens, $60 limit).
+      // Runner-up: glm-5.3-flash ($0.15 / $0.50). A classification is a few
+      // hundred tokens in and a few dozen out, so price per call dominates.
+      model: process.env.FILTER_LLM_MODEL || 'mimo-v2.6-flash',
+      timeoutMs: num('FILTER_LLM_TIMEOUT_MS', 12_000),
+      hourlyMax: num('FILTER_LLM_HOURLY_MAX', 120),
+    },
   },
 
   redisUrl: process.env.REDIS_URL ?? null,

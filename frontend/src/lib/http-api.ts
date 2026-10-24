@@ -24,6 +24,9 @@ import type {
   Preferences,
   PushDevice,
   PushSubscriptionInput,
+  FilterModelTrial,
+  FilterSource,
+  FilterStatus,
   SavedView,
   DomainGrant,
   DomainOp,
@@ -164,6 +167,14 @@ export class HttpApi implements MailApi {
   addPushDevice = (input: PushSubscriptionInput) => this.post<PushDevice>('/push/devices', input);
   removePushDevice = (id: Id) => this.req<void>(`/push/devices/${id}`, { method: 'DELETE' });
   testPushDevice = (id: Id) => this.post<void>(`/push/devices/${id}/test`);
+
+  /* Filtered */
+  filterStatus = () => this.req<FilterStatus>('/filter/status');
+  forgetFilterSource = (source: Pick<FilterSource, 'kind' | 'value'>) =>
+    this.post<void>('/filter/forget', source);
+  sweepFiltered = () => this.post<{ filed: number }>('/filter/sweep');
+  listFilterModels = () => this.req<string[]>('/filter/models');
+  tryFilterModel = (model: string | null) => this.post<FilterModelTrial>('/filter/models/try', { model });
 
   /* Domain control */
   listDomains = () => this.req<ManagedDomain[]>('/domains');

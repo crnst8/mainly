@@ -49,6 +49,7 @@ Instead of leaning on IMAP, Mainly uses Postgres to store metadata from the mail
 - most things have a **right-click-to-change** for customisation and settings
 - **new-mail notifications** on any device that opts in, grouped per mailbox, with per-mailbox, priority-tier and quiet-hours controls
 - files server-marked **spam** (`***SPAM***`, `X-Spam-Flag`) into Junk, and creates **Trash and Junk** on mailboxes that lack them — see [docs/notifications.md](docs/notifications.md)
+- **Filter out** (`⌘⌫`) moves mail to a **Filtered** folder under each inbox, and that sender's or list's next mail goes there instead of the inbox. It learns from what you file and what you take back, and can ask a language model you configure about mail it is unsure of — see [docs/filtering.md](docs/filtering.md)
 
 
 

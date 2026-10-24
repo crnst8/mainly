@@ -49,6 +49,7 @@ const ROLES: FolderRole[] = [
   'archive',
   'flagged',
   'all',
+  'filtered',
   'custom',
 ];
 const SORTS: SortKey[] = ['date', 'priority', 'sender', 'subject', 'size', 'unread'];
