@@ -257,4 +257,15 @@ await check('an old pagination response cannot append after filters change', asy
     ['filtered'],
   );
 });
+await check('filtering an already-filtered reader message outside the list moves it to Trash', async () => {
+  store.setState({
+    result: result([]),
+    openMessage: { ...row, folderId: 'filtered' },
+    folders: [...store.getState().folders, { id: 'filtered', accountId: 'a', role: 'filtered' }],
+  });
+  const calls = [];
+  transport.act = async (ids, action) => { calls.push({ ids, action }); };
+  await store.getState().filter(['m']);
+  assert.deepEqual(calls, [{ ids: ['m'], action: { type: 'delete', permanent: false } }]);
+});
 console.log(`store-check: ${passed} passed, 0 failed`);

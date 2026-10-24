@@ -80,6 +80,14 @@ export function useKeyboard() {
         return s.selectAll();
       }
 
+      // ⌘⌫ is Delete in Apple Mail and Outlook; here it is the stronger
+      // delete: out of the inbox, and the sender's next mail with it. Checked
+      // before the single keys, where a bare ⌫ is still Trash.
+      if (mod && (e.key === 'Backspace' || e.key === 'Delete')) {
+        e.preventDefault();
+        return void s.filter();
+      }
+
       /* ── Sequences ────────────────────────────────────────────────────── */
 
       const prev = pending.current;
@@ -91,7 +99,7 @@ export function useKeyboard() {
           // sent folder, "go to inbox" and "go home" are different places, and
           // conflating them makes one of them unreachable.
           if (e.key === 'h') return s.goHome();
-          const roles = { i: 'inbox', d: 'drafts', s: 'sent', a: 'archive', t: 'trash', j: 'junk' } as const;
+          const roles = { i: 'inbox', f: 'filtered', d: 'drafts', s: 'sent', a: 'archive', t: 'trash', j: 'junk' } as const;
           const role = roles[e.key as keyof typeof roles];
           if (role) return s.setScope({ ...rolefulScope(s), role });
           if (e.key === 'g') return s.setScope({ ...rolefulScope(s), role: null });
@@ -144,6 +152,9 @@ export function useKeyboard() {
         case 'Backspace':
           e.preventDefault();
           return void s.trash();
+        case '-':
+          e.preventDefault();
+          return void s.filter();
         case 'c':
           e.preventDefault();
           return s.compose();
@@ -216,6 +227,7 @@ export const SHORTCUTS: { keys: string[]; label: string; group: string }[] = [
   { keys: ['Esc'], label: 'Close / clear selection', group: 'Navigate' },
   { keys: ['g', 'h'], label: 'Go home — all mail', group: 'Navigate' },
   { keys: ['g', 'i'], label: 'Inbox, here', group: 'Navigate' },
+  { keys: ['g', 'f'], label: 'Filtered, here', group: 'Navigate' },
   { keys: ['g', 'd'], label: 'Drafts, here', group: 'Navigate' },
   { keys: ['g', 's'], label: 'Sent, here', group: 'Navigate' },
   { keys: ['g', 'a'], label: 'Archive, here', group: 'Navigate' },
@@ -232,6 +244,8 @@ export const SHORTCUTS: { keys: string[]; label: string; group: string }[] = [
   { keys: ['s'], label: 'Toggle flag', group: 'Act' },
   { keys: ['e'], label: 'Archive', group: 'Act' },
   { keys: ['#'], label: 'Move to trash', group: 'Act' },
+  { keys: ['⌘', '⌫'], label: 'Filter out', group: 'Act' },
+  { keys: ['-'], label: 'Filter out', group: 'Act' },
   { keys: ['z'], label: 'Undo last action', group: 'Act' },
 
   { keys: ['i'], label: 'Original colours / fit to dark', group: 'Act' },

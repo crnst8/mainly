@@ -27,6 +27,7 @@ const BY_NAME: [RegExp, FolderRole][] = [
   [/^(trash|deleted items|deleted messages|bin)$/i, 'trash'],
   [/^(junk|junk e-?mail|spam|bulk mail)$/i, 'junk'],
   [/^(archive|all mail)$/i, 'archive'],
+  [/^filtered$/i, 'filtered'],
 ];
 
 function roleOf(specialUse: string | undefined, name: string, path: string): FolderRole {
@@ -39,22 +40,27 @@ function roleOf(specialUse: string | undefined, name: string, path: string): Fol
 /** Roles get a fixed order; custom folders sort alphabetically after them. */
 const ROLE_ORDER: Record<FolderRole, number> = {
   inbox: 0,
-  drafts: 1,
-  sent: 2,
-  archive: 3,
-  flagged: 4,
-  junk: 5,
-  trash: 6,
-  all: 7,
+  filtered: 1,
+  drafts: 2,
+  sent: 3,
+  archive: 4,
+  flagged: 5,
+  junk: 6,
+  trash: 7,
+  all: 8,
   custom: 100,
 };
 
-/** Folders every account should have, and the name each is created under.
- *  Dovecot's stock config and most others give these names their special-use
- *  attribute; where they do not, `BY_NAME` still recognises them. */
-const REQUIRED: [FolderRole, string][] = [
-  ['trash', 'Trash'],
-  ['junk', 'Junk'],
+/** Folders every account should have, and where each is created. Dovecot's
+ *  stock config and most others give Trash and Junk their special-use
+ *  attribute; where they do not, `BY_NAME` still recognises them. Filtered is
+ *  ours and lives under the inbox, which is where it reads as belonging in
+ *  every other client too: an array path is joined with the server's own
+ *  delimiter. A server that refuses children of INBOX gets it at the top. */
+const REQUIRED: [FolderRole, (string | string[])[]][] = [
+  ['trash', ['Trash']],
+  ['junk', ['Junk']],
+  ['filtered', [['INBOX', 'Filtered'], 'Filtered']],
 ];
 
 /** Account and role pairs the server refused to create. Kept for the process
@@ -62,13 +68,14 @@ const REQUIRED: [FolderRole, string][] = [
 const refused = new Set<string>();
 
 /**
- * Create Trash and Junk where the server has neither.
+ * Create Trash, Junk and Filtered where the server lacks them.
  *
  * Without a Trash folder, Move to trash has nowhere to go and is refused; without
  * Junk, the spam filter has nowhere to file. Many servers declare both but only
  * create them when a client asks (Dovecot without `auto = create`), so a mailbox
- * nobody has opened in another client has neither. Returns true when anything
- * was created, so the caller lists again.
+ * nobody has opened in another client has neither. Filtered is created when the
+ * filter is on for the account, whatever the Trash and Junk setting says.
+ * Returns true when anything was created, so the caller lists again.
  */
 async function createMissing(
   creds: AccountCredentials,
@@ -85,26 +92,37 @@ async function createMissing(
     ([role]) => !present.has(role) && !refused.has(`${creds.id}:${role}`),
   );
   if (!missing.length) return false;
-  if (!(await preferencesOf(creds.id)).mailHandling.createMissingFolders) return false;
+  const prefs = await preferencesOf(creds.id);
+  const wanted = missing.filter(([role]) =>
+    role === 'filtered'
+      ? prefs.filtering.enabled && !prefs.filtering.excluded.includes(creds.id)
+      : prefs.mailHandling.createMissingFolders,
+  );
 
   let created = false;
-  for (const [role, name] of missing) {
-    try {
-      // imapflow applies the account's namespace prefix, as for Sent.
-      await client.mailboxCreate(name);
-      await client.mailboxSubscribe(name).catch(() => {});
-      console.log({ account: creds.address, folder: name }, `created a missing ${role} folder`);
-      created = true;
-    } catch (err) {
-      const message = (err as Error).message;
-      refused.add(`${creds.id}:${role}`);
-      // Present but hidden from LIST, which some servers do for empty folders.
-      // Listing again is still right: if it shows up, the role is filled.
-      if (/already exists/i.test(message)) {
+  for (const [role, paths] of wanted) {
+    for (const [i, path] of paths.entries()) {
+      const name = Array.isArray(path) ? path.join('/') : path;
+      try {
+        // imapflow applies the account's namespace prefix, as for Sent.
+        await client.mailboxCreate(path);
+        await client.mailboxSubscribe(path).catch(() => {});
+        console.log({ account: creds.address, folder: name }, `created a missing ${role} folder`);
         created = true;
-        continue;
+        break;
+      } catch (err) {
+        const message = (err as Error).message;
+        // Present but hidden from LIST, which some servers do for empty folders.
+        // Listing again is still right: if it shows up, the role is filled.
+        if (/already exists/i.test(message)) {
+          refused.add(`${creds.id}:${role}`);
+          created = true;
+          break;
+        }
+        if (i < paths.length - 1) continue;
+        refused.add(`${creds.id}:${role}`);
+        console.warn({ account: creds.address, folder: name, err: message }, `could not create a ${role} folder`);
       }
-      console.warn({ account: creds.address, folder: name, err: message }, `could not create a ${role} folder`);
     }
   }
   return created;
@@ -188,20 +206,15 @@ export async function syncFolders(
         );
       }
 
-      // Resolve parents after all folder rows exist.
+      // Use LIST's delimiter-derived parent path, including literal dots or
+      // SQL wildcard characters in folder names. Missing parents become null.
       await tx.query(
-        `
-        UPDATE folders child
-           SET parent_id = parent.id
-          FROM folders parent
-         WHERE child.account_id = $1
-           AND parent.account_id = $1
-           AND parent.id <> child.id
-           AND (child.path LIKE parent.path || '.%' OR child.path LIKE parent.path || '/%')
-           AND length(child.path) - length(replace(child.path, '.', ''))
-             = length(parent.path) - length(replace(parent.path, '.', '')) + 1
-        `,
-        [creds.id],
+        `UPDATE folders child
+            SET parent_id = parent.id
+           FROM jsonb_to_recordset($2::jsonb) AS r(path text, parent_path text)
+           LEFT JOIN folders parent ON parent.account_id = $1 AND parent.path = r.parent_path
+          WHERE child.account_id = $1 AND child.path = r.path`,
+        [creds.id, JSON.stringify(rows.map((r) => ({ path: r.path, parent_path: r.parentPath })))],
       );
 
       // Folders that vanished server-side. Their messages cascade away with

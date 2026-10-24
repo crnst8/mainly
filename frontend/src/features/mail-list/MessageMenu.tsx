@@ -21,6 +21,7 @@ import {
   Archive,
   Clock,
   Dot,
+  Filtered,
   Folder as FolderIcon,
   Palette as PaletteIcon,
   Plus,
@@ -66,6 +67,7 @@ function Body({ message, close }: { message: MessageSummary; close: () => void }
   const setFlag = useStore((s) => s.setFlag);
   const archive = useStore((s) => s.archive);
   const trash = useStore((s) => s.trash);
+  const filter = useStore((s) => s.filter);
   const setLabels = useStore((s) => s.setLabels);
   const moveTo = useStore((s) => s.moveTo);
   const act = useStore((s) => s.act);
@@ -187,6 +189,9 @@ function Body({ message, close }: { message: MessageSummary; close: () => void }
       </MenuItem>
       <MenuItem danger icon={<Trash size={13} />} hint="#" onClick={() => run(() => void trash(ids))}>
         Move to trash{suffix}
+      </MenuItem>
+      <MenuItem icon={<Filtered size={13} />} hint="⌘⌫" onClick={() => run(() => void filter(ids))}>
+        Filter out{suffix}
       </MenuItem>
     </>
   );

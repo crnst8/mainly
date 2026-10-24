@@ -184,6 +184,25 @@ for (const account of accounts) {
       position: CORE.length + i,
     });
   }
+
+  // Added after everything that draws from the seeded generator, so its
+  // arrival changes no other folder's numbers or ids.
+  const inbox = folders.find((f) => f.accountId === account.id && f.role === 'inbox')!;
+  folders.push({
+    id: `fld_filtered_${account.id}`,
+    accountId: account.id,
+    path: 'INBOX.Filtered',
+    name: 'Filtered',
+    role: 'filtered',
+    parentId: inbox.id,
+    depth: 1,
+    unread: 0,
+    total: 0,
+    color: null,
+    pinned: false,
+    subscribed: true,
+    position: 0.5,
+  });
 }
 
 /* ── Messages ─────────────────────────────────────────────────────────────── */

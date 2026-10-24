@@ -167,6 +167,9 @@ export type FolderRole =
   | 'archive'
   | 'flagged'
   | 'all'
+  /** Ours, not SPECIAL-USE: the folder under each inbox that holds mail the
+   *  user filtered and mail like it. See `FilterPreferences`. */
+  | 'filtered'
   | 'custom';
 
 export interface Folder {
@@ -531,7 +534,7 @@ export type PreviewPosition = 'right' | 'bottom' | 'off';
  *  one the desktop calls Flag. `move` and `label` need a target picker and are
  *  offered for forward-compatibility; the swipe itself only commits the four
  *  actions that have a single existing store function. */
-export type SwipeAction = 'none' | 'archive' | 'trash' | 'read' | 'pin' | 'move' | 'label';
+export type SwipeAction = 'none' | 'archive' | 'trash' | 'filter' | 'read' | 'pin' | 'move' | 'label';
 
 export interface MobilePreferences {
   swipeLeft: SwipeAction;
@@ -620,6 +623,8 @@ export interface Preferences {
   mailHandling: MailHandlingPreferences;
   /** New-mail notifications on devices that subscribed to them. */
   notifications: NotificationPreferences;
+  /** The Filtered folder: what is filed there on arrival, and how it learns. */
+  filtering: FilterPreferences;
 }
 
 /**
@@ -645,6 +650,96 @@ export const DEFAULT_MAIL_HANDLING: MailHandlingPreferences = {
   spamFilter: true,
   spamFilterExcluded: [],
 };
+
+/**
+ * How readily the learned filter files mail on its own.
+ *
+ * Each is a probability the filter must reach before it moves a message. The
+ * server raises it further when the user keeps taking mail back out, so a
+ * setting that turns out too eager corrects itself instead of hiding mail.
+ */
+export type FilterSensitivity = 'cautious' | 'balanced' | 'eager';
+
+/**
+ * The Filtered folder.
+ *
+ * Filing a message there (the Filter action) records its sender, or its
+ * mailing list when it has one, and new inbox mail from the same place is filed
+ * there on arrival. Taking a message back out records the opposite. With
+ * `learn` on, the same examples train a classifier that also files mail from
+ * senders it has not seen, when the mail looks like what was filed before.
+ */
+export interface FilterPreferences {
+  /** Create a Filtered folder under every inbox and file into it on arrival. */
+  enabled: boolean;
+  /** File mail that resembles filtered mail, not only mail from the same
+   *  sender or list. */
+  learn: boolean;
+  sensitivity: FilterSensitivity;
+  /**
+   * Ask a language model about new mail the classifier is unsure of.
+   *
+   * Off by default and only possible when the server has a model configured,
+   * because it sends the sender, subject and the first lines of each such
+   * message to that provider. See docs/filtering.md.
+   */
+  llm: boolean;
+  /** A model id from the provider's list. Null uses the server's default. */
+  llmModel: string | null;
+  /** Accounts the filter leaves alone. */
+  excluded: Id[];
+}
+
+export const DEFAULT_FILTERING: FilterPreferences = {
+  enabled: true,
+  learn: true,
+  sensitivity: 'balanced',
+  llm: false,
+  llmModel: null,
+  excluded: [],
+};
+
+/** One sender or mailing list the filter has a decision about. */
+export interface FilterSource {
+  kind: 'sender' | 'list';
+  /** The address, or the List-Id. */
+  value: string;
+  /** The most recent decision wins: `filter` files its mail, `keep` never does. */
+  verdict: 'filter' | 'keep';
+  /** A display name seen on its mail, for recognising it in a list. */
+  name: string | null;
+  /** How many examples the user gave. */
+  count: number;
+  lastAt: IsoDate;
+}
+
+/** What the filter knows and how it is doing. */
+export interface FilterStatus {
+  /** Examples the user gave by filing or rescuing mail. */
+  examples: { filter: number; keep: number };
+  /** True once there are enough examples for the classifier to act. */
+  trained: boolean;
+  /** Mail the filter filed by itself in the last 60 days, and how much of it
+   *  the user took back out. */
+  autoFiled: number;
+  rescued: number;
+  /** The probability the classifier currently needs before filing, after the
+   *  rescue rate has raised it. */
+  threshold: number;
+  /** Whether the server has a language model configured, and where. Never
+   *  includes the key. */
+  llm: { available: boolean; host: string | null; defaultModel: string | null };
+  sources: FilterSource[];
+}
+
+/** One trial classification against a model, from the settings screen. */
+export interface FilterModelTrial {
+  ok: boolean;
+  model: string;
+  ms: number;
+  /** The model's verdict on the sample, or the provider's error text. */
+  detail: string;
+}
 
 /** What a notification shows on a lock screen. */
 export type NotificationContent = 'full' | 'sender' | 'count';
@@ -789,6 +884,7 @@ export const DEFAULT_PREFERENCES: Preferences = {
   mobile: DEFAULT_MOBILE_PREFERENCES,
   mailHandling: DEFAULT_MAIL_HANDLING,
   notifications: DEFAULT_NOTIFICATIONS,
+  filtering: DEFAULT_FILTERING,
 };
 
 /** Merge stored preferences over the defaults. Nested objects are merged one
@@ -813,6 +909,11 @@ export function withPreferenceDefaults(stored: Partial<Preferences> | null | und
       tiers: stored?.notifications?.tiers ?? DEFAULT_NOTIFICATIONS.tiers,
       mutedAccounts: stored?.notifications?.mutedAccounts ?? [],
       quietHours: { ...DEFAULT_NOTIFICATIONS.quietHours, ...stored?.notifications?.quietHours },
+    },
+    filtering: {
+      ...DEFAULT_FILTERING,
+      ...stored?.filtering,
+      excluded: stored?.filtering?.excluded ?? [],
     },
     // Arrays replace rather than merge, but a stored `null` must not become
     // `null` on a field every caller maps over.

@@ -103,6 +103,34 @@ export function isMarkedSpam(subject: string, headers: string | null | undefined
   return /^yes\b/i.test(headerValue(headers, 'x-spam-flag') ?? '');
 }
 
+/**
+ * The mailing list a message came from, as RFC 2919 names it.
+ *
+ * `List-Id: Weekly news <news.example.com>` identifies the list by the part in
+ * angle brackets; the phrase in front is a display name the sender can change
+ * at will. Lower-cased because list ids are case-insensitive and the filter
+ * compares them as keys.
+ */
+export function listIdOf(headers: string | null | undefined): string | null {
+  const raw = headerValue(headers, 'list-id');
+  if (!raw) return null;
+  const id = (/<([^<>]+)>/.exec(raw)?.[1] ?? raw).trim().toLowerCase();
+  return id ? id.slice(0, 255) : null;
+}
+
+/**
+ * Whether a message was sent to many people at once.
+ *
+ * Any of the headers bulk senders are obliged or expected to set: an
+ * unsubscribe address, a list id, or `Precedence: bulk | list | junk`. A
+ * person writing to you sets none of them, which is what makes this one of the
+ * strongest single signals the filter has.
+ */
+export function isBulk(headers: string | null | undefined): boolean {
+  if (headerValue(headers, 'list-unsubscribe') || headerValue(headers, 'list-id')) return true;
+  return /^(bulk|list|junk)\b/i.test(headerValue(headers, 'precedence') ?? '');
+}
+
 /* ── Body structure ────────────────────────────────────────────────────────── */
 
 export interface BodyNode {

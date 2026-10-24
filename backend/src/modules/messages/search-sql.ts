@@ -170,6 +170,7 @@ const FOLDER_ROLES = new Set<string>([
   'archive',
   'flagged',
   'all',
+  'filtered',
   'custom',
 ] satisfies FolderRole[]);
 

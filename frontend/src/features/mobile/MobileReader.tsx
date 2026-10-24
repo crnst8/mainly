@@ -266,7 +266,7 @@ function ReaderBar({ message, onBack }: { message: Message | null; onBack: () =>
         )}
       </div>
 
-      <MoreSheet open={more} onClose={() => setMore(false)} hasHtml={!!message?.bodyHtml} />
+      <MoreSheet open={more} onClose={() => setMore(false)} hasHtml={!!message?.bodyHtml} messageId={message?.id ?? null} />
     </div>
   );
 }
@@ -277,12 +277,15 @@ function MoreSheet({
   open,
   onClose,
   hasHtml,
+  messageId,
 }: {
   open: boolean;
   onClose: () => void;
   hasHtml: boolean;
+  messageId: string | null;
 }) {
   const dark = useMailDark();
+  const filter = useStore((s) => s.filter);
   const setOverride = useStore((s) => s.setMailOverride);
   const printOpen = useStore((s) => s.printOpen);
   const prefs = useStore((s) => s.prefs);
@@ -298,6 +301,17 @@ function MoreSheet({
   return (
     <Sheet open={open} onClose={onClose} title="This message">
       <div className="sheet__list">
+        {messageId && (
+          <SheetRow
+            label="Filter out"
+            hint="Into Filtered, with the sender's next mail"
+            on={false}
+            onClick={() => {
+              onClose();
+              void filter([messageId]);
+            }}
+          />
+        )}
         {hasHtml && (
           <>
             <div className="sheet__sectionhead label">Colours</div>

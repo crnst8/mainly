@@ -65,6 +65,13 @@ export const Junk = (p: P) => (
   </Svg>
 );
 
+/** A funnel over a tray: mail sifted out of the inbox. */
+export const Filtered = (p: P) => (
+  <Svg {...p}>
+    <path d="M2 9.5h3l1 2h4l1-2h3v3a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1zM4.5 2.5h7L9 5.5v2l-2 1v-3z" />
+  </Svg>
+);
+
 export const Bell = (p: P) => (
   <Svg {...p}>
     <path d="M4 11V7a4 4 0 0 1 8 0v4l1.5 1.5h-11zM6.5 14a1.5 1.5 0 0 0 3 0" />

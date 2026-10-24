@@ -28,6 +28,7 @@ import { refreshThreads } from '../../sync/threads.ts';
 import { syncNow } from '../../sync/engine.ts';
 import { ensureBody, fetchAttachment, type CachedBody } from '../../sync/bodies.ts';
 import { toPreview } from '../../sync/parse.ts';
+import { learnFromMove } from '../../filter/training.ts';
 
 export async function messageRoutes(app: FastifyInstance): Promise<void> {
   // A POST that reads. The verb is a transport detail, so the scope is declared
@@ -219,11 +220,16 @@ export async function messageRoutes(app: FastifyInstance): Promise<void> {
                 `${strays.length} of ${owned.rows.length} messages belong to a different account than that folder. Move within one account at a time.`,
               );
             }
-            if (action.type === 'move')
+            if (action.type === 'move') {
               await tx.query(
                 'UPDATE messages SET remote_folder_id = coalesce(remote_folder_id, folder_id), remote_uid = coalesce(remote_uid, uid), uid = NULL, folder_id = $2 WHERE id = ANY($1::uuid[])',
                 [ownedIds, action.folderId],
               );
+              // Into or out of Filtered is how the filter learns. In the same
+              // transaction, so Undo's compensating move withdraws exactly
+              // the lesson the first move taught.
+              await learnFromMove(tx, req.userId, owned.rows, action.folderId);
+            }
             break;
           }
           case 'delete':

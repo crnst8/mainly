@@ -24,10 +24,12 @@ import {
   SignOut,
   Trash,
   User,
+  Filtered,
 } from '@/components/icons';
 import { Button, Field, IconButton, Row, Segmented, Spinner, Toggle } from '@/components/ui';
 import { MailServer } from './MailServer';
 import { Filtering, Notifications } from './Notifications';
+import { FilteredSettings } from './FilteredSettings';
 import { SHORTCUTS } from '@/lib/keyboard';
 import { relative } from '@/lib/format';
 import { senderDomains, senderImageUrl } from '@/lib/sender';
@@ -57,6 +59,7 @@ const TABS = [
   { id: 'accounts', label: 'Accounts', icon: <User size={15} /> },
   { id: 'notifications', label: 'Notifications', icon: <Bell size={15} /> },
   { id: 'filtering', label: 'Spam & folders', icon: <Junk size={15} /> },
+  { id: 'filtered', label: 'Filtered', icon: <Filtered size={15} /> },
   // Distinct from Accounts above: that is the forty-five mailboxes this app
   // reads, this is the one machine it may write to. Named for the machine
   // because "Domains" already means the sidebar grouping.
@@ -183,6 +186,7 @@ export function Settings() {
             {tab === 'accounts' && <Accounts focus={raw.startsWith('account:') ? raw.slice(8) : null} />}
             {tab === 'notifications' && <Notifications />}
             {tab === 'filtering' && <Filtering />}
+            {tab === 'filtered' && <FilteredSettings />}
             {tab === 'mailserver' && <MailServer />}
             {tab === 'mobile' && <MobileSettings />}
             {tab === 'keyboard' && <Keyboard />}
@@ -406,7 +410,7 @@ function Colours() {
   const setDomain = (domain: string, color: string) =>
     void saveTheme({ domainColors: { ...prefs.theme.domainColors, [domain]: color } });
 
-  const FOLDER_ROLES = ['inbox', 'drafts', 'sent', 'archive', 'junk', 'trash'] as const;
+  const FOLDER_ROLES = ['inbox', 'filtered', 'drafts', 'sent', 'archive', 'junk', 'trash'] as const;
 
   return (
     <>
@@ -1290,6 +1294,7 @@ const SWIPE_OPTIONS: { value: SwipeAction; label: string }[] = [
   { value: 'none', label: 'None' },
   { value: 'archive', label: 'Archive' },
   { value: 'trash', label: 'Trash' },
+  { value: 'filter', label: 'Filter out' },
   { value: 'read', label: 'Read / unread' },
   { value: 'pin', label: 'Pin' },
   { value: 'move', label: 'Move to folder' },

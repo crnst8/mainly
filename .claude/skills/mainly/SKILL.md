@@ -80,20 +80,23 @@ frontend/   React 19 + Zustand + Vite + motion. PWA.
 backend/    Fastify + pg + imapflow + nodemailer + mailparser + argon2
   src/contract/     byte-identical copies of frontend types.ts and search.ts
   src/modules/      auth · accounts · messages · unsubscribe · domains ·
-                    onboarding · events · push · misc
+                    onboarding · events · push · filter · misc
   src/sync/         pool · engine · folders · envelopes · threading · threads ·
-                    bodies · body-index · replay · idle · mailboxes · parse
+                    bodies · body-index · replay · idle · mailboxes · parse ·
+                    arrivals · filing
   src/smtp/         outbound send
   src/push/         Web Push: encrypt (pure, RFC-tested) · webpush · notify
+  src/filter/       Filtered folder: features · classifier (pure, tested) ·
+                    llm · model · decide · training
   src/cli/          create-user · token · domain · seed
-  migrations/       numbered, forward-only SQL (001…015)
+  migrations/       numbered, forward-only SQL (001…016)
   scripts/          smoke · query-check · index-check · check-contract ·
-                    static-check · auth-check · consistency-check · database-benchmark
+                    static-check · auth-check · consistency-check · database-benchmark · filter-benchmark
 mcp/        MCP server over stdio — the same HTTP API, exposed to agents
 site/       landing page + hosted demo shell
 scripts/    build-site · deploy-site · release · mainly-provision (+ its .md)
 docs/       architecture · configuration · self-hosting · search · mcp ·
-            domain-control
+            domain-control · notifications · filtering
 ```
 
 Ignore `frontend/backend/` — empty directories left by `tsc -b`, not source.
@@ -121,6 +124,12 @@ Ignore `frontend/backend/` — empty directories left by `tsc -b`, not source.
 | Domain control (optional) | `backend/src/modules/domains/` + `scripts/mainly-provision` |
 | MCP tools | `mcp/src/index.ts` |
 | Spam filing + new-mail hook | `backend/src/sync/arrivals.ts` (fed by `envelopes.ts` arrivals) |
+| Moves made for the user (Junk, Filtered) | `backend/src/sync/filing.ts` |
+| Filtered folder: what files on arrival | `backend/src/filter/decide.ts` (rules → correspondence → classifier → LLM) |
+| Filtered folder: learning from moves | `backend/src/filter/training.ts`, called from the move case in `modules/messages/routes.ts` |
+| Filtered folder: optional LLM | `backend/src/filter/llm.ts` (OpenAI-compatible; operator key in env, see `config.ts`) |
+| Synthetic model benchmark (manual, operator key in env) | `backend/scripts/filter-benchmark.mjs` · results in `docs/filtering.md` |
+| Filtered settings / Filter out action | `frontend/src/features/settings/FilteredSettings.tsx` · `filter()` in `store.ts` |
 | Missing Trash/Junk creation | `backend/src/sync/folders.ts` |
 | Push notifications | `backend/src/push/` · `modules/push/routes.ts` · `frontend/src/lib/notifications.ts` · `frontend/public/sw.js` |
 | Notification / spam settings | `frontend/src/features/settings/Notifications.tsx` |
@@ -247,6 +256,11 @@ demo are built by `scripts/build-site.sh` and deployed by `deploy-site.sh`.
 - Push endpoints are an outbound-request surface: accepted and contacted only
   on known browser push-service hosts (`backend/src/push/encrypt.ts`), with
   redirects refused. Push routes are `sessionOnly`; tokens cannot add devices.
+- The Filtered folder's language model is configured by the operator only
+  (`FILTER_LLM_*` env): users pick a model, never a URL or key. It is off per
+  user by default, sends sender/subject/preview only (never bodies), refuses
+  redirects, and is capped per user per hour. The model list and Try routes
+  are `sessionOnly`.
 - Vulnerabilities go through `SECURITY.md`, never a public issue.
 
 ## Gotchas
@@ -276,6 +290,7 @@ demo are built by `scripts/build-site.sh` and deployed by `deploy-site.sh`.
 | `docs/mcp.md` | MCP server and agent tokens |
 | `docs/notifications.md` | Push notifications, spam filing, missing Trash/Junk |
 | `docs/domain-control.md` | Optional address create/remove on Postfix+Dovecot |
+| `docs/filtering.md` | The Filtered folder: Filter out, rules, classifier, LLM, what is sent |
 | `scripts/mainly-provision.md` | The mail-server half of domain control |
 
 ## Keeping this skill current

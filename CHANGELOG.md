@@ -4,12 +4,6 @@
 
 ## 1.3.7 — 2026-10-04
 
-- docs: release notes for 1.3.7
-- fix: sync sends far fewer IMAP requests
-- fix: bump fastify, nodemailer, mailparser past high advisories
-
-## 1.3.7 — 2026-10-04
-
 - fix: sync sends far fewer IMAP requests
 - fix: bump fastify, nodemailer, mailparser past high advisories
 

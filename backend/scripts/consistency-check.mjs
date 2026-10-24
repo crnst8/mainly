@@ -5,6 +5,7 @@ import { query, close } from '../src/db/index.ts';
 import { applyOp, dueOps, replayOps } from '../src/sync/replay.ts';
 import { applyFlags, upsert, syncFolder, syncEnvelopes } from '../src/sync/envelopes.ts';
 import { handleArrivals } from '../src/sync/arrivals.ts';
+import { fileDecisions } from '../src/filter/decide.ts';
 import { syncFolders } from '../src/sync/folders.ts';
 const BASE = process.env.SMOKE_BASE ?? 'http://127.0.0.1:5284/api';
 let cookie = '',
@@ -506,6 +507,190 @@ try {
     assert.equal(skipped.filed, 0);
   });
 
+  // ── Filtered ─────────────────────────────────────────────────────────────
+  const [{ id: filterAccount }] = await query(
+    `INSERT INTO accounts(user_id,address,domain,label,imap_host,imap_port,smtp_host,smtp_port,username,secret_ciphertext,secret_nonce,secret_tag,status)
+    VALUES ($1,$2,'example.test','Filter','invalid',993,'invalid',587,$2,'x','x','x','disabled') RETURNING id`,
+    [userId, `filter-${email}`],
+  );
+  const [filterInbox, filteredFolder] = await query(
+    `INSERT INTO folders(account_id,path,name,role,uidvalidity,uidnext,position)
+    VALUES ($1,'INBOX','Inbox','inbox',1,1,0),($1,'INBOX.Filtered','Filtered','filtered',1,1,1) RETURNING *`,
+    [filterAccount],
+  );
+  const filterCreds = { id: filterAccount, address: `filter-${email}` };
+  const mailPeer = (list) => ({
+    capabilities: new Set(),
+    mailboxOpen: async () => ({ uidValidity: 1n, uidNext: list.at(-1).uid + 1, exists: list.length }),
+    async *fetch(_range, what) {
+      for (const a of list) {
+        if (!what.envelope) {
+          yield { uid: a.uid, flags: new Set() };
+          continue;
+        }
+        yield {
+          uid: a.uid,
+          flags: new Set(),
+          size: 10,
+          envelope: {
+            subject: a.subject,
+            messageId: `<filter-check-${a.uid}@example.test>`,
+            from: [{ address: a.from }],
+            to: [{ address: filterCreds.address }],
+            date: new Date(),
+          },
+          headers: Buffer.from(a.headers ?? ''),
+        };
+      }
+    },
+  });
+  const filterMoves = [];
+  const filterPeer = {
+    ...junkPeer,
+    mailbox: { uidValidity: 1n, permanentFlags: new Set(['\\*']) },
+    async messageMove(uids, target) {
+      filterMoves.push([this.mailbox.path, [...uids], target]);
+      return { uidValidity: 1n, uidMap: new Map(uids.map((uid) => [uid, uid + 700])) };
+    },
+  };
+  const currentFolder = async (id) => (await query('SELECT * FROM folders WHERE id=$1', [id]))[0];
+  const byUid = async (uid) =>
+    (await query('SELECT id, folder_id FROM messages WHERE account_id=$1 AND uid=$2', [filterAccount, uid]))[0];
+  const examples = (where = '') =>
+    query(`SELECT verdict, list_id, from_address, message_id FROM filter_examples WHERE user_id=$1 ${where} ORDER BY id`, [userId]);
+  // What the server still holds in INBOX, so a later pass does not read the
+  // older mail as deleted. Sorted so the last entry sets UIDNEXT.
+  const present = async (...arriving) =>
+    [
+      ...(
+        await query(
+          `SELECT uid, subject, from_address, list_id FROM messages WHERE folder_id=$1 AND uid IS NOT NULL`,
+          [filterInbox.id],
+        )
+      ).map((r) => ({
+        uid: Number(r.uid),
+        subject: r.subject,
+        from: r.from_address,
+        headers: r.list_id ? `List-Id: <${r.list_id}>\r\n` : '',
+      })),
+      ...arriving,
+    ].sort((x, y) => x.uid - y.uid);
+  const settle = async () => {
+    for (const op of await dueOps(filterAccount)) await applyOp(filterPeer, filterAccount, op);
+    await query('DELETE FROM sync_ops WHERE account_id=$1', [filterAccount]);
+  };
+
+  await setPrefs({});
+  const first = await syncFolder(
+    mailPeer([
+      { uid: 1, subject: 'This week at Shop', from: 'news@shop.example', headers: 'List-Id: Shop News <news.shop.example>\r\nList-Unsubscribe: <mailto:u@shop.example>\r\n' },
+      { uid: 2, subject: 'Dinner on Friday?', from: 'friend@people.example' },
+      { uid: 3, subject: 'Review requested', from: 'noreply@code.example', headers: 'List-Id: <repo-a.code.example>\r\n' },
+    ]),
+    userId, filterAccount, 'normal', filterInbox, () => {},
+  );
+  const untaught = await handleArrivals(filterCreds, userId, filterPeer, first.arrivals);
+  const news = await byUid(1);
+  check('the filter files nothing before it has been taught anything', () => {
+    assert.equal(first.arrivals.length, 3);
+    assert.equal(untaught.filed, 0);
+  });
+  const listed = (await query('SELECT list_id, bulk FROM messages WHERE id=$1', [news.id]))[0];
+  check('List-Id and bulk are indexed from the envelope headers', () => {
+    assert.equal(listed.list_id, 'news.shop.example');
+    assert.equal(listed.bulk, true);
+  });
+
+  await act([news.id], { type: 'move', folderId: filteredFolder.id });
+  const taught = await examples();
+  check('filing a message records its list as an example', () =>
+    assert.deepEqual(taught.map((e) => [e.verdict, e.list_id, e.message_id]), [['filter', 'news.shop.example', news.id]]),
+  );
+  await act([news.id], { type: 'move', folderId: filterInbox.id });
+  const undone = await examples();
+  check('moving the user’s own filing back out leaves no example', () => assert.deepEqual(undone, []));
+  await act([news.id], { type: 'move', folderId: filteredFolder.id });
+  await settle();
+
+  const second = await syncFolder(
+    mailPeer(
+      await present(
+        { uid: 4, subject: 'Offers this weekend', from: 'offers@shop.example', headers: 'List-Id: <news.shop.example>\r\n' },
+        { uid: 5, subject: 'Review requested', from: 'noreply@code.example', headers: 'List-Id: <repo-b.code.example>\r\n' },
+      ),
+    ),
+    userId, filterAccount, 'normal', await currentFolder(filterInbox.id), () => {},
+  );
+  const ruled = await handleArrivals(filterCreds, userId, filterPeer, second.arrivals);
+  const offer = await byUid(704);
+  const decision = offer
+    ? (await query('SELECT stage, rescued_at FROM filter_decisions WHERE message_id=$1', [offer.id]))[0]
+    : null;
+  check('new mail on a filtered list is filed into Filtered and replayed; other lists stay', () => {
+    assert.equal(second.arrivals.length, 2);
+    assert.equal(ruled.filed, 1);
+    assert.ok(offer, 'the filed message took its new UID in Filtered');
+    assert.equal(offer.folder_id, filteredFolder.id);
+    assert.equal(decision?.stage, 'rule');
+    assert.deepEqual(filterMoves.at(-1), ['INBOX', [4], 'INBOX.Filtered']);
+  });
+
+  await act([offer.id], { type: 'move', folderId: filterInbox.id });
+  const corrected = (await query('SELECT rescued_at FROM filter_decisions WHERE message_id=$1', [offer.id]))[0];
+  const verdicts = await examples(`AND list_id = 'news.shop.example'`);
+  check('rescuing filed mail records the mistake and keeps that list in the inbox', () => {
+    assert.ok(corrected.rescued_at);
+    assert.deepEqual(verdicts.map((e) => e.verdict), ['filter', 'keep']);
+  });
+
+  const status = await call('/filter/status');
+  check('the status lists what was learned, newest decision per list', () => {
+    assert.equal(status.status, 200);
+    assert.deepEqual(status.body.examples, { filter: 1, keep: 1 });
+    const source = status.body.sources.find((s) => s.value === 'news.shop.example');
+    assert.equal(source?.kind, 'list');
+    assert.equal(source?.verdict, 'keep');
+    assert.equal(source?.count, 2);
+  });
+  const forgotten = await call('/filter/forget', { kind: 'list', value: 'news.shop.example' });
+  const afterForget = await examples();
+  check('forgetting a list removes every example from it', () => {
+    assert.equal(forgotten.status, 204);
+    assert.deepEqual(afterForget, []);
+  });
+
+  await settle();
+  await setPrefs({ filtering: { enabled: false } });
+  const third = await syncFolder(
+    mailPeer(await present({ uid: 5000, subject: 'Photos from Friday', from: 'friend@people.example' })),
+    userId, filterAccount, 'normal', await currentFolder(filterInbox.id), () => {},
+  );
+  const off = await handleArrivals(filterCreds, userId, filterPeer, third.arrivals);
+  check('with the filter off nothing is filed', () => assert.equal(off.filed, 0));
+  await setPrefs({});
+  await act([(await byUid(2)).id], { type: 'move', folderId: filteredFolder.id });
+  const swept = await call('/filter/sweep', {});
+  // Filed mail has no UID in Filtered until replay assigns one, so by id.
+  const photos = (await query('SELECT folder_id FROM messages WHERE id=$1', [third.arrivals[0].id]))[0];
+  check('a sweep files inbox mail the sender rules already cover', () => {
+    assert.equal(swept.status, 200, JSON.stringify(swept.body));
+    assert.equal(swept.body.filed, 1);
+    assert.equal(photos.folder_id, filteredFolder.id);
+  });
+
+  // A decision can finish after the user archived the mail and replay caught
+  // up. Automatic filing must recheck the current folder inside its write.
+  await settle();
+  const [filterArchive] = await query(
+    `INSERT INTO folders(account_id,path,name,role,uidvalidity) VALUES ($1,'Archive','Archive','archive',1) RETURNING id`,
+    [filterAccount],
+  );
+  const raced = await byUid(3);
+  await act([raced.id], { type: 'move', folderId: filterArchive.id });
+  await settle();
+  const late = await fileDecisions(userId, filterAccount, [{ id: raced.id, stage: 'llm', score: 1, model: 'test' }]);
+  check('a late automatic decision leaves user-archived mail alone', () => assert.deepEqual(late, []));
+
   // ── Missing Trash and Junk ───────────────────────────────────────────────
   const [{ id: bareAccount }] = await query(
     `INSERT INTO accounts(user_id,address,domain,label,imap_host,imap_port,smtp_host,smtp_port,username,secret_ciphertext,secret_nonce,secret_tag,status)
@@ -518,13 +703,14 @@ try {
   const barePeer = {
     capabilities: new Set(),
     list: async () => serverFolders.map((f) => ({ ...f })),
-    async mailboxCreate(path) {
+    async mailboxCreate(raw) {
+      const path = Array.isArray(raw) ? raw.join('.') : raw;
       created.push(path);
-      serverFolders.push({ path, name: path, delimiter: '.', flags: new Set(), subscribed: true });
+      serverFolders.push({ path, name: path.split('.').at(-1), delimiter: '.', flags: new Set(), subscribed: true });
     },
     mailboxSubscribe: async () => true,
   };
-  await setPrefs({ mailHandling: { createMissingFolders: false } });
+  await setPrefs({ mailHandling: { createMissingFolders: false }, filtering: { enabled: false } });
   await syncFolders(bareCreds, barePeer);
   check('missing folders are left alone when the preference is off', () => assert.deepEqual(created, []));
   await setPrefs({});
@@ -532,12 +718,31 @@ try {
   const roles = (
     await query('SELECT role::text FROM folders WHERE account_id=$1 ORDER BY role', [bareAccount])
   ).map((r) => r.role);
-  check('a mailbox with no Trash or Junk gets both', () => {
-    assert.deepEqual(created, ['Trash', 'Junk']);
-    assert.deepEqual([...roles].sort(), ['inbox', 'junk', 'trash']);
+  check('a mailbox with no Trash or Junk gets both, and Filtered under its inbox', () => {
+    assert.deepEqual(created, ['Trash', 'Junk', 'INBOX.Filtered']);
+    assert.deepEqual([...roles].sort(), ['filtered', 'inbox', 'junk', 'trash']);
   });
   await syncFolders(bareCreds, barePeer);
-  check('folders that exist are not created twice', () => assert.equal(created.length, 2));
+  check('folders that exist are not created twice', () => assert.equal(created.length, 3));
+
+  for (const delimiter of ['.', '/']) {
+    const paths = ['INBOX', `INBOX${delimiter}Filtered`, `INBOX${delimiter}Filtered${delimiter}Receipts`, 'Projects.v1', `Projects.v1${delimiter}Notes`];
+    const peer = {
+      ...barePeer,
+      list: async () => paths.map((path) => ({ path, name: path.split(delimiter).at(-1), delimiter, flags: new Set(), subscribed: true })),
+    };
+    await setPrefs({ mailHandling: { createMissingFolders: false }, filtering: { enabled: false } });
+    await syncFolders(bareCreds, peer);
+    const tree = await query(`SELECT child.path, parent.path AS parent FROM folders child
+      LEFT JOIN folders parent ON parent.id=child.parent_id WHERE child.account_id=$1`, [bareAccount]);
+    check(`folder parents follow the server's ${delimiter} delimiter`, () => {
+      const parents = new Map(tree.map((r) => [r.path, r.parent]));
+      assert.equal(parents.get(`INBOX${delimiter}Filtered`), 'INBOX');
+      assert.equal(parents.get(`INBOX${delimiter}Filtered${delimiter}Receipts`), `INBOX${delimiter}Filtered`);
+      assert.equal(parents.get(`Projects.v1${delimiter}Notes`), 'Projects.v1');
+      assert.equal(parents.get('Projects.v1'), null);
+    });
+  }
 
   console.log(
     `consistency-check: ${passed} passed; local action acknowledgements ${timings.map((ms) => Math.round(ms) + 'ms').join(', ')}`,

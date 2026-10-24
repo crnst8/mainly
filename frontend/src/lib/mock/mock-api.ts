@@ -26,6 +26,9 @@ import type {
   DomainOp,
   DomainProbe,
   Draft,
+  FilterModelTrial,
+  FilterSource,
+  FilterStatus,
   Folder,
   Id,
   ManagedDomain,
@@ -222,6 +225,7 @@ export class MockApi implements MailApi {
         ['Archive', 'archive', 'INBOX.Archive'],
         ['Junk', 'junk', 'INBOX.Junk'],
         ['Trash', 'trash', 'INBOX.Trash'],
+        ['Filtered', 'filtered', 'INBOX.Filtered'],
       ] as const
     ).entries()) {
       this.folders.push({
@@ -574,6 +578,7 @@ export class MockApi implements MailApi {
         break;
       }
       case 'move': {
+        this.learnFromMove(touched, action.folderId);
         for (const m of touched) m.folderId = action.folderId;
         break;
       }
@@ -731,6 +736,78 @@ export class MockApi implements MailApi {
     this.prefs = structuredClone(prefs);
     localStorage.setItem('mail.prefs', JSON.stringify(prefs));
     return structuredClone(prefs);
+  }
+
+  /* ── Filtered ───────────────────────────────────────────────────────────── */
+
+  /** The rules half of the server's filter: the same examples from the same
+   *  moves, without the classifier or a model, which need a server. */
+  private filterExamples: { messageId: Id | null; kind: FilterSource['kind']; value: string; name: string | null; verdict: 'filter' | 'keep'; at: string }[] = [];
+
+  private learnFromMove(touched: MessageSummary[], targetId: Id) {
+    const roleOf = (id: Id) => this.folders.find((f) => f.id === id)?.role;
+    const target = roleOf(targetId);
+    // `touched` holds a summary and a full copy of each message; learn once.
+    const once = [...new Map(touched.map((m) => [m.id, m])).values()];
+    for (const m of once) {
+      const from = roleOf(m.folderId);
+      if (target === 'filtered' && from !== 'filtered') {
+        this.filterExamples.push({ messageId: m.id, kind: 'sender', value: m.from.address, name: m.from.name, verdict: 'filter', at: new Date().toISOString() });
+      } else if (from === 'filtered' && target !== 'filtered' && target !== 'trash' && target !== 'junk') {
+        const own = this.filterExamples.findIndex((e) => e.messageId === m.id && e.verdict === 'filter');
+        if (own >= 0) this.filterExamples.splice(own, 1);
+        else this.filterExamples.push({ messageId: m.id, kind: 'sender', value: m.from.address, name: m.from.name, verdict: 'keep', at: new Date().toISOString() });
+      }
+    }
+  }
+
+  async filterStatus(): Promise<FilterStatus> {
+    await sleep(LATENCY.fast);
+    const sources = new Map<string, FilterSource>();
+    for (const e of this.filterExamples) {
+      const key = `${e.kind}:${e.value}`;
+      const prev = sources.get(key);
+      sources.set(key, { kind: e.kind, value: e.value, verdict: e.verdict, name: e.name ?? prev?.name ?? null, count: (prev?.count ?? 0) + 1, lastAt: e.at });
+    }
+    const count = (v: 'filter' | 'keep') => this.filterExamples.filter((e) => e.verdict === v).length;
+    return {
+      examples: { filter: count('filter'), keep: count('keep') },
+      trained: false,
+      autoFiled: 0,
+      rescued: 0,
+      threshold: 0.92,
+      llm: { available: false, host: null, defaultModel: null },
+      sources: [...sources.values()].reverse(),
+    };
+  }
+
+  async forgetFilterSource(source: Pick<FilterSource, 'kind' | 'value'>) {
+    this.filterExamples = this.filterExamples.filter((e) => !(e.kind === source.kind && e.value === source.value));
+  }
+
+  async sweepFiltered() {
+    await sleep(LATENCY.slow);
+    const latest = new Map<string, 'filter' | 'keep'>();
+    for (const e of this.filterExamples) latest.set(e.value, e.verdict);
+    let filed = 0;
+    for (const m of this.summaries) {
+      if (this.folders.find((f) => f.id === m.folderId)?.role !== 'inbox' || latest.get(m.from.address) !== 'filter') continue;
+      const target = this.folders.find((f) => f.role === 'filtered' && f.accountId === m.accountId);
+      if (!target) continue;
+      m.folderId = target.id;
+      const full = this.messages.find((x) => x.id === m.id);
+      if (full) full.folderId = target.id;
+      filed++;
+    }
+    return { filed };
+  }
+
+  async listFilterModels(): Promise<string[]> {
+    return [];
+  }
+
+  async tryFilterModel(): Promise<FilterModelTrial> {
+    throw new Error('Language models need a Mainly server; this demo has none');
   }
 
   /* ── Push ───────────────────────────────────────────────────────────────── */

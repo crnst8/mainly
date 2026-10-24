@@ -9,7 +9,7 @@
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Archive, Attachment, Check, Dot, Star, Trash } from '@/components/icons';
+import { Archive, Attachment, Check, Dot, Filtered, Star, Trash } from '@/components/icons';
 import { Empty, IconButton, Mark } from '@/components/ui';
 import { SenderAvatar } from '@/components/SenderAvatar';
 import { SenderMenu } from '@/components/SenderMenu';
@@ -283,6 +283,7 @@ function Row({
   const toggleFlag = useStore((s) => s.toggleFlag);
   const archive = useStore((s) => s.archive);
   const trash = useStore((s) => s.trash);
+  const filter = useStore((s) => s.filter);
 
   const tint = colorOf(m.accountId);
 
@@ -440,6 +441,9 @@ function Row({
         </IconButton>
         <IconButton label="Trash" hint="#" onClick={() => void trash([m.id])}>
           <Trash size={14} />
+        </IconButton>
+        <IconButton label="Filter out" hint="⌘⌫" onClick={() => void filter([m.id])}>
+          <Filtered size={14} />
         </IconButton>
       </div>
     </div>
