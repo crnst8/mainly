@@ -138,6 +138,14 @@ export async function connect(creds: AccountCredentials): Promise<ImapFlow> {
   });
 
   refusals.set(client, refusal);
+  // A socket error (ECONNRESET, a TLS reset) is emitted as an 'error' event as
+  // well as failing the command in flight. With no listener, Node throws it and
+  // the whole process goes down — API, sync and every other account with it.
+  // The command's own rejection is what callers act on; this only keeps the
+  // event from being fatal.
+  client.on('error', (err: Error & { code?: string }) => {
+    console.warn({ account: creds.id, code: err.code, err: err.message }, 'imap connection error');
+  });
 
   await client.connect();
   if (creds.imapSecurity === 'starttls' && !client.secureConnection) {

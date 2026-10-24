@@ -1,7 +1,8 @@
-## 1.4.0 — 2026-10-24
+## 1.4.0 — 2026-10-26
 
 - feat: Filtered folder — filter out, learned filing, optional language model
 - feat: model provider and API key in Settings → Filtered
+- fix: a dropped IMAP connection no longer stops the server
 - chore: dependency updates, Node 26 image
 
 ## 1.3.8 — 2026-10-05

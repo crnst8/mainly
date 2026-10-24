@@ -101,6 +101,10 @@ async function verifyImap(input: VerifyInput): Promise<VerifyResult['imap']> {
     greetingTimeout: config.imap.connectTimeoutMs,
   });
 
+  // See pool.ts connect(): without a listener a socket reset is fatal to the
+  // process. connect() rejects with the same error, which is what is reported.
+  client.on('error', () => {});
+
   try {
     await client.connect();
     // Reported back to the UI so capability-dependent behaviour (CONDSTORE,
