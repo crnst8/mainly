@@ -23,6 +23,22 @@ html {
   text-size-adjust: 100%;
 }
 
+/* iOS 26 regression (WebKit bug 301108): an installed app with
+   `viewport-fit=cover` and the `black-translucent` status bar gets a viewport
+   short by the status bar's height, as if Safari's toolbar were still there.
+   `100%`, `100dvh` and `innerHeight` all read short, the shell ends a status
+   bar above the home indicator, and the app sits too high on the screen.
+   WebKit only shortens the viewport while the document is shorter than the
+   screen, so making the root one top inset taller restores the full height.
+   `100lvh` is the true screen height there and caps the rule, so it never
+   makes the page scroll: where the bug is fixed, or the status bar is opaque
+   (top inset 0), it resolves to plain `100%`. */
+@media (display-mode: standalone) {
+  html {
+    min-height: min(100lvh, calc(100% + env(safe-area-inset-top, 0px)));
+  }
+}
+
 body {
   background: var(--bg);
   color: var(--text);

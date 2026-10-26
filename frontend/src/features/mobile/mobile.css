@@ -9,9 +9,17 @@
   display: flex;
   flex-direction: column;
   padding-top: var(--safe-top);
-  padding-bottom: var(--safe-bottom);
   background: var(--bg);
   overflow: hidden;
+}
+
+/* Installed, there is no address bar for dvh to follow, and on iOS 26 dvh
+   reads short by the status bar (see the standalone rule in base.css). The
+   root's height is the one that rule corrects, so take whichever is taller. */
+@media (display-mode: standalone) {
+  .mobile {
+    height: max(100dvh, 100%);
+  }
 }
 
 /* ── Topbar ──────────────────────────────────────────────────────────────── */
@@ -171,6 +179,9 @@
   overflow-y: auto;
   -webkit-overflow-scrolling: touch;
   overscroll-behavior-y: contain;
+  /* The home indicator's inset is paid inside the scroller, not by the shell,
+     so rows run to the bottom edge and the last one still scrolls clear. */
+  padding-bottom: var(--safe-bottom);
 }
 
 .mobile__sizer {
@@ -890,7 +901,6 @@
   display: flex;
   flex-direction: column;
   padding-top: var(--safe-top);
-  padding-bottom: var(--safe-bottom);
   background: var(--bg);
   animation: mreader-in var(--dur-slow) var(--ease-out);
 }
@@ -930,6 +940,8 @@
   min-height: 0;
   overflow-y: auto;
   -webkit-overflow-scrolling: touch;
+  /* As in the list: the message runs to the bottom edge. */
+  padding-bottom: var(--safe-bottom);
 }
 
 .mreader__inner {

@@ -197,6 +197,17 @@
   --safe-bottom: env(safe-area-inset-bottom, 0px);
 }
 
+/* Installed on iOS 26+, the system blurs the page from the status bar to
+   about 40pt below it, and no meta tag or fixed header turns that off. Every
+   pane that pays the top inset therefore pays a band of plain background
+   beneath it too, so the blur only ever covers background. The `min()` keeps
+   the band at zero where there is no top inset: Android, landscape, desktop. */
+@media (display-mode: standalone) {
+  :root {
+    --safe-top: calc(env(safe-area-inset-top, 0px) + min(env(safe-area-inset-top, 0px), var(--s-9)));
+  }
+}
+
 /* ── Density modes ───────────────────────────────────────────────────────── */
 :root[data-density='compact'] {
   --row-h: 32px;

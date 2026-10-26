@@ -855,7 +855,7 @@
   --toast-step: calc(var(--toast-h) + var(--s-3));
   position: fixed;
   left: 50%;
-  bottom: var(--s-8);
+  bottom: calc(var(--s-8) + var(--safe-bottom));
   z-index: var(--z-toast);
   display: grid;
   max-width: calc(100vw - 2 * var(--s-6));
