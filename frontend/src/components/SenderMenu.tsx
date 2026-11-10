@@ -6,10 +6,11 @@
  * settings still holds the full identity editor, and this writes to the same
  * `senderProfiles` it does.
  *
- * Two things it deliberately does not do. It does not fetch anything: a logo is
- * a URL you supply, because guessing one from the domain would mean this client
- * quietly asking a third party about every sender you receive mail from. And it
- * does not take an http:// URL — a page served over HTTPS loading a logo over
+ * Two things it deliberately does not do. The browser never fetches from the
+ * sender's domain: "Find logo" asks this app's server, which looks up the
+ * domain's BIMI record or site icon once and serves the image from this
+ * origin, so the sender never sees which person or device asked. And it does
+ * not take an http:// URL — a page served over HTTPS loading a logo over
  * plaintext leaks who your correspondents are to anything on the path.
  *
  * A picture set here covers the whole sender identity, which is one domain and
@@ -18,7 +19,8 @@
  */
 
 import { useState } from 'react';
-import { Close, Warning } from './icons';
+import { Close, Search, Warning } from './icons';
+import { getApi } from '@/lib/api';
 import { ContextMenu, MenuItem, type ContextMenuController } from './context-menu';
 import { PopLabel, PopSep } from './ui';
 import { senderDomain, senderImageUrl, senderProfileFor, setSenderImage } from '@/lib/sender';
@@ -43,6 +45,7 @@ function Body({ sender, close }: { sender: Addr; close: () => void }) {
 
   const [draft, setDraft] = useState(profile?.imageUrl ?? '');
   const [error, setError] = useState<string | null>(null);
+  const [finding, setFinding] = useState(false);
 
   /* A sender whose address has no usable domain cannot be given an identity —
      the domain *is* the identity here. Say so rather than offering a field that
@@ -69,6 +72,24 @@ function Body({ sender, close }: { sender: Addr; close: () => void }) {
   };
 
   const covers = profile ? profile.domains.join(', ') : domain;
+
+  const find = async () => {
+    setFinding(true);
+    setError(null);
+    try {
+      const url = await (await getApi()).findSenderLogo(domain);
+      if (!url) {
+        setError(`No logo found for ${domain}.`);
+        return;
+      }
+      void savePrefs({ senderProfiles: setSenderImage(sender, profiles, url) });
+      close();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Could not look for a logo.');
+    } finally {
+      setFinding(false);
+    }
+  };
 
   return (
     <>
@@ -128,6 +149,10 @@ function Body({ sender, close }: { sender: Addr; close: () => void }) {
         onClick={save}
       >
         {profile?.imageUrl ? 'Update image' : 'Attach image'}
+      </MenuItem>
+
+      <MenuItem icon={<Search size={13} />} disabled={finding} onClick={() => void find()}>
+        {finding ? 'Looking…' : 'Find logo'}
       </MenuItem>
 
       {profile?.imageUrl && (

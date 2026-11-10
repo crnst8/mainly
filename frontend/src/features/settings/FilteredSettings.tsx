@@ -1,6 +1,8 @@
 /**
- * The Filtered folder: whether it files on arrival, how readily, with which
- * provider and model, and the senders and lists it has learned.
+ * The Filtered folder: whether it files on arrival, how readily, whether it
+ * asks the model, what it has worked out about the user's filing, and the
+ * senders and lists it has learned. The provider and model are chosen under
+ * Assist, which every model task shares.
  *
  * Preferences are saved like every other setting. What the filter learned is
  * not a preference — it is the record of what the user filed — so it is read
@@ -13,7 +15,7 @@ import { Trash } from '@/components/icons';
 import { getApi } from '@/lib/api';
 import { relative } from '@/lib/format';
 import { useStore } from '@/lib/store';
-import type { FilterModelTrial, FilterPreferences, FilterSensitivity, FilterSource, FilterStatus } from '@/lib/types';
+import type { FilterPreferences, FilterSensitivity, FilterSource, FilterStatus } from '@/lib/types';
 import { AccountChecklist } from './Notifications';
 
 const pct = (n: number) => `${Math.round(n * 100)}%`;
@@ -22,12 +24,11 @@ export function FilteredSettings() {
   const f = useStore((s) => s.prefs!.filtering);
   const savePrefs = useStore((s) => s.savePrefs);
   const resync = useStore((s) => s.resync);
+  const setSettings = useStore((s) => s.setSettings);
   const set = (patch: Partial<FilterPreferences>) => void savePrefs({ filtering: { ...f, ...patch } });
 
   const [status, setStatus] = useState<FilterStatus | null>(null);
-  const [models, setModels] = useState<string[] | null>(null);
-  const [trial, setTrial] = useState<FilterModelTrial | null>(null);
-  const [busy, setBusy] = useState<'sweep' | 'try' | null>(null);
+  const [busy, setBusy] = useState<'sweep' | 'profile' | null>(null);
   const [swept, setSwept] = useState<number | null>(null);
   const [failure, setFailure] = useState<string | null>(null);
 
@@ -42,31 +43,9 @@ export function FilteredSettings() {
     }
   };
 
-  /** After the key changes: list the new provider's models, and drop a chosen
-   *  model when requests now go to a different host that may not have it. */
-  async function providerChanged() {
-    const before = status?.llm.host ?? null;
-    const next = await reload();
-    setModels(null);
-    setTrial(null);
-    if (next && next.llm.host !== before && f.llmModel) set({ llmModel: null });
-  }
-
   useEffect(() => {
     void reload();
   }, []);
-
-  useEffect(() => {
-    if (!status?.llm.available || models) return;
-    void (async () => {
-      try {
-        setModels(await (await getApi()).listFilterModels());
-      } catch (e) {
-        setModels([]);
-        setFailure(e instanceof Error ? e.message : 'Could not list models');
-      }
-    })();
-  }, [status?.llm.available, models]);
 
   async function sweep() {
     setBusy('sweep');
@@ -83,16 +62,20 @@ export function FilteredSettings() {
     }
   }
 
-  async function tryModel() {
-    setBusy('try');
-    setTrial(null);
+  async function rebuildProfile() {
+    setBusy('profile');
+    setFailure(null);
+    let failed: string | null = null;
     try {
-      setTrial(await (await getApi()).tryFilterModel(f.llmModel));
+      await (await getApi()).rebuildFilterProfile();
     } catch (e) {
-      setTrial({ ok: false, model: f.llmModel ?? '', ms: 0, detail: e instanceof Error ? e.message : 'Failed' });
-    } finally {
-      setBusy(null);
+      failed = e instanceof Error ? e.message : 'Could not rebuild the profile';
     }
+    const next = await reload();
+    // A failure the server recorded shows on the row itself; only one it
+    // could not record (the request never arrived) needs the note.
+    if (failed && !next?.profile?.error) setFailure(failed);
+    setBusy(null);
   }
 
   async function forget(source: FilterSource) {
@@ -150,7 +133,7 @@ export function FilteredSettings() {
           </div>
           <Row
             title="Examples"
-            desc={`${status.examples.filter} filtered · ${status.examples.keep} taken back`}
+            desc={`${status.examples.filter} filtered · ${status.examples.keep} taken back${status.observed ? ` · ${status.observed} filed elsewhere` : ''}`}
           >
             <span className="tnum">{status.trained ? 'Trained' : 'Rules only'}</span>
           </Row>
@@ -177,47 +160,39 @@ export function FilteredSettings() {
             title="Ask a model when unsure"
             desc={llm.available ? `Sends sender, subject and preview to ${llm.host}` : undefined}
           >
-            <Toggle
-              label="Ask a language model when unsure"
-              checked={f.llm && llm.available}
-              onChange={(on) => {
-                if (llm.available) set({ llm: on });
-              }}
-            />
+            {llm.available ? (
+              <Toggle label="Ask a language model when unsure" checked={f.llm} onChange={(on) => set({ llm: on })} />
+            ) : (
+              <Button size="sm" onClick={() => setSettings('assist')}>
+                Add a model
+              </Button>
+            )}
           </Row>
-          <ProviderKey llm={llm} onChanged={providerChanged} />
-          {llm.available && (
-            <Row title="Model" desc={trial ? `${trial.model || llm.defaultModel} · ${trial.detail}${trial.ms ? ` · ${trial.ms} ms` : ''}` : undefined}>
-              <div className="notif__device">
-                <select
-                  className="input mselect"
-                  aria-label="Model"
-                  value={f.llmModel ?? ''}
-                  onChange={(e) => {
-                    setTrial(null);
-                    set({ llmModel: e.target.value || null });
-                  }}
-                >
-                  <option value="">{llm.defaultModel ? `Default · ${llm.defaultModel}` : 'Choose a model'}</option>
-                  {(models ?? []).map((id) => (
-                    <option key={id} value={id}>
-                      {id}
-                    </option>
-                  ))}
-                  {f.llmModel && models && !models.includes(f.llmModel) && (
-                    <option value={f.llmModel}>{f.llmModel}</option>
-                  )}
-                </select>
-                <Button
-                  size="sm"
-                  disabled={busy !== null || (!f.llmModel && !llm.defaultModel)}
-                  onClick={() => void tryModel()}
-                >
-                  {busy === 'try' ? <Spinner /> : null}
-                  Try
+          {llm.available && f.llm && (
+            <>
+              <Row
+                title="What you filter"
+                desc={
+                  status.profile?.builtAt
+                    ? `From ${status.profile.basis} messages · ${relative(status.profile.builtAt)}`
+                    : (status.profile?.error ?? undefined)
+                }
+              >
+                <Button size="sm" disabled={busy !== null} onClick={() => void rebuildProfile()}>
+                  {busy === 'profile' ? <Spinner /> : null}
+                  {status.profile?.builtAt ? 'Rebuild' : 'Build'}
                 </Button>
-              </div>
-            </Row>
+              </Row>
+              {status.profile?.builtAt && status.profile.error && (
+                <p className="settings__note settings__note--error">{status.profile.error}</p>
+              )}
+              {status.profile?.builtAt && (
+                <div className="filter-profile">
+                  <ProfileLines title="Filtered" lines={status.profile.filter} />
+                  <ProfileLines title="Kept" lines={status.profile.keep} />
+                </div>
+              )}
+            </>
           )}
         </section>
       )}
@@ -241,131 +216,17 @@ export function FilteredSettings() {
   );
 }
 
-/** Presets for the OpenAI-compatible providers docs/filtering.md lists. A null
- *  URL is OpenCode Go, the server's own default. */
-const PROVIDERS = [
-  { id: 'opencode', label: 'OpenCode Go', url: null, host: 'opencode.ai' },
-  { id: 'openrouter', label: 'OpenRouter', url: 'https://openrouter.ai/api/v1', host: 'openrouter.ai' },
-  { id: 'openai', label: 'OpenAI', url: 'https://api.openai.com/v1', host: 'api.openai.com' },
-  { id: 'custom', label: 'Other', url: '', host: null },
-] as const;
-type ProviderId = (typeof PROVIDERS)[number]['id'];
-
-const providerOf = (host: string | null): ProviderId =>
-  PROVIDERS.find((p) => p.host && p.host === host)?.id ?? (host ? 'custom' : 'opencode');
-
-/**
- * The user's own provider and key. The key is write-only: the server never
- * sends it back, so the field is always empty and "Saved" is all there is to
- * show for it.
- */
-function ProviderKey({ llm, onChanged }: { llm: FilterStatus['llm']; onChanged: () => Promise<void> }) {
-  const own = llm.source === 'own';
-  const [provider, setProvider] = useState<ProviderId>(() => (own ? providerOf(llm.host) : 'opencode'));
-  const [url, setUrl] = useState('');
-  const [key, setKey] = useState('');
-  const [busy, setBusy] = useState<'save' | 'remove' | null>(null);
-  const [error, setError] = useState<string | null>(null);
-
-  const preset = PROVIDERS.find((p) => p.id === provider)!;
-  const target = provider === 'custom' ? url.trim() : preset.url;
-  const canSave = busy === null && (key.trim() !== '' || (provider === 'custom' && url.trim() !== ''));
-
-  async function save() {
-    setBusy('save');
-    setError(null);
-    try {
-      await (await getApi()).setFilterKey({ url: target || null, key: key.trim() });
-      // Cleared, so a second Save cannot replace the key with an empty one.
-      setKey('');
-      setUrl('');
-      await onChanged();
-    } catch (e) {
-      setError(e instanceof Error ? e.message : 'Could not save the key');
-    } finally {
-      setBusy(null);
-    }
-  }
-
-  async function remove() {
-    setBusy('remove');
-    setError(null);
-    try {
-      await (await getApi()).removeFilterKey();
-      setProvider('opencode');
-      setUrl('');
-      await onChanged();
-    } catch (e) {
-      setError(e instanceof Error ? e.message : 'Could not remove the key');
-    } finally {
-      setBusy(null);
-    }
-  }
-
+function ProfileLines({ title, lines }: { title: string; lines: string[] }) {
+  if (!lines.length) return null;
   return (
-    <form
-      className="filter-key"
-      onSubmit={(e) => {
-        e.preventDefault();
-        if (canSave) void save();
-      }}
-    >
-      <Row title="Provider">
-        <select
-          className="input mselect"
-          aria-label="Provider"
-          value={provider}
-          onChange={(e) => {
-            setProvider(e.target.value as ProviderId);
-            setError(null);
-          }}
-        >
-          {PROVIDERS.map((p) => (
-            <option key={p.id} value={p.id}>
-              {p.label}
-            </option>
-          ))}
-        </select>
-      </Row>
-      {provider === 'custom' && (
-        <Row title="URL">
-          <input
-            className="input filter-key__input"
-            type="url"
-            aria-label="Provider URL"
-            autoComplete="off"
-            spellCheck={false}
-            placeholder={own && providerOf(llm.host) === 'custom' && llm.host ? llm.host : 'https://host/v1'}
-            value={url}
-            onChange={(e) => setUrl(e.target.value)}
-          />
-        </Row>
-      )}
-      <Row title="API key" desc={own ? `Saved · ${llm.host}` : llm.source === 'server' ? "Using the server's" : undefined}>
-        <div className="notif__device">
-          <input
-            className="input filter-key__input"
-            type="password"
-            aria-label="API key"
-            autoComplete="off"
-            spellCheck={false}
-            placeholder={own ? 'Replace key' : 'Paste key'}
-            value={key}
-            onChange={(e) => setKey(e.target.value)}
-          />
-          <Button size="sm" type="submit" disabled={!canSave}>
-            {busy === 'save' ? <Spinner /> : null}
-            Save
-          </Button>
-          {own && (
-            <IconButton label="Remove API key" disabled={busy !== null} onClick={() => void remove()}>
-              {busy === 'remove' ? <Spinner /> : <Trash size={14} />}
-            </IconButton>
-          )}
-        </div>
-      </Row>
-      {error && <p className="settings__note settings__note--error">{error}</p>}
-    </form>
+    <div className="filter-profile__side">
+      <span className="label">{title}</span>
+      <ul>
+        {lines.map((l) => (
+          <li key={l}>{l}</li>
+        ))}
+      </ul>
+    </div>
   );
 }
 

@@ -1,10 +1,11 @@
 /**
  * What happens to mail after the envelope pass first indexes it.
  *
- * Three things, in order: spam the server marked is filed into Junk, inbox
- * mail the user's filter claims is filed into Filtered, and what is left is
+ * Four things, in order: spam the server marked is filed into Junk, inbox
+ * mail the user's filter claims is filed into Filtered, what stays in the inbox
+ * is labelled by kind when the user asked for that, and what is left is
  * offered to notifications. Filing goes first so that a filed message never
- * notifies — the order is the whole reason all three live here.
+ * notifies — the order is the whole reason all of them live here.
  *
  * Filing is the same local move and queued `sync_ops` row a click produces
  * (see filing.ts). A message the user later moves back out keeps its row and
@@ -15,6 +16,7 @@
 import type { ImapFlow } from 'imapflow';
 import type { Preferences } from '../contract/types.ts';
 import { notifyArrivals } from '../push/notify.ts';
+import { labelKinds } from '../assist/kinds.ts';
 import { decide, fileDecisions } from '../filter/decide.ts';
 import { filterRows } from '../filter/model.ts';
 import { fileByRole } from './filing.ts';
@@ -52,6 +54,17 @@ export async function handleArrivals(
     });
     for (const id of filtered) moved.add(id);
     if (filtered.length) console.log({ account: creds.address, filed: filtered.length }, 'filed into Filtered');
+  }
+
+  if (prefs.assist.kinds) {
+    const inbox = arrivals.filter((a) => a.role === 'inbox' && a.fresh && !a.spam && !moved.has(a.id));
+    // Labels are app-side only, so this is a local write and never blocks the
+    // move replay below. A failure leaves the mail unlabelled.
+    const labelled = await labelKinds(userId, prefs, inbox.map((a) => a.id)).catch((err: Error) => {
+      console.warn({ account: creds.address, err: err.message }, 'kind labels skipped');
+      return 0;
+    });
+    if (labelled) console.log({ account: creds.address, labelled }, 'labelled new mail by kind');
   }
 
   if (moved.size) {

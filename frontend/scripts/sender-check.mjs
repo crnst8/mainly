@@ -79,6 +79,13 @@ check('only an https address can become a sender picture', () => {
   assert.equal(senderImageUrl('  '), null);
 });
 
+check("this server's own logo path is accepted, and nothing like it", () => {
+  assert.equal(senderImageUrl('/api/senders/logo?domain=news.example.com'), '/api/senders/logo?domain=news.example.com');
+  assert.equal(senderImageUrl('/api/senders/logo?domain=bad_domain'), null);
+  assert.equal(senderImageUrl('//evil.example/senders/logo?domain=a.example'), null);
+  assert.equal(senderImageUrl('/api/other?domain=a.example'), null);
+});
+
 check('a picture lands on the identity that owns the sender', () => {
   // An existing identity is updated in place, subdomains included, rather than
   // gaining a second profile that would then compete with it.

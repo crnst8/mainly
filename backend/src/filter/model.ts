@@ -12,8 +12,9 @@
  *     a conversation you have written in, is never filed by the classifier or
  *     the model. Only an explicit rule overrides it.
  *  3. **The classifier.** Counts over the user's examples (mail they filed and
- *     mail they rescued) and over a sample of mail they read and left in the
- *     inbox or archive, which is the quiet majority of "keep" evidence.
+ *     mail they rescued), over mail in Filtered that got there without a move
+ *     in this app (study.ts), and over a sample of mail they read and left in
+ *     the inbox or archive, which is the quiet majority of "keep" evidence.
  *
  * The counts are built once and cached per process, and rebuilt when the
  * examples change or the cache is half an hour old. The API process writes
@@ -26,6 +27,7 @@ import type { Addr } from '../contract/types.ts';
 import { emptyCounts, train, type Counts } from './classifier.ts';
 import { featuresOf, ruleKey, type FilterInput } from './features.ts';
 import type { LlmExample } from './llm.ts';
+import { observedSample } from './study.ts';
 
 /** Examples kept per user. Older ones are dropped as new ones arrive; a
  *  person's sense of what is clutter drifts, and the counts should follow. */
@@ -214,11 +216,23 @@ export async function modelFor(userId: string): Promise<Built> {
   );
   for (const r of kept) train(counts, featuresOf(inputOf(r)), 'keep', r.strong ? 2 : 1);
 
+  // Filed by another client or a server rule, or filed by the filter and
+  // since seen and left there. The user's decision, made where this app could
+  // not watch it being made.
+  const observed = await observedSample(userId);
+  for (const r of observed) train(counts, featuresOf(inputOf(r)), 'filter', 1);
+
+  const filedHere = examples
+    .filter((e) => e.verdict === 'filter')
+    .slice(0, 20)
+    .map((e) => ({ from: { name: e.from_name, address: e.from_address }, subject: e.subject, verdict: 'filter' as const }));
   const prompt: LlmExample[] = [
-    ...examples
-      .filter((e) => e.verdict === 'filter')
-      .slice(0, 20)
-      .map((e) => ({ from: { name: e.from_name, address: e.from_address }, subject: e.subject, verdict: 'filter' as const })),
+    ...filedHere,
+    // Topped up from the folder, so a user who files with another client
+    // still gives the model examples to go on.
+    ...observed
+      .slice(0, 20 - filedHere.length)
+      .map((r) => ({ from: { name: r.from_name, address: r.from_address }, subject: r.subject, verdict: 'filter' as const })),
     ...examples
       .filter((e) => e.verdict === 'keep')
       .slice(0, 10)

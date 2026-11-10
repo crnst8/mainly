@@ -8,6 +8,7 @@
  */
 
 import type {
+  IsoDate,
   Account,
   Autoconfig,
   BulkOnboardInput,
@@ -26,6 +27,8 @@ import type {
   PushSubscriptionInput,
   FilterKeyInput,
   FilterModelTrial,
+  FilterProfileStatus,
+  Recap,
   FilterSource,
   FilterStatus,
   SavedView,
@@ -144,6 +147,19 @@ export interface MailApi {
   listFilterModels(): Promise<string[]>;
   /** Classify one made-up message with a model, to see that it works. */
   tryFilterModel(model: string | null): Promise<FilterModelTrial>;
+  /** Rebuild the filter's summary of the user's filing now. */
+  rebuildFilterProfile(): Promise<FilterProfileStatus | null>;
+
+  /* Assist: work done with the same model, and sender logos. */
+
+  /** A recap of inbox mail since a point in time. */
+  recap(since: IsoDate): Promise<Recap>;
+  /** Where a sender domain's logo is served, or null when this adapter has
+   *  none to serve. A URL, not a fetch: it goes into an <img>. */
+  senderLogoUrl(domain: string): string | null;
+  /** Look for a domain's logo now, BIMI then the site's icon. Returns the URL
+   *  to store on the sender, or null when none was found. */
+  findSenderLogo(domain: string): Promise<string | null>;
 
 
   /* Domain control — optional, off unless a domain has been connected from a
@@ -196,6 +212,12 @@ let instance: MailApi | null = null;
  * "signed out". Memoising the promise makes the race impossible.
  */
 let pending: Promise<MailApi> | null = null;
+
+/** The adapter if it has been built, for render paths that cannot await.
+ *  Null only before the first `getApi()` resolves, which is before sign-in. */
+export function currentApi(): MailApi | null {
+  return instance;
+}
 
 export function getApi(): Promise<MailApi> {
   if (instance) return Promise.resolve(instance);

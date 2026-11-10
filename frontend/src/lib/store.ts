@@ -154,6 +154,8 @@ export interface State {
   help: string | null;
   settings: string | null;
   onboarding: boolean;
+  /** The recap of today's inbox is open. */
+  recap: boolean;
 
   toasts: Toast[];
 
@@ -299,6 +301,7 @@ interface Actions {
   setPalette(open: boolean): void;
   setHelp(guide: string | null): void;
   setSettings(tab: string | null): void;
+  setRecap(open: boolean): void;
   setOnboarding(open: boolean): void;
   toast(message: string | ToastGroup, undo?: () => void): void;
   dismissToast(id: string): void;
@@ -404,6 +407,7 @@ export const useStore = create<State & Actions>((set, get) => ({
   help: null,
   settings: null,
   onboarding: false,
+  recap: false,
   toasts: [],
   nav: 'replace',
 
@@ -1542,6 +1546,11 @@ export const useStore = create<State & Actions>((set, get) => ({
   },
   setHelp(guide) {
     set({ help: guide });
+  },
+  setRecap(open) {
+    // Settings closes first: the recap is opened from there too, and drawn
+    // under it would be invisible.
+    set(open ? { recap: true, settings: null, nav: 'replace' } : { recap: false });
   },
   setSettings(tab) {
     // Opening is going somewhere, so it earns a history entry and Back closes

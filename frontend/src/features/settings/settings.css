@@ -863,6 +863,24 @@
   border-bottom: 1px solid var(--line-soft);
 }
 
+/* What the filter has worked out: two short lists side by side, stacked on a
+   phone. */
+.filter-profile {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: var(--s-6);
+  padding: var(--s-5) 0;
+  border-bottom: 1px solid var(--line-soft);
+}
+
+.filter-profile__side ul {
+  margin: var(--s-3) 0 0;
+  padding-left: var(--s-6);
+  font-size: var(--t-sm);
+  color: var(--text-secondary);
+  line-height: 1.5;
+}
+
 /* ── Mobile preferences ───────────────────────────────────────────────────── */
 
 .mselect {

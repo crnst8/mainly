@@ -229,6 +229,11 @@ case "${1:-start}" in
   # credential that grants API access must not be mintable through the API.
   token) db_up; shift; (cd backend && node --experimental-strip-types src/cli/token.ts "$@") ;;
 
+# Connect a Hermes agent over SSH. The dev API listens on localhost, so the
+# agent's host needs --api-url (a tunnel or a Tailscale address) to reach it.
+hermes) db_up; shift; scripts/connect-hermes.sh "$@" -- \
+  bash -c 'cd backend && exec node --experimental-strip-types src/cli/token.ts "$@"' token ;;
+
 # Domain control. Same reasoning as `token`: it installs a credential.
 domain) db_up; shift; (cd backend && node --experimental-strip-types src/cli/domain.ts "$@") ;;
 
@@ -312,6 +317,8 @@ usage: ./dev.sh <command>
   user <email>       create a login
   seed               (re)create the fixture ./dev.sh check asserts against
   token <args>       mint or revoke an agent token
+  hermes <ssh-host> <email> --api-url URL
+                     connect a Hermes agent (scripts/connect-hermes.sh)
   domain <args>      connect a mail server, and set what it may do
   check              typecheck + contract + url + search + smoke + query
   logs [api|db|web]

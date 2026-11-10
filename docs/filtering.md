@@ -44,13 +44,16 @@ decides; anything left undecided stays in the inbox.
    were addressed (To, Cc or neither), whether the mail was sent in bulk
    (`List-Unsubscribe`, `List-Id`, `Precedence`), and words in the sender name,
    subject and preview. It is trained on mail you filed, mail you took back
-   out, and mail you read and left in your inbox or archive. It acts once it
-   has at least 3 filed and 20 kept examples, and only when its score reaches
-   the **Sensitivity** threshold: 97% cautious, 92% balanced, 85% eager.
+   out, mail in Filtered that got there some other way (see
+   [Mail filed elsewhere](#mail-filed-elsewhere)), and mail you read and left
+   in your inbox or archive. It acts once it has at least 3 filed and 20 kept
+   examples, and only when its score reaches the **Sensitivity** threshold:
+   97% cautious, 92% balanced, 85% eager.
 4. **A language model** (optional, off by default). Mail the classifier was
    unsure about, or all new mail before the classifier has enough examples, is
-   sent to a model with your most recent examples. It files only at 90% / 80% /
-   70% confidence for the three sensitivities.
+   sent to a model with your most recent examples and your
+   [filing profile](#filing-profile). It files only at 90% / 80% / 70%
+   confidence for the three sensitivities.
 
 Only mail that arrives after a folder's first sync goes through steps 2–4. A
 newly added mailbox's existing inbox is filed by rules alone.
@@ -72,6 +75,35 @@ sensitivity you chose.
 Moving filtered mail to Trash or Junk teaches nothing. Deleting it is what the
 folder is for.
 
+### Mail filed elsewhere
+
+Moves made in this app teach the filter as they happen. Mail moved into
+Filtered by another mail client, a phone, or a server-side rule does not pass
+through the app, so the filter reads it from the folder instead: every time it
+rebuilds its counts (when examples change, and at least every 30 minutes), it
+adds up to 1,000 of the newest such messages as "filter" evidence for the
+classifier and tops up the model's examples with them. They never become
+rules; a rule is only ever your own move here.
+
+Mail the filter filed by itself is left out until you have seen it and left it
+in Filtered for two days, so the filter does not learn from its own guesses.
+Senders you have a "keep" rule for are left out too. **Learned → Examples**
+shows how many messages count this way.
+
+### Filing profile
+
+With **Ask a model when unsure** on, once a day the model is shown up to 60
+senders from Filtered (your filing plus mail filed elsewhere) and up to 40 you
+kept, one message each, and writes at most eight short lines for each side
+describing the *kinds* of mail rather than the senders: "shop promotions and
+sale announcements", "receipts and order confirmations". Those lines lead every
+later filing prompt, which is what lets the model file mail from a sender it
+has never seen. It needs mail from at least five senders in Filtered.
+
+The profile is shown under **Language model → What you filter**; **Rebuild**
+writes it now. It is stored per user in `filter_profiles`, built by the sync
+process, and sends the same fields as filing does (below).
+
 ## Settings → Filtered
 
 | Setting | Effect |
@@ -81,17 +113,17 @@ folder is for.
 | Sensitivity | The classifier and model thresholds above. |
 | Inbox mail from filtered senders → File now | Applies your rules to up to 5,000 of the newest messages in each inbox. Rules only; the classifier and the model never move existing mail. |
 | Learned | How many examples you have given, whether the classifier is trained, how much it filed by itself and how much of that you took back, and the threshold it currently needs. |
-| Ask a model when unsure | Step 4. Available once you have saved an API key, or the server has one configured. |
-| Provider · API key | Your own provider and key. See [Your own key](#your-own-key). |
-| Model | Any model the provider lists. **Try** sends one made-up message (never your mail) and shows the model's answer and how long it took. |
+| Ask a model when unsure | Step 4. Available once a provider is set up under **Settings → Assist**, or the server has one configured. |
+| What you filter | The [filing profile](#filing-profile), when it is on. **Rebuild** writes it now. |
 | Filtered senders and lists / Kept in the inbox | Every rule, newest first. The bin forgets all examples from that sender or list. |
 | Filter in | Mailboxes the filter leaves alone. |
 
 ## Language model
 
 Each user turns the feature on for themselves and chooses a model from the
-provider's list. The provider is the user's own, from **Settings → Filtered**,
-or else the one the server operator configured. See
+provider's list. The provider is the user's own, from **Settings → Assist**,
+or else the one the server operator configured. The same provider and model
+serve the [Assist](assist.md) tasks. See
 [configuration.md](configuration.md#filtered-folder) for the variables.
 
 Any OpenAI-compatible `chat/completions` endpoint works:
@@ -141,7 +173,7 @@ Other providers do not receive it.
 
 ### Your own key
 
-**Settings → Filtered → Provider · API key** saves a provider for your user
+**Settings → Assist → Provider · API key** saves a provider for your user
 only. It replaces the server's provider for you, and works on a server that has
 none configured.
 
@@ -152,8 +184,17 @@ none configured.
 | OpenAI | `https://api.openai.com/v1` |
 | Other | Any OpenAI-compatible base URL you type, such as `http://<host>:11434/v1` for Ollama |
 
-- **Save** checks the key by listing the provider's models with it. A key the
-  provider refuses is not saved, and the provider's error is shown.
+- **Save** checks the key by listing the provider's models with it. OpenRouter
+  lists its models to anyone, so for OpenRouter the key is also checked against
+  its `/key` endpoint. A key the provider refuses is not saved, and the error
+  names the host that refused it and gives the provider's reason.
+- Model lists are read up to 8 MB (OpenRouter's is over 800 KB); a chat answer
+  is still capped at 256 KB.
+- On Save, the first of `minimax-m3.1-flash`, `claude-haiku-5.5`,
+  `gpt-5.6-luna`, `gemini-3.5-flash-lite`, `deepseek-v4.1-flash` and
+  `qwen3.8-flash` that the provider offers becomes your default model,
+  matched with or without a vendor prefix (`minimax/minimax-m3.1-flash` on
+  OpenRouter). You can choose any other model from the list.
 - The key is encrypted under `SECRET_KEY` (AES-256-GCM, as mailbox passwords
   are) and never returned by any endpoint. The screen shows only that a key is
   saved and the host it goes to. Enter a new key to replace it; the bin removes
@@ -161,7 +202,8 @@ none configured.
 - With **Other**, the key may be left empty for a local server that needs none.
   A URL on a private or reserved address is refused unless the operator set
   `ALLOW_PRIVATE_IMAP_HOSTS`, and the address is checked again on every request.
-- With **Other** there is no default model; choose one from the list.
+- When the provider offers none of those models there is no default; choose
+  one from the list.
 - The routes that save, remove, list or try are session only. An agent token
   cannot reach them at any scope.
 - Changing provider clears the chosen model when the new host differs.

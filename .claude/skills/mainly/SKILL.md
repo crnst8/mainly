@@ -80,23 +80,27 @@ frontend/   React 19 + Zustand + Vite + motion. PWA.
 backend/    Fastify + pg + imapflow + nodemailer + mailparser + argon2
   src/contract/     byte-identical copies of frontend types.ts and search.ts
   src/modules/      auth · accounts · messages · unsubscribe · domains ·
-                    onboarding · events · push · filter · misc
+                    onboarding · events · push · filter · assist · misc
   src/sync/         pool · engine · folders · envelopes · threading · threads ·
                     bodies · body-index · replay · idle · mailboxes · parse ·
                     arrivals · filing
   src/smtp/         outbound send
   src/push/         Web Push: encrypt (pure, RFC-tested) · webpush · notify
   src/filter/       Filtered folder: features · classifier (pure, tested) ·
-                    llm · model · decide · training
+                    llm · model · decide · training · study
+  src/assist/       model tasks beyond filtering: kinds · recap; and logos
   src/cli/          create-user · token · domain · seed
-  migrations/       numbered, forward-only SQL (001…017)
+  migrations/       numbered, forward-only SQL (001…018)
   scripts/          smoke · query-check · index-check · check-contract ·
-                    static-check · auth-check · consistency-check · database-benchmark · filter-benchmark
+                    static-check · auth-check · consistency-check (+ fake-llm) ·
+                    database-benchmark · filter-benchmark
 mcp/        MCP server over stdio — the same HTTP API, exposed to agents
+  hermes/           the skill connect-hermes.sh installs into Hermes
 site/       landing page + hosted demo shell
-scripts/    build-site · deploy-site · release · mainly-provision (+ its .md)
+scripts/    build-site · deploy-site · release · mainly-provision (+ its .md) ·
+            connect-hermes (behind `mainly.sh hermes` / `dev.sh hermes`)
 docs/       architecture · configuration · self-hosting · search · mcp ·
-            domain-control · notifications · filtering
+            domain-control · notifications · filtering · assist
 ```
 
 Ignore `frontend/backend/` — empty directories left by `tsc -b`, not source.
@@ -128,6 +132,12 @@ Ignore `frontend/backend/` — empty directories left by `tsc -b`, not source.
 | Filtered folder: what files on arrival | `backend/src/filter/decide.ts` (rules → correspondence → classifier → LLM) |
 | Filtered folder: learning from moves | `backend/src/filter/training.ts`, called from the move case in `modules/messages/routes.ts` |
 | Filtered folder: optional LLM | `backend/src/filter/llm.ts` (OpenAI-compatible; user's own key from Settings in `filter_llm_keys`, else operator key in env, see `config.ts`) |
+| Filtered folder: mail filed elsewhere, daily filing profile | `backend/src/filter/study.ts` (study loop started by the sync role in `server.ts`) |
+| Model provider, key, model choice (shared by every model task) | `frontend/src/features/settings/AssistSettings.tsx`; key routes in `modules/filter/routes.ts` |
+| Kind labels on arrival | `backend/src/assist/kinds.ts`, called from `sync/arrivals.ts` |
+| Recap | `backend/src/assist/recap.ts` · `modules/assist/routes.ts` · `frontend/src/features/recap/` |
+| Sender logos (BIMI / site icon, server-fetched, cached) | `backend/src/assist/logos.ts` · `modules/assist/routes.ts` · `components/SenderAvatar.tsx` · `SenderMenu.tsx` |
+| Hermes agent connection | `scripts/connect-hermes.sh` · `mcp/hermes/SKILL.md` · docs/mcp.md |
 | Synthetic model benchmark (manual, operator key in env) | `backend/scripts/filter-benchmark.mjs` · results in `docs/filtering.md` |
 | Filtered settings / Filter out action | `frontend/src/features/settings/FilteredSettings.tsx` · `filter()` in `store.ts` |
 | Missing Trash/Junk creation | `backend/src/sync/folders.ts` |
@@ -191,6 +201,7 @@ is fine, change them deliberately.
 ./dev.sh seed           # reseed the fixture database
 ./dev.sh migrate
 ./dev.sh token …        # agent tokens (host shell only, on purpose)
+./dev.sh hermes <ssh-host> <email> --api-url URL   # connect a Hermes agent
 ./dev.sh domain …       # domain control CLI
 ./dev.sh logs [api|db|web]
 ./dev.sh rebuild        # DROPS the local database, asks first
@@ -207,7 +218,7 @@ query-correctness + index checks against real Postgres. If it passes, CI
 (`.github/workflows/ci.yml`) passes; CI is the same gate with a network.
 
 Operating an install (not development): `./mainly.sh start|stop|restart|status|
-bind|origin|tls|logs|user|token|domain|update|backup|restore|reset`.
+bind|origin|tls|logs|user|token|hermes|domain|update|backup|restore|reset`.
 
 Releasing: `./publish.sh` (review → commit → release, with `status`, `commit`,
 `release`, `demo`, `--dry-run`), which calls `scripts/release.sh <version>` —
@@ -257,12 +268,21 @@ demo are built by `scripts/build-site.sh` and deployed by `deploy-site.sh`.
   on known browser push-service hosts (`backend/src/push/encrypt.ts`), with
   redirects refused. Push routes are `sessionOnly`; tokens cannot add devices.
 - The Filtered folder's language model uses the user's own provider (Settings →
-  Filtered; key sealed like mailbox credentials in `filter_llm_keys`, never
+  Assist; key sealed like mailbox credentials in `filter_llm_keys`, never
   returned) or else the operator's (`FILTER_LLM_*` env). A user's URL is an
   outbound-request surface: `net-guard` checks it on save and on every
   request. It is off per user by default, sends sender/subject/preview only
   (never bodies), refuses redirects, and is capped per user per hour. The key,
-  model list and Try routes are `sessionOnly`.
+  model list and Try routes are `sessionOnly`. Kind labels, the recap and the
+  filing profile use the same provider and the same metadata-only rule; the
+  recap and profile-rebuild routes are `sessionOnly`.
+- Sender logos are fetched by the server, never the browser: only for domains
+  the user has mail from, never for personal mail providers, through
+  `net-guard` on every redirect hop, size-capped, and served with a sandboxing
+  CSP because an SVG on this origin could otherwise run script.
+- `scripts/connect-hermes.sh` passes the agent token over SSH stdin only,
+  stores it in Hermes's `.env` (0600) and references it as `${VAR}` in Hermes
+  config. Nothing about a real host goes into the repo.
 - Vulnerabilities go through `SECURITY.md`, never a public issue.
 
 ## Gotchas
@@ -292,7 +312,8 @@ demo are built by `scripts/build-site.sh` and deployed by `deploy-site.sh`.
 | `docs/mcp.md` | MCP server and agent tokens |
 | `docs/notifications.md` | Push notifications, spam filing, missing Trash/Junk |
 | `docs/domain-control.md` | Optional address create/remove on Postfix+Dovecot |
-| `docs/filtering.md` | The Filtered folder: Filter out, rules, classifier, LLM, what is sent |
+| `docs/filtering.md` | The Filtered folder: Filter out, rules, classifier, LLM, profile, what is sent |
+| `docs/assist.md` | Kind labels, recap, sender logos; the shared model provider |
 | `scripts/mainly-provision.md` | The mail-server half of domain control |
 
 ## Keeping this skill current

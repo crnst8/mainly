@@ -31,6 +31,7 @@ import {
   Star,
   Trash,
   User,
+  Sparkle,
 } from '@/components/icons';
 import { Kbd } from '@/components/ui';
 import { scopeLabel } from '@/lib/scope';
@@ -432,6 +433,13 @@ function useCommands(close: () => void): Cmd[] {
         group: 'App',
         icon: <Plus size={15} />,
         run: run(() => s.setOnboarding(true)),
+      },
+      {
+        id: 'app:recap',
+        label: 'Recap today',
+        group: 'App',
+        icon: <Sparkle size={15} />,
+        run: run(() => s.setRecap(true)),
       },
       {
         id: 'app:help',

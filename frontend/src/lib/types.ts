@@ -625,6 +625,8 @@ export interface Preferences {
   notifications: NotificationPreferences;
   /** The Filtered folder: what is filed there on arrival, and how it learns. */
   filtering: FilterPreferences;
+  /** Work done for the user with the language model, and sender logos. */
+  assist: AssistPreferences;
 }
 
 /**
@@ -739,6 +741,24 @@ export interface FilterStatus {
     server: boolean;
   };
   sources: FilterSource[];
+  /** Messages in Filtered that were put there some other way than a move in
+   *  this app — another mail client, a server rule — and that the filter
+   *  learns from on its periodic look at the folder. */
+  observed: number;
+  /** What the model has worked out about the user's filing, or null before
+   *  it has looked. */
+  profile: FilterProfileStatus | null;
+}
+
+/** The filter's summary of the user's filing, by kind of mail. */
+export interface FilterProfileStatus {
+  filter: string[];
+  keep: string[];
+  /** Messages it was written from. */
+  basis: number;
+  builtAt: IsoDate | null;
+  /** Why the last attempt failed, in the provider's words. */
+  error: string | null;
 }
 
 /** A user's own model provider. The key is write-only: no endpoint returns it. */
@@ -757,6 +777,60 @@ export interface FilterModelTrial {
   ms: number;
   /** The model's verdict on the sample, or the provider's error text. */
   detail: string;
+}
+
+/**
+ * What a message is, as a label the model puts on new inbox mail. Labels are
+ * the app's own (see `MessageSummary.labels`), so `label:bill` finds them and
+ * they can be removed like any other.
+ */
+export const MAIL_KINDS = ['action', 'bill', 'receipt', 'shipping', 'travel', 'security', 'event'] as const;
+export type MailKind = (typeof MAIL_KINDS)[number];
+
+/**
+ * Work done for the user beyond filtering.
+ *
+ * `kinds` uses the same language model and provider as the Filtered folder and
+ * sends the same sender, subject and preview. `senderLogos` uses no model: it
+ * looks up a sender domain's published BIMI logo from this server.
+ */
+export interface AssistPreferences {
+  /** Label new inbox mail by kind. */
+  kinds: boolean;
+  /** Show a sender's BIMI logo in place of the monogram. */
+  senderLogos: boolean;
+}
+
+export const DEFAULT_ASSIST: AssistPreferences = {
+  kinds: false,
+  senderLogos: false,
+};
+
+/** One message a recap points at, and why. */
+export interface RecapItem {
+  id: Id;
+  from: Addr;
+  subject: string;
+  date: IsoDate;
+  why: string;
+}
+
+/** A summary of inbox mail since a point in time, written by the model from
+ *  sender, subject and preview only. */
+export interface Recap {
+  since: IsoDate;
+  generatedAt: IsoDate;
+  model: string;
+  /** Messages it was written from. */
+  count: number;
+  /** A few lines on the period as a whole. */
+  summary: string[];
+  /** Mail that needs the user to do something, most urgent first. */
+  needs: RecapItem[];
+  /** Mail worth knowing about that needs nothing. */
+  notable: RecapItem[];
+  /** Messages per kind label in the period. */
+  kinds: Partial<Record<MailKind, number>>;
 }
 
 /** What a notification shows on a lock screen. */
@@ -903,6 +977,7 @@ export const DEFAULT_PREFERENCES: Preferences = {
   mailHandling: DEFAULT_MAIL_HANDLING,
   notifications: DEFAULT_NOTIFICATIONS,
   filtering: DEFAULT_FILTERING,
+  assist: DEFAULT_ASSIST,
 };
 
 /** Merge stored preferences over the defaults. Nested objects are merged one
@@ -933,6 +1008,7 @@ export function withPreferenceDefaults(stored: Partial<Preferences> | null | und
       ...stored?.filtering,
       excluded: stored?.filtering?.excluded ?? [],
     },
+    assist: { ...DEFAULT_ASSIST, ...stored?.assist },
     // Arrays replace rather than merge, but a stored `null` must not become
     // `null` on a field every caller maps over.
     accountGroups: stored?.accountGroups ?? [],

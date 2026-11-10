@@ -1,4 +1,6 @@
 /** Real Postgres + HTTP mutations, with a deterministic IMAP peer for replay. */
+// First: sets the model provider's environment before config.ts is read.
+import { startFakeLlm } from './fake-llm.mjs';
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
 import { query, close } from '../src/db/index.ts';
@@ -7,6 +9,10 @@ import { applyFlags, upsert, syncFolder, syncEnvelopes } from '../src/sync/envel
 import { handleArrivals } from '../src/sync/arrivals.ts';
 import { fileDecisions } from '../src/filter/decide.ts';
 import { syncFolders } from '../src/sync/folders.ts';
+import { buildProfile, observedCount, profileFor } from '../src/filter/study.ts';
+import { modelFor } from '../src/filter/model.ts';
+import { recapFor } from '../src/assist/recap.ts';
+import { withPreferenceDefaults } from '../src/contract/types.ts';
 const BASE = process.env.SMOKE_BASE ?? 'http://127.0.0.1:5284/api';
 let cookie = '',
   csrf = '',
@@ -690,6 +696,83 @@ try {
   await settle();
   const late = await fileDecisions(userId, filterAccount, [{ id: raced.id, stage: 'llm', score: 1, model: 'test' }]);
   check('a late automatic decision leaves user-archived mail alone', () => assert.deepEqual(late, []));
+
+  // ── Filed elsewhere, the profile, kind labels, recap ─────────────────────
+  const llm = await startFakeLlm();
+  try {
+    // Mail another client put in Filtered: no example, no decision.
+    const elsewhere = async (uid, from, subject, seen = false) =>
+      (
+        await query(
+          `INSERT INTO messages(account_id,folder_id,uid,thread_id,message_id,from_address,subject,preview,date,seen)
+           VALUES ($1,$2,$3,$4,$5,$6,$7,'Big sale this weekend',now() - interval '3 days',$8) RETURNING id`,
+          [filterAccount, filteredFolder.id, uid, `elsewhere-${uid}`, `elsewhere-${uid}@example.test`, from, subject, seen],
+        )
+      )[0];
+    const before = await observedCount(userId);
+    for (let i = 0; i < 5; i++) await elsewhere(900 + i, `deals@shop${i}.example`, `Sale ${i}`);
+    // Filed by the model and not yet seen: a guess, not yet a decision.
+    const guessed = await elsewhere(910, 'maybe@guess.example', 'Maybe');
+    await query(`INSERT INTO filter_decisions(message_id,user_id,stage,score,model) VALUES ($1,$2,'llm',0.95,'fake-model')`, [guessed.id, userId]);
+    const observedStatus = await call('/filter/status');
+    const trainedOn = await modelFor(userId);
+    check('mail filed by another client is learned from; the filter’s unseen guesses are not', () => {
+      assert.equal(observedStatus.body.observed - before, 5);
+      assert.ok(trainedOn.counts.features.get('domain:shop0.example')?.filter >= 1);
+      assert.equal(trainedOn.counts.features.get('domain:guess.example')?.filter ?? 0, 0);
+      assert.ok(trainedOn.examples.some((e) => e.from.address === 'deals@shop1.example' && e.verdict === 'filter'));
+    });
+
+    const prefs = withPreferenceDefaults({ filtering: { llm: true }, assist: { kinds: true } });
+    await setPrefs(prefs);
+    const profile = await buildProfile(userId, prefs, true);
+    const forPrompts = await profileFor(userId);
+    check('the profile is written from Filtered and kept mail, and read back for prompts', () => {
+      assert.deepEqual(profile?.filter, ['shop promotions and sales']);
+      assert.ok(profile?.builtAt);
+      assert.deepEqual(forPrompts, { filter: ['shop promotions and sales'], keep: ['receipts and invoices'] });
+      assert.match(llm.seen.at(-1), /Moved to Filtered:\n(- .*\n)*- deals@shop/);
+    });
+
+    await settle();
+    const labelled = await syncFolder(
+      mailPeer(
+        await present(
+          { uid: 6001, subject: 'Invoice 42 due Friday', from: 'billing@utility.example' },
+          { uid: 6002, subject: 'Your order has shipped', from: 'orders@store.example' },
+          { uid: 6003, subject: 'Lunch?', from: 'colleague@work.example' },
+        ),
+      ),
+      userId, filterAccount, 'normal', await currentFolder(filterInbox.id), () => {},
+    );
+    await handleArrivals(filterCreds, userId, filterPeer, labelled.arrivals);
+    const labelsOf = async (uid) => (await query('SELECT labels FROM messages WHERE account_id=$1 AND uid=$2', [filterAccount, uid]))[0]?.labels;
+    const [bill, order, lunch] = [await labelsOf(6001), await labelsOf(6002), await labelsOf(6003)];
+    check('new inbox mail is labelled by kind, and unknown labels are dropped', () => {
+      assert.deepEqual([...bill].sort(), ['action', 'bill']);
+      assert.deepEqual(order, ['receipt']);
+      assert.deepEqual(lunch, []);
+    });
+
+    const recap = await recapFor(userId, null, new Date(Date.now() - 3600_000));
+    check('a recap points only at messages it was given', () => {
+      assert.equal(recap.needs.length, 1);
+      assert.equal(recap.needs[0].subject, 'Invoice 42 due Friday');
+      assert.equal(recap.notable.length, 0);
+      assert.equal(recap.kinds.bill, 1);
+      assert.ok(recap.count >= 3);
+    });
+
+    const noMail = await fetch(`${BASE}/senders/logo?domain=never-mailed.example`, { headers: { cookie } });
+    const personal = await call('/senders/logo', { domain: 'gmail.com' });
+    check('logos are only looked up for organisations the user has mail from', () => {
+      assert.equal(noMail.status, 404);
+      assert.equal(personal.status, 400);
+    });
+    await setPrefs({});
+  } finally {
+    await llm.close();
+  }
 
   // ── Missing Trash and Junk ───────────────────────────────────────────────
   const [{ id: bareAccount }] = await query(

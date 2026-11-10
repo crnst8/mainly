@@ -1,9 +1,16 @@
 import { useState } from 'react';
+import { currentApi } from '@/lib/api';
 import { initials } from '@/lib/format';
-import { senderProfileFor } from '@/lib/sender';
+import { senderDomain, senderProfileFor } from '@/lib/sender';
+import { useStore } from '@/lib/store';
 import type { Addr, SenderProfile } from '@/lib/types';
 
-/** A monogram until the user explicitly assigns this sender identity a logo. */
+/**
+ * A monogram until this sender identity has a logo: one the user assigned, or,
+ * with automatic logos on, the BIMI logo the sender's domain publishes, served
+ * by this app's own server (backend/src/assist/logos.ts). A domain with no
+ * logo answers 404 and the monogram stays.
+ */
 export function SenderAvatar({
   sender,
   profiles,
@@ -26,7 +33,10 @@ export function SenderAvatar({
      monogram in place after the first bad address, so correcting the typo
      appeared to do nothing. */
   const [failedUrl, setFailedUrl] = useState<string | null>(null);
-  const imageUrl = senderProfileFor(sender, profiles)?.imageUrl ?? null;
+  const auto = useStore((s) => s.prefs?.assist.senderLogos ?? false);
+  const domain = auto ? senderDomain(sender.address) : null;
+  const imageUrl =
+    senderProfileFor(sender, profiles)?.imageUrl ?? (domain ? (currentApi()?.senderLogoUrl(domain) ?? null) : null);
 
   const inner =
     imageUrl && failedUrl !== imageUrl ? (

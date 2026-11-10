@@ -7,10 +7,11 @@
  */
 
 import { useState } from 'react';
-import { Chevron, Plus, Question, Settings as SettingsIcon } from '@/components/icons';
+import { Chevron, Plus, Question, Settings as SettingsIcon, Sparkle } from '@/components/icons';
 import { MobileComposer } from './MobileComposer';
 import { Onboarding } from '@/features/accounts/Onboarding';
 import { Help } from '@/features/help/Help';
+import { Recap } from '@/features/recap/Recap';
 import { Settings } from '@/features/settings/Settings';
 import { SearchBox } from '@/features/shell/SearchBox';
 import { Toasts } from '@/features/shell/AppShell';
@@ -29,6 +30,7 @@ export function MobileShell() {
   const help = useStore((s) => s.help);
   const settings = useStore((s) => s.settings);
   const onboarding = useStore((s) => s.onboarding);
+  const recap = useStore((s) => s.recap);
   const openId = useStore((s) => s.openId);
   const [scopeOpen, setScopeOpen] = useState(false);
   const [filterOpen, setFilterOpen] = useState(false);
@@ -62,6 +64,7 @@ export function MobileShell() {
       <Toasts />
       {help && <Help />}
       {settings && <Settings />}
+      {recap && <Recap />}
       {onboarding && <Onboarding />}
     </div>
   );
@@ -79,6 +82,8 @@ function MobileTopbar({
   const goHome = useStore((s) => s.goHome);
   const setHelp = useStore((s) => s.setHelp);
   const setSettings = useStore((s) => s.setSettings);
+  const setRecap = useStore((s) => s.setRecap);
+  const usesModel = useStore((s) => !!s.prefs && (s.prefs.assist.kinds || s.prefs.filtering.llm));
   const result = useStore((s) => s.result);
   const unread = result?.facets.unread ?? 0;
   const filters = useStore((s) => s.query.filters);
@@ -125,6 +130,11 @@ function MobileTopbar({
       </div>
 
       <div className="mobile__topactions">
+        {usesModel && (
+          <button type="button" className="mobile__gear" aria-label="Recap" onClick={() => setRecap(true)}>
+            <Sparkle size={18} />
+          </button>
+        )}
         <button
           type="button"
           className="mobile__gear"

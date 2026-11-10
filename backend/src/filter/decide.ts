@@ -29,6 +29,7 @@ import { featuresOf } from './features.ts';
 import { LLM_BATCH, classify, providerFor, takeBudget, type LlmMessage } from './llm.ts';
 import { correspondence, inputOf, keyOf, modelFor, rulesFor, trackRecord, type FilterRow } from './model.ts';
 import { fileByRole } from '../sync/filing.ts';
+import { profileFor } from './study.ts';
 
 export interface Candidate {
   row: FilterRow;
@@ -97,7 +98,11 @@ export async function decide(
 
   /* 4. The language model. */
   const examples = model.examples;
-  if (!prefs.llm || !unsure.length || !examples.some((e) => e.verdict === 'filter')) return out;
+  if (!prefs.llm || !unsure.length) return out;
+  const profile = await profileFor(userId);
+  // With nothing filed and no profile, the model would be guessing what the
+  // user dislikes from nothing.
+  if (!examples.some((e) => e.verdict === 'filter') && !profile?.filter.length) return out;
   const provider = await providerFor(userId);
   const name = prefs.llmModel || provider?.defaultModel;
   if (!provider || !name) return out;
@@ -107,7 +112,7 @@ export async function decide(
   for (let i = 0; i < asked.length; i += LLM_BATCH) {
     const batch = asked.slice(i, i + LLM_BATCH);
     try {
-      const verdicts = await classify(provider, userId, name, batch.map((c) => llmMessage(c.row)), examples);
+      const verdicts = await classify(provider, userId, name, batch.map((c) => llmMessage(c.row)), examples, profile);
       verdicts.forEach((v, j) => {
         if (v?.filter && v.confidence >= needed)
           out.push({ id: batch[j]!.row.id, stage: 'llm', score: v.confidence, model: name });

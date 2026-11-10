@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Check, Chevron, Close, Command, Inbox, Plus, Refresh, Undo } from '@/components/icons';
+import { Check, Chevron, Close, Command, Inbox, Plus, Refresh, Sparkle, Undo } from '@/components/icons';
 import { Button, IconButton, Kbd, PopLabel, Popover } from '@/components/ui';
 import { useKeyboard } from '@/lib/keyboard';
 import { useIsStacked } from '@/lib/media';
@@ -7,6 +7,7 @@ import { useRouter } from '@/lib/router';
 import { useAccountColor, useStore } from '@/lib/store';
 import { Composer } from '@/features/compose/Composer';
 import { Help } from '@/features/help/Help';
+import { Recap } from '@/features/recap/Recap';
 import { MailList } from '@/features/mail-list/MailList';
 import { Onboarding } from '@/features/accounts/Onboarding';
 import { Reader } from '@/features/reader/Reader';
@@ -25,6 +26,7 @@ export function AppShell() {
   const help = useStore((s) => s.help);
   const settings = useStore((s) => s.settings);
   const onboarding = useStore((s) => s.onboarding);
+  const recap = useStore((s) => s.recap);
 
   return (
     <div className="app">
@@ -41,6 +43,7 @@ export function AppShell() {
       <Toasts />
       {help && <Help />}
       {settings && <Settings />}
+      {recap && <Recap />}
       {onboarding && <Onboarding />}
     </div>
   );
@@ -58,6 +61,10 @@ function Topbar() {
   const openId = useStore((s) => s.openId);
   const open = useStore((s) => s.open);
   const stacked = useIsStacked();
+  // Shown once the user has turned on a model task, which needs a provider;
+  // before that the palette and Settings → Assist still reach it.
+  const usesModel = useStore((s) => !!s.prefs && (s.prefs.assist.kinds || s.prefs.filtering.llm));
+  const setRecap = useStore((s) => s.setRecap);
 
   /*
    * In a half-width window the reader covers the list rather than sitting
@@ -120,6 +127,11 @@ function Topbar() {
 
       <div className="topbar__actions">
         <IdentitySwitcher />
+        {usesModel && (
+          <IconButton label="Recap" onClick={() => setRecap(true)}>
+            <Sparkle size={15} />
+          </IconButton>
+        )}
         <IconButton label="Command palette" hint="⌘K" onClick={() => setPalette(true)}>
           <Command size={15} />
         </IconButton>

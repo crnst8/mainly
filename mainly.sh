@@ -666,6 +666,25 @@ cmd_token() {
   compose exec app node dist/cli/token.js "$@"
 }
 
+# Connect a Hermes agent on another machine: mints a token here and installs
+# the MCP server there, over SSH. See scripts/connect-hermes.sh and docs/mcp.md.
+# The API addresses to try are APP_ORIGIN, then every address this host
+# answers on; the script keeps the first one the agent's host can reach.
+cmd_hermes() {
+  require_docker
+  load_env
+  local urls=() url
+  if [[ " $* " != *" --api-url "* ]]; then
+    [[ -n "${APP_ORIGIN:-}" ]] && urls+=(--api-url "${APP_ORIGIN%/}/api")
+    while IFS= read -r url; do
+      [[ -n "$url" ]] && urls+=(--api-url "$url/api")
+    done <<<"$(reachable_urls)"
+  fi
+  # ${x[@]+…}: an empty array under `set -u` is an error in the bash macOS ships.
+  scripts/connect-hermes.sh "$@" ${urls[@]+"${urls[@]}"} -- \
+    docker compose exec -T app node dist/cli/token.js
+}
+
 # Connecting a mail server hands this install an SSH key, so it is done from a
 # shell here rather than through the API. Same bar as `token`.
 #
@@ -759,6 +778,10 @@ ${BOLD}mainly${RESET} — self-hosted multi-domain mail client
   ./mainly.sh backup [dir]       pg_dump to ./backups by default.
   ./mainly.sh restore <file>     Replace the database from a backup. Asks first.
   ./mainly.sh token <args>       Mint or revoke an API token for an agent.
+  ./mainly.sh hermes <ssh-host> <email>
+                                 Connect a Hermes agent on another machine:
+                                 installs the MCP server there and a scoped
+                                 token. Options: ./mainly.sh hermes --help
   ./mainly.sh domain <args>      Optional: let this install create and remove
                                  addresses on your mail server. Start on the
                                  mail server with 'mainly-provision setup';
@@ -782,6 +805,7 @@ case "${1:-}" in
   logs)    shift; cmd_logs "$@" ;;
   user)    shift; cmd_user "$@" ;;
   token)   shift; cmd_token "$@" ;;
+  hermes)  shift; cmd_hermes "$@" ;;
   domain)  shift; cmd_domain "$@" ;;
   update)  cmd_update ;;
   backup)  shift; cmd_backup "$@" ;;

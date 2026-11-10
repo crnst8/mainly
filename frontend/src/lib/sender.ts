@@ -104,10 +104,16 @@ export function setSenderImage(sender: Addr, profiles: SenderProfile[], url: str
   ];
 }
 
-/** Only an explicitly supplied HTTPS URL may become a sender logo. */
+/**
+ * Only an explicitly supplied HTTPS URL may become a sender logo — or the path
+ * this app's own server serves a found logo at (`MailApi.findSenderLogo`),
+ * which is same-origin and so carries no third party.
+ */
 export function senderImageUrl(value: string): string | null {
   const raw = value.trim();
   if (!raw) return null;
+  const own = /^\/[a-z0-9/_-]*\/senders\/logo\?domain=([a-z0-9.-]+)$/.exec(raw);
+  if (own) return senderDomain(own[1]!) ? raw : null;
   try {
     return new URL(raw).protocol === 'https:' ? raw : null;
   } catch {

@@ -32,11 +32,14 @@ import {
   LlmError,
   normaliseBaseUrl,
   ownProvider,
+  pickModel,
   providerFor,
   removeOwnProvider,
   saveOwnProvider,
+  verifyProvider,
 } from '../../filter/llm.ts';
 import { FILTER_ROW_COLUMNS, modelFor, trackRecord, type FilterRow } from '../../filter/model.ts';
+import { buildProfile, observedCount, profileStatus } from '../../filter/study.ts';
 import { publishCounts } from '../../sync/folders.ts';
 import { syncNow } from '../../sync/engine.ts';
 
@@ -55,7 +58,7 @@ async function prefsOf(userId: string): Promise<Preferences> {
 export async function filterRoutes(app: FastifyInstance): Promise<void> {
   app.get('/filter/status', async (req) => {
     const prefs = await prefsOf(req.userId);
-    const [examples, model, record, sources, provider] = await Promise.all([
+    const [examples, model, record, sources, provider, observed, profile] = await Promise.all([
       query<{ verdict: 'filter' | 'keep'; n: number }>(
         `SELECT verdict, count(*)::int AS n FROM filter_examples WHERE user_id = $1 GROUP BY verdict`,
         [req.userId],
@@ -83,6 +86,8 @@ export async function filterRoutes(app: FastifyInstance): Promise<void> {
         [req.userId],
       ),
       providerFor(req.userId),
+      observedCount(req.userId),
+      profileStatus(req.userId),
     ]);
     const count = (v: 'filter' | 'keep') => examples.find((e) => e.verdict === v)?.n ?? 0;
     return {
@@ -112,6 +117,8 @@ export async function filterRoutes(app: FastifyInstance): Promise<void> {
           lastAt: s.last_at.toISOString(),
         }),
       ),
+      observed,
+      profile,
     } satisfies FilterStatus;
   });
 
@@ -203,15 +210,36 @@ export async function filterRoutes(app: FastifyInstance): Promise<void> {
       // Refused here with its own message, not as the provider's answer below.
       if (url) await assertPublicHost(new URL(url).hostname, 'The model provider');
 
+      const candidate = ownProvider(url, key);
+      let models: string[];
       try {
-        await listModels(ownProvider(url, key));
+        models = await verifyProvider(candidate);
       } catch (err) {
+        // Named, so a refusal can never be read as coming from the provider
+        // that was selected before.
         throw badRequest(
-          `The provider did not accept it: ${err instanceof LlmError ? err.message : 'the request failed'}`,
+          `${llmHost(candidate) ?? 'The provider'} did not accept it: ${err instanceof LlmError ? err.message : 'the request failed'}`,
         );
       }
-      await saveOwnProvider(req.userId, url, key);
+      // OpenCode Go keeps its benchmarked default; any other provider gets the
+      // first fast model it offers, so the filter works without a second step.
+      await saveOwnProvider(req.userId, url, key, url ? pickModel(models) : null);
       return reply.code(204).send();
+    },
+  );
+
+  /** Rebuild what the filter has worked out about the user's filing, now
+   *  rather than on the daily schedule. */
+  app.post(
+    '/filter/profile',
+    { config: { rateLimit: { max: 10, timeWindow: '1 hour' }, sessionOnly: true } },
+    async (req) => {
+      const prefs = await prefsOf(req.userId);
+      try {
+        return await buildProfile(req.userId, prefs, true);
+      } catch (err) {
+        throw badRequest(err instanceof LlmError ? err.message : 'The profile could not be built');
+      }
     },
   );
 

@@ -25,11 +25,13 @@ import {
   Trash,
   User,
   Filtered,
+  Sparkle,
 } from '@/components/icons';
 import { Button, Field, IconButton, Row, Segmented, Spinner, Toggle } from '@/components/ui';
 import { MailServer } from './MailServer';
 import { Filtering, Notifications } from './Notifications';
 import { FilteredSettings } from './FilteredSettings';
+import { AssistSettings } from './AssistSettings';
 import { SHORTCUTS } from '@/lib/keyboard';
 import { relative } from '@/lib/format';
 import { senderDomains, senderImageUrl } from '@/lib/sender';
@@ -60,6 +62,7 @@ const TABS = [
   { id: 'notifications', label: 'Notifications', icon: <Bell size={15} /> },
   { id: 'filtering', label: 'Spam & folders', icon: <Junk size={15} /> },
   { id: 'filtered', label: 'Filtered', icon: <Filtered size={15} /> },
+  { id: 'assist', label: 'Assist', icon: <Sparkle size={15} /> },
   // Distinct from Accounts above: that is the forty-five mailboxes this app
   // reads, this is the one machine it may write to. Named for the machine
   // because "Domains" already means the sidebar grouping.
@@ -187,6 +190,7 @@ export function Settings() {
             {tab === 'notifications' && <Notifications />}
             {tab === 'filtering' && <Filtering />}
             {tab === 'filtered' && <FilteredSettings />}
+            {tab === 'assist' && <AssistSettings />}
             {tab === 'mailserver' && <MailServer />}
             {tab === 'mobile' && <MobileSettings />}
             {tab === 'keyboard' && <Keyboard />}

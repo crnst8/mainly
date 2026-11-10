@@ -36,6 +36,8 @@ import {
 import { unsubscribeRoutes } from './modules/unsubscribe/routes.ts';
 import { pushRoutes } from './modules/push/routes.ts';
 import { filterRoutes } from './modules/filter/routes.ts';
+import { assistRoutes } from './modules/assist/routes.ts';
+import { startStudyLoop, stopStudyLoop } from './filter/study.ts';
 import { startSyncLoop, stopSyncLoop } from './sync/engine.ts';
 import { startIdle, stopIdle } from './sync/idle.ts';
 
@@ -249,6 +251,7 @@ export async function build() {
       await preferenceRoutes(authed);
       await pushRoutes(authed);
       await filterRoutes(authed);
+      await assistRoutes(authed);
       await syncRoutes(authed);
       await eventRoutes(authed);
     },
@@ -301,11 +304,15 @@ async function main() {
     // every account gets a connection, so the interval still has to catch up on
     // the ones that do not.
     startIdle();
+    // The filter's daily look at each user's Filtered folder, for users with
+    // the language model on. Belongs to sync: it reads mail, not requests.
+    startStudyLoop();
   }
 
   const shutdown = async (signal: string) => {
     console.log(`${signal} received, shutting down`);
     if (sessionSweep) clearInterval(sessionSweep);
+    stopStudyLoop();
     await stopSyncLoop();
     await stopIdle();
     // Drain in-flight requests before closing the pool underneath them.

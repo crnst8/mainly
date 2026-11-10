@@ -27,6 +27,8 @@ import type {
   DomainProbe,
   Draft,
   FilterModelTrial,
+  FilterProfileStatus,
+  Recap,
   FilterSource,
   FilterStatus,
   Folder,
@@ -778,6 +780,8 @@ export class MockApi implements MailApi {
       threshold: 0.92,
       llm: { available: false, host: null, defaultModel: null, source: null, server: false },
       sources: [...sources.values()].reverse(),
+      observed: 0,
+      profile: null,
     };
   }
 
@@ -814,6 +818,25 @@ export class MockApi implements MailApi {
 
   async tryFilterModel(): Promise<FilterModelTrial> {
     throw new Error('Language models need a Mainly server; this demo has none');
+  }
+
+  async rebuildFilterProfile(): Promise<FilterProfileStatus | null> {
+    throw new Error('Language models need a Mainly server; this demo has none');
+  }
+
+  async recap(): Promise<Recap> {
+    await sleep(LATENCY.fast);
+    throw new Error('Recaps need a Mainly server with a model provider; this demo has none');
+  }
+
+  // Logos are looked up by a server; the demo has none, so senders keep their
+  // monograms rather than the demo fetching from real companies' domains.
+  senderLogoUrl(): string | null {
+    return null;
+  }
+
+  async findSenderLogo(): Promise<string | null> {
+    throw new Error('Finding logos needs a Mainly server; this demo has none');
   }
 
   /* ── Push ───────────────────────────────────────────────────────────────── */

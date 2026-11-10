@@ -221,6 +221,12 @@ export const Warning = (p: P) => (
   </Svg>
 );
 
+export const Sparkle = (p: P) => (
+  <Svg {...p}>
+    <path d="M8 2.2 9.3 6.7 13.8 8 9.3 9.3 8 13.8 6.7 9.3 2.2 8 6.7 6.7z" />
+  </Svg>
+);
+
 export const Check = (p: P) => (
   <Svg {...p}>
     <path d="m3 8.4 3.2 3.2L13 4.6" />

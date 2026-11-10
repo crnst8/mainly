@@ -91,6 +91,9 @@ and the token.
 }
 ```
 
+**Hermes Agent** — one command from this host, over SSH. See
+[Hermes Agent](#hermes-agent) below.
+
 | Variable | Default | Meaning |
 | --- | --- | --- |
 | `MAIL_API_URL` | `http://127.0.0.1:5274/api` | Where the API is. Use your public URL if the agent is not on the same host. |
@@ -98,6 +101,60 @@ and the token.
 | `MAIL_MCP_MAX_BODY_CHARS` | `8000` | How much of a body one read may return. |
 
 ---
+
+### Hermes Agent
+
+[Hermes Agent](https://github.com/NousResearch/hermes-agent) usually runs on
+another machine. One command connects it, run on the host this app runs on:
+
+```sh
+./mainly.sh hermes <ssh-host> you@yourdomain.com
+```
+
+`<ssh-host>` is how `ssh` reaches the agent's machine: an alias from
+`~/.ssh/config` or `user@host`, with key authentication. The command
+([`scripts/connect-hermes.sh`](../scripts/connect-hermes.sh)):
+
+1. finds Hermes and Node 22+ there (Hermes's installer bundles a Node);
+2. picks the API address the agent's machine can reach, by asking that machine
+   to call `/api/health` on `APP_ORIGIN`, then this host's Tailscale and LAN
+   addresses, and keeping the first that answers;
+3. copies `mcp/` to `~/.local/share/mainly-mcp` there and installs its
+   dependencies;
+4. mints a token here (`read,write`, 90 days);
+5. writes it into Hermes's own secret file, `~/.hermes/.env` (mode 0600), as
+   `MAINLY_MCP_TOKEN`, and registers the server with `hermes mcp add`, whose
+   config refers to it as `${MAINLY_MCP_TOKEN}`;
+6. runs `hermes mcp test`, installs a short Hermes skill
+   (`~/.hermes/skills/email/mainly/SKILL.md`, from
+   [`mcp/hermes/SKILL.md`](../mcp/hermes/SKILL.md)), and revokes earlier
+   tokens with the same name.
+
+The token goes over SSH on stdin, never on a command line, and is never
+printed. Run the command again to renew it before it expires; the old one is
+revoked once the new one works.
+
+| Option | Default | Meaning |
+| --- | --- | --- |
+| `--api-url URL` | derived | The API as the agent's machine reaches it, e.g. `https://mail.example.com/api`. Repeatable; the first that answers is used. |
+| `--scopes LIST` | `read,write` | Add `unsubscribe` only if the agent should act on List-Unsubscribe. |
+| `--days N` | `90` | Token lifetime. |
+| `--name NAME` | `mainly` | The server's name in Hermes, the token's name here, and the env var (`NAME_MCP_TOKEN`). |
+| `--remote-dir DIR` | `~/.local/share/mainly-mcp` | Where the MCP server goes. |
+| `--no-skill` | | Skip the Hermes skill. |
+
+Plain `http://` is accepted for loopback and Tailscale (`100.x`) addresses and
+warned about otherwise, because the token would cross the network unencrypted.
+Prefer `https://`, or Tailscale.
+
+In a development checkout, `./dev.sh hermes <ssh-host> <email> --api-url URL`
+does the same. The dev API listens on localhost only, so pass an address the
+agent's machine can reach, for example through
+`ssh -R 15274:127.0.0.1:5274 <ssh-host>` and `--api-url http://127.0.0.1:15274/api`.
+
+To disconnect: `hermes mcp remove mainly` on the agent's machine, delete the
+`MAINLY_MCP_TOKEN` line from `~/.hermes/.env`, and revoke the token here with
+`./mainly.sh token list` / `token revoke`.
 
 ## 3. The tools
 

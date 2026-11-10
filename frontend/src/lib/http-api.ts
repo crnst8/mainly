@@ -26,6 +26,9 @@ import type {
   PushSubscriptionInput,
   FilterKeyInput,
   FilterModelTrial,
+  FilterProfileStatus,
+  IsoDate,
+  Recap,
   FilterSource,
   FilterStatus,
   SavedView,
@@ -179,6 +182,20 @@ export class HttpApi implements MailApi {
   removeFilterKey = () => this.req<void>('/filter/llm/key', { method: 'DELETE' });
   listFilterModels = () => this.req<string[]>('/filter/models');
   tryFilterModel = (model: string | null) => this.post<FilterModelTrial>('/filter/models/try', { model });
+  rebuildFilterProfile = () => this.post<FilterProfileStatus | null>('/filter/profile');
+
+  /* Assist */
+  recap = (since: IsoDate) => this.post<Recap>('/assist/recap', { since });
+  senderLogoUrl = (domain: string) => `${this.base}/senders/logo?domain=${encodeURIComponent(domain)}`;
+  findSenderLogo = async (domain: string) => {
+    try {
+      await this.post<{ url: string }>('/senders/logo', { domain });
+      return this.senderLogoUrl(domain);
+    } catch (e) {
+      if (e instanceof ApiRequestError && e.status === 404) return null;
+      throw e;
+    }
+  };
 
   /* Domain control */
   listDomains = () => this.req<ManagedDomain[]>('/domains');
