@@ -1,46 +1,62 @@
 ---
-summary: Self-hosted webmail client; Filtered-folder feature reviewed and verified on branch sort.
+summary: Self-hosted webmail client; uncommitted work fixes OpenRouter keys and adds Assist, Hermes connection and Filtered-folder study.
 state: active
 priority: 1
-updated: 2026-10-24
-next: Review and commit the Filtered-folder follow-up, then push/open a PR when requested.
+updated: 2026-11-11
+next: Review the uncommitted diff on main (`git status`, `git diff`), branch, and commit it in three parts (OpenRouter fix, Assist + study, Hermes script).
 ---
 
 # mainly status
 
 ## Where it stands
-Released version remains 1.3.8. Branch `sort` contains `8b6893c` (Filtered folder);
-this session's fixes remain uncommitted. Nothing pushed or released.
+Released 1.4.0 (Filtered folder, provider and key in Settings), plus `15cc402`
+(installed iPhone app fills the screen). This session's work is in the working
+tree on `main`, uncommitted. `./dev.sh check` passes: 71 unit tests, 47
+consistency checks (5 new), typechecks, audit, contract, URL/search/store,
+smoke, query and index checks.
 
-## Done today
-- Read `SORT-HANDOFF.md` and reviewed filtering, learning, replay, settings and model transport.
-- Verified OpenCode model discovery and eight models using synthetic mail only.
-  MiniMax M3.1 Flash is the new default: 30/30 correct across three batches,
-  zero wrongly filed, 2.4–2.9 seconds. Added a repeatable synthetic benchmark.
-- Fixed folder parents for server delimiters, automatic filing after a user
-  archived mail, and Filter out from an already-filtered reader outside the list.
-- Bounded provider responses while streaming, validated model-list shape, and
-  surfaced failures when forgetting rules.
-- Updated vulnerable backend/MCP dependencies; no audit blockers. MCP initializes
-  and lists all 14 tool schemas with Zod 4.
-- Verified real Dovecot 2.3 with dot and slash delimiters: folder creation,
-  Filter out, replay, Undo, arrival rules, rescue and sweep.
-- Verified live HTTP settings on desktop and mobile, including OpenCode's model
-  dropdown and Try (Filter, 99%, about 2.9 seconds).
-- Removed the duplicate 1.3.7 changelog entry.
-- Full `./dev.sh check` passed: 56 backend tests, 42 consistency checks,
-  10 store checks, plus typechecks, audit, contract, URL/search, static/auth,
-  smoke, query and index checks. Two nonblocking frontend audit warnings remain.
+## Done today (uncommitted)
+- OpenRouter keys now save. The model list cap (256 KB) refused OpenRouter's
+  842 KB list, which showed as "did not accept it". Model lists now read up to
+  8 MB; OpenRouter keys are checked against `/key` (its model list is public);
+  errors name the host. Saving picks a default model from the provider's list
+  (migration 018 adds `filter_llm_keys.model`).
+- Settings → Assist: provider, key and model moved here from Filtered, shared
+  by every model task.
+- Kind labels on arrival (`action`, `bill`, `receipt`, `shipping`, `travel`,
+  `security`, `event`): `backend/src/assist/kinds.ts`.
+- Recap of today / since yesterday / last 7 days: `backend/src/assist/recap.ts`,
+  `frontend/src/features/recap/`; topbar, palette, mobile header, Assist.
+- Sender logos: BIMI auto (opt-in) and "Find logo" (BIMI, then site icon),
+  fetched by the server and cached: `backend/src/assist/logos.ts`.
+- Filtered study: mail filed by other clients or server rules now trains the
+  classifier; daily model-written filing profile feeds every filing prompt:
+  `backend/src/filter/study.ts`.
+- `./mainly.sh hermes <ssh-host> <email>` / `./dev.sh hermes`: installs the
+  MCP server on the agent's host, token via SSH stdin into Hermes's `.env`,
+  registers, tests, installs a skill. Tested end to end against the dev API
+  through a reverse tunnel, including renewal; the test entry, token, secret
+  line and files were removed from the agent host afterwards.
+- Docs: `docs/assist.md` (new), `docs/filtering.md`, `docs/mcp.md`, README,
+  skill.
 
 ## Next
-Review the working-tree changes; keep dependency maintenance identifiable when
-committing. Push, PR and release only when requested.
+1. Review the uncommitted diff on main, branch, and commit it in three parts.
+2. Save a real OpenRouter key in Settings → Assist and press Try (only a bogus
+   key was tested live: it fails with "openrouter.ai did not accept it: 401").
+3. Run `./mainly.sh hermes <ssh-host> <email>` against the real install.
+4. Release when ready (`./publish.sh`); CHANGELOG entry not yet written.
 
 ## Waiting on you
-A persistent operator key is needed to enable the optional LLM after the temporary
-key expires. The temporary key was used only in process environments, never files.
+- A real OpenRouter (or other) key to confirm the success path end to end.
+- Running the Hermes command against the production install (it mints a token
+  there, so it was not run from this session).
 
 ## Loose ends
-The synthetic benchmark is small; it is not a mailbox accuracy measurement.
-Moves from other IMAP clients still do not teach the filter. The original
-handoff's scale/cache follow-ups remain future work, not release blockers.
+- Uncommitted: backend (assist module, study.ts, migration 018, llm.ts,
+  routes, arrivals, consistency-check + fake-llm.mjs), frontend (Assist
+  settings, recap, sender avatar/menu, store, types), scripts
+  (connect-hermes.sh, mainly.sh, dev.sh), mcp/hermes/SKILL.md, docs.
+- CI (`.github/workflows/ci.yml`) does not run consistency-check, so the new
+  integration checks run only in `./dev.sh check`.
+- Dev API and web are running on :5274 / :5273.
