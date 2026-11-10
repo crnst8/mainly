@@ -1,3 +1,10 @@
+## 1.5.0 — 2026-11-11
+
+ - Wider use of tools integrated + OpenRouter key fixed
+
+- status: 2026-11-11
+- fix(mobile): fill the screen as an installed iPhone app
+
 ## 1.4.0 — 2026-10-26
 
 - feat: Filtered folder — filter out, learned filing, optional language model
