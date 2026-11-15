@@ -32,9 +32,15 @@ const SHADOW_CSS = `
      asked for in a <b>, the browser gets to draw it. */
   :host { display: block; font-synthesis-weight: auto; }
   * { max-width: 100%; }
+  /* Long unbroken strings (tracking URLs, hashes) wrap instead of widening the
+     page. break-word rather than anywhere: it does not lower a table cell's
+     minimum width, so a layout is not squeezed into one-letter columns. */
+  .mail { overflow-wrap: break-word; }
   body, div, p, td, span, li { font-family: inherit; }
   p { margin: 0 0 1em; }
-  a { color: var(--accent); text-decoration: underline; text-underline-offset: 2px; }
+  /* A link is the one long token that can break anywhere without harm, and
+     letting it do so stops a tracking URL from widening the cell it sits in. */
+  a { color: var(--accent); text-decoration: underline; text-underline-offset: 2px; overflow-wrap: anywhere; }
   img { height: auto; border-radius: 2px; }
   img[data-src] {
     min-height: 24px;
@@ -66,6 +72,30 @@ const SHADOW_CSS = `
   }
 `;
 
+/**
+ * Scale `mail` so its widest content fits `host`'s width.
+ *
+ * Mail is laid out for a desktop column: fixed-width tables, cells with
+ * `width="600"`, nowrap headers. `max-width: 100%` in SHADOW_CSS shrinks what
+ * it can (tables, images), but table cells ignore max-width, so what is left
+ * over is scaled down — the same thing Apple Mail and Gmail do on a phone.
+ *
+ * CSS `zoom` rather than a transform: zoom changes layout, so the height the
+ * page scrolls through matches what is drawn, and an element with `zoom: z`
+ * lays out in a column `1/z` as wide — exactly the width the content needs.
+ * Where zoom is unsupported the container's horizontal scroll is the fallback.
+ */
+function fitWidth(mail: HTMLElement): void {
+  // Measure at full size every time, so content that has become narrower (a
+  // rotated phone, a reflow) goes back up rather than staying shrunk. Setting
+  // the same zoom back does not resize anything, so the observer that called
+  // this is not woken again by it.
+  mail.style.zoom = '';
+  const available = mail.clientWidth;
+  const natural = mail.scrollWidth;
+  mail.style.zoom = available && natural > available + 1 ? String(available / natural) : '';
+}
+
 export function MessageBody({
   html,
   text,
@@ -73,6 +103,7 @@ export function MessageBody({
   relit = false,
   surface = 'light',
   terms = EMPTY_TERMS,
+  fit = false,
 }: {
   html: string | null;
   text: string | null;
@@ -93,6 +124,12 @@ export function MessageBody({
   /** Search terms to mark. Marking happens on the parsed DOM inside the shadow
    *  root, never by splicing markup back into the sanitised string. */
   terms?: string[];
+  /**
+   * Shrink a body that is wider than its column until it fits, instead of
+   * scrolling sideways. For the phone, where a 600px newsletter on a 390px
+   * screen otherwise has to be panned left and right line by line.
+   */
+  fit?: boolean;
 }) {
   const hostRef = useRef<HTMLDivElement>(null);
   const textRef = useRef<HTMLDivElement>(null);
@@ -114,7 +151,7 @@ export function MessageBody({
     if (shadowRef.current?.host !== host) shadowRef.current = host.attachShadow({ mode: 'open' });
     const root = shadowRef.current;
 
-    root.innerHTML = `<style>${SHADOW_CSS}</style><div>${sanitiseBody(html)}</div>`;
+    root.innerHTML = `<style>${SHADOW_CSS}</style><div class="mail">${sanitiseBody(html)}</div>`;
 
     // Also make plaintext URLs links. Existing and generated links open
     // externally, never with a window.opener handle.
@@ -144,7 +181,19 @@ export function MessageBody({
     // After sanitising and after the DOM exists — marking edits text nodes in
     // place, so it can only ever produce `<mark>` elements this code created.
     markInDom(root, terms);
-  }, [html, loadRemote, relit, surface, terms, text]);
+
+    if (!fit) return;
+    const mail = root.querySelector<HTMLElement>('.mail');
+    if (!mail) return;
+    const refit = () => fitWidth(mail);
+    refit();
+    // Images arrive after the first layout, and a rotated phone changes the
+    // column. Either can change the answer.
+    const observer = new ResizeObserver(refit);
+    observer.observe(host);
+    observer.observe(mail);
+    return () => observer.disconnect();
+  }, [html, loadRemote, relit, surface, terms, text, fit]);
 
   if (html === null) {
     return (

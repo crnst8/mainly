@@ -195,6 +195,7 @@ export function MobileReader() {
               relit={mailDark}
               surface={onDark ? 'dark' : 'light'}
               terms={terms}
+              fit
             />
           </div>
 
@@ -443,6 +444,7 @@ function ThreadList({
                     loadRemote={false}
                     relit={relit}
                     surface={surface}
+                    fit
                   />
                 )}
               </div>

@@ -293,6 +293,8 @@
 
 .reader__text {
   white-space: pre-wrap;
+  /* A long URL in plain text would otherwise set the width of the column. */
+  overflow-wrap: anywhere;
   font-family: var(--font-ui);
   font-size: var(--t-md);
   line-height: var(--lh-loose);
