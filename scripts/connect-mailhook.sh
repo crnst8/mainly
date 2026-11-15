@@ -12,8 +12,9 @@
 #
 # What `connect` does, in order, stopping at the first thing that fails:
 #
-#   1. Works out which IMAP hostnames the server answers to: --imap-host, or
-#      the only host accounts here use.
+#   1. Works out which IMAP hostnames the server answers to: --imap-host, the
+#      only host accounts here use, or (with several) the account hosts the
+#      server's TLS certificates name, read in step 3.
 #   2. Finds an API URL the mail server can reach (--url, else APP_ORIGIN and
 #      this host's own addresses), tried *from the mail server*.
 #   3. Checks the server: root or passwordless sudo, Dovecot 2.3, the Lua push
@@ -63,7 +64,8 @@ connect options:
                     answers is used. Default: APP_ORIGIN, then this host's
                     Tailscale and LAN addresses.
   --imap-host HOST  an IMAP hostname this server answers to, as accounts here
-                    name it. Repeatable. Default: the only host accounts use.
+                    name it. Repeatable. Default: the only host accounts use,
+                    or the account hosts the server's certificates name.
   --user LOGIN      the login to test with. Default: the first working
                     account on those hosts.
 EOF
@@ -160,25 +162,13 @@ if [[ "$ACTION" == remove ]]; then
 fi
 
 # ── 1. Which hosts ──────────────────────────────────────────────────────────
+# With one host in use, that is the answer. With several, the mail server is
+# asked in step 3 which names its certificates cover.
+KNOWN=()
 if [[ ${#IMAP_HOSTS[@]} -eq 0 ]]; then
-  known=()
-  while IFS= read -r line; do [[ -n "$line" ]] && known+=("$line"); done < <("${HOOK_CLI[@]}" hosts)
-  [[ ${#known[@]} -gt 0 ]] || die "No accounts here yet. Add the mailboxes on this server first."
-  if [[ ${#known[@]} -gt 1 ]]; then
-    say "Accounts here use more than one IMAP host:"
-    printf '  %s accounts  %s\n' $(printf '%s\n' "${known[@]}" | awk '{ print $2, $1 }')
-    die "Name the ones this mail server answers to: --imap-host HOST (repeatable)."
-  fi
-  IMAP_HOSTS=("${known[0]%% *}")
-fi
-for h in "${IMAP_HOSTS[@]}"; do
-  [[ "$h" =~ ^[a-z0-9.-]+$ ]] || die "Not a hostname: $h"
-done
-ok "For IMAP host${IMAP_HOSTS[1]:+s}: ${IMAP_HOSTS[*]}"
-
-if [[ -z "$TEST_USER" ]]; then
-  TEST_USER=$("${HOOK_CLI[@]}" login "${IMAP_HOSTS[@]}" 2>/dev/null) \
-    || die "No working account on ${IMAP_HOSTS[*]} to test with. Pass --user LOGIN."
+  while IFS= read -r line; do [[ -n "$line" ]] && KNOWN+=("${line%% *}"); done < <("${HOOK_CLI[@]}" hosts)
+  [[ ${#KNOWN[@]} -gt 0 ]] || die "No accounts here yet. Add the mailboxes on this server first."
+  [[ ${#KNOWN[@]} -gt 1 ]] || IMAP_HOSTS=("${KNOWN[0]}")
 fi
 
 # ── 2. A URL the mail server can reach ──────────────────────────────────────
@@ -244,6 +234,22 @@ for k in push_notification_driver push_notification_driver2 push_notification_dr
 done
 echo "slot=$free"
 getent group dovecot >/dev/null 2>&1 && echo "group=dovecot" || echo "group="
+# The names this server presents certificates for: every ssl_cert in the
+# effective config (global and per local_name), their subject alternative
+# names and common name, plus the local_name values themselves. A name a
+# client reaches this server by over TLS has to be in one of them.
+names=$(
+  doveconf -n 2>/dev/null | sed -n 's/^[[:space:]]*local_name[[:space:]]\{1,\}\(.*\)[[:space:]]*{[[:space:]]*$/\1/p' | tr ' ' '\n'
+  if command -v openssl >/dev/null 2>&1; then
+    doveconf -n 2>/dev/null | sed -n 's/^[[:space:]]*ssl_cert[[:space:]]*=[[:space:]]*<[[:space:]]*//p' | sort -u |
+    while IFS= read -r f; do
+      [ -r "$f" ] || continue
+      openssl x509 -in "$f" -noout -text 2>/dev/null | grep -o 'DNS:[^,[:space:]]*' | sed 's/^DNS://'
+      openssl x509 -in "$f" -noout -subject 2>/dev/null | sed -n 's/.*CN[[:space:]]*=[[:space:]]*\([^,/]*\).*/\1/p'
+    done
+  fi
+)
+echo "names=$(printf '%s\n' "$names" | tr 'A-Z' 'a-z' | grep -v '^$' | sort -u | tr '\n' ' ')"
 REMOTE
 )
 
@@ -263,6 +269,28 @@ missing=$(printf '%s\n' "$facts" | sed -n 's/^missing=//p' | tr '\n' ' ')
 [[ -z "$missing" ]] || die "Dovecot on $HOST lacks the Lua push plugins ($missing). Debian and Ubuntu ship them in dovecot-core; elsewhere install your distribution's Dovecot Lua package."
 [[ -n "$SLOT" ]] || die "Every push_notification_driver slot on $HOST is in use."
 ok "Dovecot $VERSION, Lua push plugins present, using $SLOT"
+
+if [[ ${#IMAP_HOSTS[@]} -eq 0 ]]; then
+  NAMES=" $(fact names) "
+  for h in "${KNOWN[@]}"; do
+    # A wildcard certificate (*.example.com) covers one label below it.
+    if [[ "$NAMES" == *" $h "* || "$NAMES" == *" *.${h#*.} "* ]]; then IMAP_HOSTS+=("$h"); fi
+  done
+  if [[ ${#IMAP_HOSTS[@]} -eq 0 ]]; then
+    say "Accounts here use more than one IMAP host, and none is named in $HOST's certificates:"
+    printf '  %s\n' "${KNOWN[@]}"
+    die "Name the ones this mail server answers to: --imap-host HOST (repeatable)."
+  fi
+fi
+for h in "${IMAP_HOSTS[@]}"; do
+  [[ "$h" =~ ^[a-z0-9.-]+$ ]] || die "Not a hostname: $h"
+done
+ok "For IMAP host${IMAP_HOSTS[1]:+s}: ${IMAP_HOSTS[*]}"
+
+if [[ -z "$TEST_USER" ]]; then
+  TEST_USER=$("${HOOK_CLI[@]}" login "${IMAP_HOSTS[@]}" 2>/dev/null) \
+    || die "No working account on ${IMAP_HOSTS[*]} to test with. Pass --user LOGIN."
+fi
 
 # ── 4. The token ────────────────────────────────────────────────────────────
 step "Minting a hook token"

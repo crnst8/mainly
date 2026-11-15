@@ -1,3 +1,13 @@
+## 1.6.0 — 2026-11-16
+
+- feat: mail hook — your Dovecot server tells mainly which mailboxes changed, as they change (`./mainly.sh hook connect <ssh-host>`)
+- feat: IDLE push on every account by default (`IMAP_IDLE_MAX_ACCOUNTS` 12 → 100)
+- feat: right-click Mark all read on Inbox, Filtered and the other unified rows, and on rail domains
+- fix(mobile): mail fits the screen width instead of scrolling sideways
+- fix: IDLE and hook syncs share the poll's concurrency limit, so a restart cannot exhaust the database pool
+
+The mail hook is optional and needs Dovecot 2.3 with root over SSH: the installer adds a small Lua script and config, tests it, and works out which of your IMAP hostnames the server answers to from its certificates. New mail filed into any folder, by delivery, Sieve or another client, shows up within seconds; polling drops to a 15-minute floor while the hook is live. See docs/mail-hook.md.
+
 ## 1.5.0 — 2026-11-11
 
  - Wider use of tools integrated + OpenRouter key fixed

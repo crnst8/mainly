@@ -50,7 +50,7 @@ plugin list it found in place. `hook remove` takes both files out again.
 | Option | Default |
 | --- | --- |
 | `--url` | `APP_ORIGIN`, then this host's Tailscale and LAN addresses, each tried *from the mail server*. The first that answers `/api/health` is used. |
-| `--imap-host` | The only IMAP host your accounts use. If they use several, name the ones this server answers to (one server often has a name per domain). Repeatable. |
+| `--imap-host` | The only IMAP host your accounts use; with several, the ones the server's TLS certificates name (one server often has a name per domain). Name them yourself when the certificates do not. Repeatable. |
 | `--user` | The first working account on those hosts. Used only for the test. |
 
 What it does:
