@@ -13,6 +13,8 @@ import { buildProfile, observedCount, profileFor } from '../src/filter/study.ts'
 import { modelFor } from '../src/filter/model.ts';
 import { recapFor } from '../src/assist/recap.ts';
 import { withPreferenceDefaults } from '../src/contract/types.ts';
+import { createHook, hookForToken } from '../src/modules/hooks/service.ts';
+import { accountsForNotice } from '../src/sync/mail-hook.ts';
 const BASE = process.env.SMOKE_BASE ?? 'http://127.0.0.1:5284/api';
 let cookie = '',
   csrf = '',
@@ -827,10 +829,63 @@ try {
     });
   }
 
+  // ── Mail hook ─────────────────────────────────────────────────────────────
+  // The route trusts a hook token and nothing else, and a notice reaches only
+  // accounts on that hook's hosts. No pass runs here: the posted login has no
+  // account, and the matching is checked directly.
+  const hookAccount = async (host, username, status) =>
+    (
+      await query(
+        `INSERT INTO accounts(user_id,address,domain,label,imap_host,imap_port,smtp_host,smtp_port,username,secret_ciphertext,secret_nonce,secret_tag,status)
+        VALUES ($1,$2,'example.test','Hook',$3,993,$3,587,$4,'x','x','x',$5) RETURNING id`,
+        [userId, `hook-${randomUUID()}@example.test`, host, username, status],
+      )
+    )[0].id;
+  const onA = await hookAccount('Hook-A.test', 'Hooked@Example.test', 'ok');
+  await hookAccount('hook-b.test', 'hooked@example.test', 'ok');
+  await hookAccount('hook-a.test', 'hooked@example.test', 'auth_error');
+  const { token: hookToken, record: hookRecord } = await createHook(['hook-a.test']);
+  const postNotice = (authorization) =>
+    fetch(`${BASE}/hooks/mail`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', ...(authorization ? { authorization } : {}) },
+      body: JSON.stringify({ user: `nobody-${randomUUID()}@example.test`, mailboxes: ['INBOX'], folders: false }),
+    }).then((r) => r.status);
+  const statuses = [
+    await postNotice(null),
+    await postNotice(`Bearer mh_${'x'.repeat(43)}`),
+    await postNotice(`Bearer ${hookToken}`),
+  ];
+  const [touched] = await query('SELECT last_event_at FROM mail_hooks WHERE id=$1', [hookRecord.id]);
+  check('a hook notice needs its token; an unknown login is accepted and ignored', () => {
+    assert.deepEqual(statuses, [401, 401, 202]);
+    assert.ok(touched.last_event_at, 'the notice marks the hook as heard from');
+  });
+  const hook = await hookForToken(hookToken);
+  const matched = (await accountsForNotice(hook, 'HOOKED@example.test')).map((r) => r.id);
+  check("a notice reaches only working accounts on the hook's own hosts", () => {
+    assert.deepEqual(matched, [onA]);
+  });
+  let overlapRefused = false;
+  try {
+    await createHook(['hook-a.test']);
+  } catch {
+    overlapRefused = true;
+  }
+  const { token: renewed } = await createHook(['HOOK-A.test'], { replace: true });
+  const oldStillWorks = !!(await hookForToken(hookToken));
+  const newWorks = !!(await hookForToken(renewed));
+  check('a second hook for a host is refused unless it replaces the first', () => {
+    assert.equal(overlapRefused, true);
+    assert.equal(oldStillWorks, false);
+    assert.equal(newWorks, true);
+  });
+
   console.log(
     `consistency-check: ${passed} passed; local action acknowledgements ${timings.map((ms) => Math.round(ms) + 'ms').join(', ')}`,
   );
 } finally {
+  await query(`DELETE FROM mail_hooks WHERE hosts && ARRAY['hook-a.test','hook-b.test']`);
   if (userId || foreignUserId) await query('DELETE FROM users WHERE id=ANY($1::uuid[])', [[userId,foreignUserId].filter(Boolean)]);
   await close();
 }

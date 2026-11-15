@@ -45,7 +45,7 @@ directly only if you are pointing at a Postgres you manage yourself.
 | `IMAP_POOL_MAX` | `8` | Concurrent IMAP connections across all accounts. |
 | `IMAP_PER_ACCOUNT_MAX` | `2` | Per account. Dovecot's `mail_max_userip_connections` defaults to 10. |
 | `IMAP_CONNECT_TIMEOUT_MS` | `15000` | |
-| `IMAP_IDLE_MAX_ACCOUNTS` | `12` | Accounts held on a live `IDLE` connection for push. The rest poll. Which accounts get one is chosen by priority and traffic, not arbitrarily. |
+| `IMAP_IDLE_MAX_ACCOUNTS` | `100` | Accounts held on a live `IDLE` connection for push; the rest poll every `SYNC_INTERVAL_MS`. Each watched account holds one connection under its own login. Lower it only if the mail server limits connections per client IP. Which accounts get one is chosen by priority, not arbitrarily. |
 | `SYNC_INTERVAL_MS` | `120000` | The poll floor beneath `IDLE`. |
 | `SYNC_IDLE_INTERVAL_MS` | `900000` | The poll interval for an account whose inbox is on a live `IDLE` connection. Push covers the inbox; this catches changes in other folders. |
 | `SYNC_FOLDER_INTERVAL_MS` | `600000` | How often folders are re-listed. |

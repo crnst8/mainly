@@ -6,13 +6,18 @@
  * the whole account, which would turn every incoming message into a full
  * mailbox scan.
  *
- * Bounded, because the alternative does not survive contact with a real
- * deployment. Dovecot's `mail_max_userip_connections` defaults to 10, the app
- * host is usually small and shared, and a user here may have dozens of
- * mailboxes. So `IMAP_IDLE_MAX_ACCOUNTS` connections are held and everything
- * else polls on the normal interval. Which accounts get one is not arbitrary:
- * priority order, muted last, because a connection spent watching a muted
- * newsletter mailbox is a connection not watching the inbox that matters.
+ * Every account gets one by default, up to `IMAP_IDLE_MAX_ACCOUNTS` (100).
+ * Dovecot's `mail_max_userip_connections` (default 10) is per login and client
+ * IP, so one held connection per mailbox uses one of that mailbox's ten, not a
+ * shared budget. A held connection costs a socket and little memory here, while
+ * polling costs a login per account every `SYNC_INTERVAL_MS`, so push is the
+ * cheaper of the two as well as the faster. The cap exists for servers or
+ * firewalls that also limit connections per IP; past it, accounts poll. Which
+ * accounts get one is not arbitrary: priority order, muted last.
+ *
+ * Push covers the inbox only. Watching another folder needs a second
+ * connection (imapflow has no NOTIFY), so changes elsewhere are caught by the
+ * `SYNC_IDLE_INTERVAL_MS` poll.
  *
  * imapflow keeps IDLE running on an otherwise-idle connection by itself, and
  * re-issues it after each command. The work here is holding the connection open,
@@ -20,24 +25,20 @@
  */
 
 import type { ImapFlow } from 'imapflow';
-import { query, claimAccount } from '../db/index.ts';
+import { query } from '../db/index.ts';
 import { config } from '../config.ts';
 import type { Priority } from '../contract/types.ts';
-import { connect, withConnection, type AccountCredentials } from './pool.ts';
-import { replayAccount } from './replay.ts';
-import { handleArrivals } from './arrivals.ts';
-import { syncEnvelopes } from './envelopes.ts';
-import { refreshCounts, publishCounts } from './folders.ts';
-import { refreshAccountThreads } from './threads.ts';
-import { publish } from '../modules/events/bus.ts';
+import { connect, type AccountCredentials } from './pool.ts';
+import { FolderPassScheduler } from './folder-pass.ts';
 
 /** Wait before reconnecting a dropped watcher, doubling to a ceiling. A server
  *  that is down should not be hammered by 12 reconnect loops. */
 const RETRY_MIN_MS = 5_000;
 const RETRY_MAX_MS = 5 * 60_000;
-/** Collapse bursts: a delivery run can fire EXISTS several times in a second,
- *  and each one does not need its own fetch. */
-const DEBOUNCE_MS = 1_500;
+/** Gap between starting watchers. A restart with every account watched would
+ *  otherwise open dozens of logins, and their catch-up passes, against the same
+ *  mail server in the same second. */
+const START_STAGGER_MS = 250;
 
 interface Watchable {
   id: string;
@@ -72,9 +73,7 @@ class Watcher {
   private client: ImapFlow | null = null;
   private stopped = false;
   private backoff = RETRY_MIN_MS;
-  private debounce: NodeJS.Timeout | null = null;
-  private syncing = false;
-  private dirty = false;
+  private passes: FolderPassScheduler;
   /** Parked on the inbox right now. The poll loop slows down only while this
    *  holds, so a watcher in backoff hands its account straight back to it. */
   live = false;
@@ -89,6 +88,10 @@ class Watcher {
   constructor(row: Watchable, path: string) {
     this.row = row;
     this.path = path;
+    this.passes = new FolderPassScheduler(
+      { creds: credentialsOf(row), userId: row.user_id, priority: row.priority },
+      'idle',
+    );
   }
 
   get accountId(): string {
@@ -102,7 +105,7 @@ class Watcher {
   async stop(): Promise<void> {
     this.stopped = true;
     this.live = false;
-    if (this.debounce) clearTimeout(this.debounce);
+    this.passes.stop();
     const client = this.client;
     this.client = null;
     if (client) await client.logout().catch(() => {});
@@ -167,70 +170,9 @@ class Watcher {
     await client.logout().catch(() => {});
   }
 
-  /** Coalesce a burst of notifications into one pass. */
+  /** Fetch the inbox. Bursts are coalesced by the scheduler. */
   private schedule(): void {
-    if (this.debounce) clearTimeout(this.debounce);
-    this.debounce = setTimeout(() => {
-      this.debounce = null;
-      void this.run();
-    }, DEBOUNCE_MS);
-  }
-
-  private async run(): Promise<void> {
-    // A notification arriving mid-pass is remembered rather than dropped: the
-    // fetch already in flight may have read the mailbox before the new message
-    // landed in it.
-    if (this.stopped) return;
-    if (this.syncing) {
-      this.dirty = true;
-      return;
-    }
-    this.syncing = true;
-    try {
-      do {
-        this.dirty = false;
-        // IDLE and polling share one writer. Otherwise a stale IDLE fetch can
-        // land after replay removed the operation that protected local flags.
-        const claim = await claimAccount(this.row.id);
-        if (!claim) {
-          this.schedule();
-          return;
-        }
-        try {
-          const creds = credentialsOf(this.row);
-          // One login for both steps, as in the polling pass.
-          const result = await withConnection(creds, async (client) => {
-            await replayAccount(creds, client);
-            const pass = await syncEnvelopes(
-              creds,
-              this.row.user_id,
-              this.row.priority,
-              // This folder only. A push about the inbox is not a reason to re-scan
-              // an archive of forty thousand messages.
-              { folderPaths: [this.path], client },
-            );
-            await handleArrivals(creds, this.row.user_id, client, pass.arrivals);
-            return pass;
-          });
-          if (result.indexed || result.updated || result.removed) {
-            await refreshCounts(this.row.id);
-            await refreshAccountThreads(this.row.id);
-            publish(this.row.user_id, { type: 'messages:changed', ids: [], patch: {} });
-            await publishCounts(this.row.user_id, this.row.id);
-            console.log({ account: this.row.address, ...result }, 'idle pass indexed new mail');
-          }
-        } finally {
-          await claim.release();
-        }
-      } while (this.dirty && !this.stopped);
-    } catch (err) {
-      console.warn(
-        { account: this.row.address, err: (err as Error).message },
-        'idle-triggered sync failed',
-      );
-    } finally {
-      this.syncing = false;
-    }
+    this.passes.request([this.path]);
   }
 }
 
@@ -268,13 +210,15 @@ async function reconcile(): Promise<void> {
   const wanted = await pickWatchable();
   const keep = new Set<string>();
 
+  let started = 0;
   for (const row of wanted) {
     if (!row.inbox_path) continue;
     keep.add(row.id);
     if (watchers.has(row.id)) continue;
     const watcher = new Watcher(row, row.inbox_path);
     watchers.set(row.id, watcher);
-    watcher.start();
+    // A watcher stopped before its turn exits on its first loop check.
+    setTimeout(() => watcher.start(), started++ * START_STAGGER_MS);
   }
 
   for (const [id, watcher] of watchers) {

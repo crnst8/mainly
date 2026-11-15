@@ -400,4 +400,9 @@ The path out, in order, without a rewrite:
 The knobs that actually matter under load are `IMAP_POOL_MAX`,
 `IMAP_PER_ACCOUNT_MAX`, `SYNC_INTERVAL_MS` and `IMAP_IDLE_MAX_ACCOUNTS`. The
 IMAP ones are bounded by what your mail server permits — Dovecot's
-`mail_max_userip_connections` defaults to 10.
+`mail_max_userip_connections` defaults to 10 per login and client IP. IDLE
+holds one connection per account, so it counts against each mailbox's own
+limit; lower `IMAP_IDLE_MAX_ACCOUNTS` only if the server or a firewall in front
+of it also caps connections per IP. On your own Dovecot server, the mail hook
+([mail-hook.md](mail-hook.md)) reports changes in every folder without holding
+any connection.

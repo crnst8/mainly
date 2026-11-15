@@ -30,10 +30,13 @@ It is not an optimisation; it is the only way the product works.
 ### What it costs
 
 - **Index staleness** between passes. Mitigated by IMAP `IDLE` — a long-lived
-  connection per account, push-notified on new mail — for as many accounts as
-  `IMAP_IDLE_MAX_ACCOUNTS` allows. The poll is the floor beneath it: every
+  connection per account on its inbox, push-notified on new mail — for every
+  account up to `IMAP_IDLE_MAX_ACCOUNTS` (100), and optionally by a mail hook on
+  the user's own Dovecot server, which reports changes in every folder
+  ([mail-hook.md](mail-hook.md)). The poll is the floor beneath both: every
   `SYNC_INTERVAL_MS`, or `SYNC_IDLE_INTERVAL_MS` for an account whose inbox
-  is on a live `IDLE` connection. A pass is one login; on a server with
+  is on a live `IDLE` connection or whose server's hook has spoken in the last
+  hour. A pass is one login; on a server with
   `LIST-STATUS` and `CONDSTORE`, one `LIST` returns every folder's
   `UIDNEXT`/`HIGHESTMODSEQ`/`MESSAGES`, and only folders that changed are
   opened. A failing account, or an unreachable mail host, backs off
@@ -97,6 +100,7 @@ backend/src/
     views/             saved views
     unsubscribe/       List-Unsubscribe handling
     filter/            the Filtered folder's status, forget, sweep and model routes
+    hooks/             mail hook tokens and the endpoint Dovecot notifies
     events/            SSE fan-out
   sync/
     pool.ts            IMAP connection pool with per-account limits
@@ -109,6 +113,8 @@ backend/src/
     filing.ts          moves made on the user's behalf, through the replay queue
     replay.ts          outbound flags, moves, deletes
     idle.ts            IDLE connections for push
+    mail-hook.ts       mail hook notices → which accounts, which folders
+    folder-pass.ts     the some-folders pass IDLE and the hook share
   smtp/                outbound send
   push/                Web Push: VAPID, RFC 8291 encryption, notification rules
   filter/              the Filtered folder: features, classifier, rules, model client, training

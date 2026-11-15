@@ -80,17 +80,17 @@ frontend/   React 19 + Zustand + Vite + motion. PWA.
 backend/    Fastify + pg + imapflow + nodemailer + mailparser + argon2
   src/contract/     byte-identical copies of frontend types.ts and search.ts
   src/modules/      auth · accounts · messages · unsubscribe · domains ·
-                    onboarding · events · push · filter · assist · misc
+                    onboarding · events · push · filter · assist · hooks · misc
   src/sync/         pool · engine · folders · envelopes · threading · threads ·
-                    bodies · body-index · replay · idle · mailboxes · parse ·
-                    arrivals · filing
+                    bodies · body-index · replay · idle · folder-pass ·
+                    mail-hook · mailboxes · parse · arrivals · filing
   src/smtp/         outbound send
   src/push/         Web Push: encrypt (pure, RFC-tested) · webpush · notify
   src/filter/       Filtered folder: features · classifier (pure, tested) ·
                     llm · model · decide · training · study
   src/assist/       model tasks beyond filtering: kinds · recap; and logos
-  src/cli/          create-user · token · domain · seed
-  migrations/       numbered, forward-only SQL (001…018)
+  src/cli/          create-user · token · domain · hook · seed
+  migrations/       numbered, forward-only SQL (001…019)
   scripts/          smoke · query-check · index-check · check-contract ·
                     static-check · auth-check · consistency-check (+ fake-llm) ·
                     database-benchmark · filter-benchmark
@@ -98,9 +98,10 @@ mcp/        MCP server over stdio — the same HTTP API, exposed to agents
   hermes/           the skill connect-hermes.sh installs into Hermes
 site/       landing page + hosted demo shell
 scripts/    build-site · deploy-site · release · mainly-provision (+ its .md) ·
-            connect-hermes (behind `mainly.sh hermes` / `dev.sh hermes`)
+            connect-hermes (behind `mainly.sh hermes` / `dev.sh hermes`) ·
+            connect-mailhook + mainly-hook.lua (behind `mainly.sh hook` / `dev.sh hook`)
 docs/       architecture · configuration · self-hosting · search · mcp ·
-            domain-control · notifications · filtering · assist
+            domain-control · notifications · filtering · assist · mail-hook
 ```
 
 Ignore `frontend/backend/` — empty directories left by `tsc -b`, not source.
@@ -138,6 +139,9 @@ Ignore `frontend/backend/` — empty directories left by `tsc -b`, not source.
 | Recap | `backend/src/assist/recap.ts` · `modules/assist/routes.ts` · `frontend/src/features/recap/` |
 | Sender logos (BIMI / site icon, server-fetched, cached) | `backend/src/assist/logos.ts` · `modules/assist/routes.ts` · `components/SenderAvatar.tsx` · `SenderMenu.tsx` |
 | Hermes agent connection | `scripts/connect-hermes.sh` · `mcp/hermes/SKILL.md` · docs/mcp.md |
+| Push from IMAP IDLE (inbox, every account up to the cap) | `backend/src/sync/idle.ts` |
+| Mail hook: Dovecot reports changed mailboxes | `scripts/mainly-hook.lua` (Dovecot side) · `scripts/connect-mailhook.sh` (installer) · `modules/hooks/` (tokens, route) · `sync/mail-hook.ts` |
+| The some-folders pass IDLE and the hook share | `backend/src/sync/folder-pass.ts` |
 | Synthetic model benchmark (manual, operator key in env) | `backend/scripts/filter-benchmark.mjs` · results in `docs/filtering.md` |
 | Filtered settings / Filter out action | `frontend/src/features/settings/FilteredSettings.tsx` · `filter()` in `store.ts` |
 | Missing Trash/Junk creation | `backend/src/sync/folders.ts` |
@@ -202,6 +206,7 @@ is fine, change them deliberately.
 ./dev.sh migrate
 ./dev.sh token …        # agent tokens (host shell only, on purpose)
 ./dev.sh hermes <ssh-host> <email> --api-url URL   # connect a Hermes agent
+./dev.sh hook connect <ssh-host> --url URL         # install the mail hook on a Dovecot server
 ./dev.sh domain …       # domain control CLI
 ./dev.sh logs [api|db|web]
 ./dev.sh rebuild        # DROPS the local database, asks first
@@ -218,7 +223,7 @@ query-correctness + index checks against real Postgres. If it passes, CI
 (`.github/workflows/ci.yml`) passes; CI is the same gate with a network.
 
 Operating an install (not development): `./mainly.sh start|stop|restart|status|
-bind|origin|tls|logs|user|token|hermes|domain|update|backup|restore|reset`.
+bind|origin|tls|logs|user|token|hermes|hook|domain|update|backup|restore|reset`.
 
 Releasing: `./publish.sh` (review → commit → release, with `status`, `commit`,
 `release`, `demo`, `--dry-run`), which calls `scripts/release.sh <version>` —
@@ -280,6 +285,12 @@ demo are built by `scripts/build-site.sh` and deployed by `deploy-site.sh`.
   the user has mail from, never for personal mail providers, through
   `net-guard` on every redirect hop, size-capped, and served with a sandboxing
   CSP because an SVG on this origin could otherwise run script.
+- The mail hook endpoint (`POST /api/hooks/mail`) sits outside session and
+  agent-token auth and accepts only a hook token (minted from a host shell,
+  SHA-256 at rest). A notice can only schedule passes for working accounts on
+  that hook's hosts; an unknown login answers 202 like any other. It carries
+  login and mailbox names only. The Lua side must never slow delivery: one
+  second cap, pause after failure, every error caught.
 - `scripts/connect-hermes.sh` passes the agent token over SSH stdin only,
   stores it in Hermes's `.env` (0600) and references it as `${VAR}` in Hermes
   config. Nothing about a real host goes into the repo.
@@ -314,6 +325,7 @@ demo are built by `scripts/build-site.sh` and deployed by `deploy-site.sh`.
 | `docs/domain-control.md` | Optional address create/remove on Postfix+Dovecot |
 | `docs/filtering.md` | The Filtered folder: Filter out, rules, classifier, LLM, profile, what is sent |
 | `docs/assist.md` | Kind labels, recap, sender logos; the shared model provider |
+| `docs/mail-hook.md` | The optional Dovecot push hook: install, how it works, what it costs the server |
 | `scripts/mainly-provision.md` | The mail-server half of domain control |
 
 ## Keeping this skill current

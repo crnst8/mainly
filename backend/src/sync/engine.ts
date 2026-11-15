@@ -16,8 +16,9 @@
  * because a folder that does not exist locally has nothing to index into.
  *
  * The whole pass shares one IMAP connection, and an account with a live IDLE
- * watcher is polled on the slower `SYNC_IDLE_INTERVAL_MS`: push already covers
- * its inbox, so the poll only has to catch changes elsewhere. A failing account
+ * watcher, or on a mail server whose hook has spoken in the last hour
+ * (sync/mail-hook.ts), is polled on the slower `SYNC_IDLE_INTERVAL_MS`: push
+ * already covers it, so the poll is only the floor beneath push. A failing account
  * or an unreachable mail host backs off exponentially instead of being retried
  * every interval; a manual refresh always runs.
  */
@@ -32,6 +33,7 @@ import { replayAccount } from './replay.ts';
 import { handleArrivals } from './arrivals.ts';
 import { withConnection, isUnreachable, type AccountCredentials } from './pool.ts';
 import { liveWatchers } from './idle.ts';
+import { HOOK_LIVE_MS } from '../modules/hooks/service.ts';
 import { publish } from '../modules/events/bus.ts';
 import type { Priority } from '../contract/types.ts';
 import { KeyedWorkQueue } from './work-queue.ts';
@@ -145,7 +147,12 @@ async function runOnce(): Promise<void> {
        AND (last_sync_at IS NULL OR last_sync_at < now() - ($1 || ' milliseconds')::interval)
        AND id <> ALL($2::uuid[])
        AND (lower(imap_host) || ':' || imap_port) <> ALL($3::text[])
-       AND NOT (id = ANY($4::uuid[])
+       -- Pushed accounts — inbox on IDLE, or on a mail server whose hook has
+       -- spoken recently — are polled on the slow interval only.
+       AND NOT ((id = ANY($4::uuid[])
+                 OR EXISTS (SELECT 1 FROM mail_hooks h
+                             WHERE lower(accounts.imap_host) = ANY(h.hosts)
+                               AND h.last_event_at > now() - ($6 || ' milliseconds')::interval))
                 AND coalesce(last_sync_at >= now() - ($5 || ' milliseconds')::interval, false))
      -- Never-synced accounts first: a new account showing nothing is the worst
      -- first impression this app can make.
@@ -158,6 +165,7 @@ async function runOnce(): Promise<void> {
       backedOff(hostFailures),
       liveWatchers(),
       config.sync.idleIntervalMs,
+      HOOK_LIVE_MS,
     ],
   );
 

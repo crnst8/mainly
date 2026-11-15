@@ -144,7 +144,7 @@ export const config = {
     poolMax: num('IMAP_POOL_MAX', 8),
     perAccountMax: num('IMAP_PER_ACCOUNT_MAX', 2),
     connectTimeoutMs: num('IMAP_CONNECT_TIMEOUT_MS', 15_000),
-    idleMaxAccounts: num('IMAP_IDLE_MAX_ACCOUNTS', 12),
+    idleMaxAccounts: num('IMAP_IDLE_MAX_ACCOUNTS', 100),
     allowPrivateHosts: bool('ALLOW_PRIVATE_IMAP_HOSTS', false),
     hostOverrides: hostMap(process.env.MAIL_HOST_OVERRIDE),
   },

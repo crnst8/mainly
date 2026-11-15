@@ -69,7 +69,7 @@ services:
       IMAP_PER_ACCOUNT_MAX: ${IMAP_PER_ACCOUNT_MAX:-2}
       SYNC_INTERVAL_MS: ${SYNC_INTERVAL_MS:-120000}
       SYNC_IDLE_INTERVAL_MS: ${SYNC_IDLE_INTERVAL_MS:-900000}
-      IMAP_IDLE_MAX_ACCOUNTS: ${IMAP_IDLE_MAX_ACCOUNTS:-12}
+      IMAP_IDLE_MAX_ACCOUNTS: ${IMAP_IDLE_MAX_ACCOUNTS:-100}
       # Optional: a language model the Filtered folder may ask about mail it is
       # unsure of. Unset key = off. See docs/filtering.md.
       FILTER_LLM_URL: ${FILTER_LLM_URL:-}

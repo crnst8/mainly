@@ -37,6 +37,8 @@ import { unsubscribeRoutes } from './modules/unsubscribe/routes.ts';
 import { pushRoutes } from './modules/push/routes.ts';
 import { filterRoutes } from './modules/filter/routes.ts';
 import { assistRoutes } from './modules/assist/routes.ts';
+import { hookRoutes } from './modules/hooks/routes.ts';
+import { stopMailHook } from './sync/mail-hook.ts';
 import { startStudyLoop, stopStudyLoop } from './filter/study.ts';
 import { startSyncLoop, stopSyncLoop } from './sync/engine.ts';
 import { startIdle, stopIdle } from './sync/idle.ts';
@@ -235,6 +237,9 @@ export async function build() {
 
   await app.register(async (unauthed) => authRoutes(unauthed), { prefix: '/api' });
 
+  // A mail server's change notices. Its own bearer token, checked in the route.
+  await app.register(async (hooks) => hookRoutes(hooks), { prefix: '/api' });
+
   /* ── Authenticated ──────────────────────────────────────────────────────── */
 
   await app.register(
@@ -313,6 +318,7 @@ async function main() {
     console.log(`${signal} received, shutting down`);
     if (sessionSweep) clearInterval(sessionSweep);
     stopStudyLoop();
+    stopMailHook();
     await stopSyncLoop();
     await stopIdle();
     // Drain in-flight requests before closing the pool underneath them.

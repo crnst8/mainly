@@ -50,6 +50,7 @@ Instead of leaning on IMAP, Mainly uses Postgres to store metadata from the mail
 - **new-mail notifications** on any device that opts in, grouped per mailbox, with per-mailbox, priority-tier and quiet-hours controls
 - files server-marked **spam** (`***SPAM***`, `X-Spam-Flag`) into Junk, and creates **Trash and Junk** on mailboxes that lack them — see [docs/notifications.md](docs/notifications.md)
 - **Filter out** (`⌘⌫`) moves mail to a **Filtered** folder under each inbox, and that sender's or list's next mail goes there instead of the inbox. It learns from what you file and what you take back, and can ask a language model you configure about mail it is unsure of — see [docs/filtering.md](docs/filtering.md)
+- new mail arrives by **push**: IMAP `IDLE` on every inbox, and optionally a **mail hook** on your own Dovecot server that reports changes in every folder as they happen — see [docs/mail-hook.md](docs/mail-hook.md)
 - with a model key, optionally **labels new mail by kind** (`action`, `bill`, `receipt`, `shipping`, `travel`, `security`, `event`), writes a **recap** of what needs you today, and shows senders' **published logos** — see [docs/assist.md](docs/assist.md)
 
 
@@ -104,6 +105,7 @@ without browser chrome.
 ./mainly.sh tls [tailscale|off]   # HTTPS, which is what installing it as an app needs
 ./mainly.sh logs [app|db]
 ./mainly.sh user <email>          # create a login (no open registration)
+./mainly.sh hook connect <ssh>    # optional: Dovecot reports mailbox changes (docs/mail-hook.md)
 ./mainly.sh update                # pull the current image and restart
 ./mainly.sh backup [dir]          # pg_dump to ./backups
 ./mainly.sh restore <file>        # replace the database. asks first

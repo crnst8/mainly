@@ -685,6 +685,24 @@ cmd_hermes() {
     docker compose exec -T app node dist/cli/token.js
 }
 
+# Install the mail hook on a Dovecot server: it then tells this install which
+# mailboxes changed instead of waiting to be polled. Mints a hook token here
+# and installs the Lua driver there, over SSH. See scripts/connect-mailhook.sh
+# and docs/mail-hook.md. API addresses to try are found as for `hermes`.
+cmd_hook() {
+  require_docker
+  load_env
+  local urls=() url
+  if [[ "${1:-}" == connect && " $* " != *" --url "* ]]; then
+    [[ -n "${APP_ORIGIN:-}" ]] && urls+=(--url "${APP_ORIGIN%/}/api")
+    while IFS= read -r url; do
+      [[ -n "$url" ]] && urls+=(--url "$url/api")
+    done <<<"$(reachable_urls)"
+  fi
+  scripts/connect-mailhook.sh "$@" ${urls[@]+"${urls[@]}"} -- \
+    docker compose exec -T app node dist/cli/hook.js
+}
+
 # Connecting a mail server hands this install an SSH key, so it is done from a
 # shell here rather than through the API. Same bar as `token`.
 #
@@ -782,6 +800,10 @@ ${BOLD}mainly${RESET} — self-hosted multi-domain mail client
                                  Connect a Hermes agent on another machine:
                                  installs the MCP server there and a scoped
                                  token. Options: ./mainly.sh hermes --help
+  ./mainly.sh hook connect <ssh-host>
+                                 Optional: have your Dovecot server notify this
+                                 install of every mailbox change, instead of
+                                 being polled. Also: hook remove, hook list.
   ./mainly.sh domain <args>      Optional: let this install create and remove
                                  addresses on your mail server. Start on the
                                  mail server with 'mainly-provision setup';
@@ -806,6 +828,7 @@ case "${1:-}" in
   user)    shift; cmd_user "$@" ;;
   token)   shift; cmd_token "$@" ;;
   hermes)  shift; cmd_hermes "$@" ;;
+  hook)    shift; cmd_hook "$@" ;;
   domain)  shift; cmd_domain "$@" ;;
   update)  cmd_update ;;
   backup)  shift; cmd_backup "$@" ;;

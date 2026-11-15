@@ -234,6 +234,11 @@ case "${1:-start}" in
 hermes) db_up; shift; scripts/connect-hermes.sh "$@" -- \
   bash -c 'cd backend && exec node --experimental-strip-types src/cli/token.ts "$@"' token ;;
 
+# The mail hook: Dovecot tells the dev API which mailboxes changed. The dev
+# API listens on localhost, so the mail server needs --url to reach it.
+hook) db_up; shift; scripts/connect-mailhook.sh "$@" -- \
+  bash -c 'cd backend && exec node --experimental-strip-types src/cli/hook.ts "$@"' hook ;;
+
 # Domain control. Same reasoning as `token`: it installs a credential.
 domain) db_up; shift; (cd backend && node --experimental-strip-types src/cli/domain.ts "$@") ;;
 
@@ -319,6 +324,8 @@ usage: ./dev.sh <command>
   token <args>       mint or revoke an agent token
   hermes <ssh-host> <email> --api-url URL
                      connect a Hermes agent (scripts/connect-hermes.sh)
+  hook connect <ssh-host> --url URL | remove <ssh-host> | list
+                     Dovecot notifies on mailbox changes (scripts/connect-mailhook.sh)
   domain <args>      connect a mail server, and set what it may do
   check              typecheck + contract + url + search + smoke + query
   logs [api|db|web]
