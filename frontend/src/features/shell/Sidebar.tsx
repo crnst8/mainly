@@ -99,7 +99,7 @@ export function Sidebar() {
           <>
             <section className="sidebar__section">
               {UNIFIED_ROLES.map(({ role, label }) => (
-                <UnifiedRoleNav key={role} role={role} label={label} />
+                <UnifiedRoleNav key={role} role={role} label={label} onMenu={menu.onContextMenu} />
               ))}
             </section>
 
@@ -158,7 +158,15 @@ export function Sidebar() {
 
 /* ── Unified role row ─────────────────────────────────────────────────────── */
 
-function UnifiedRoleNav({ role, label }: { role: FolderRole; label: string }) {
+function UnifiedRoleNav({
+  role,
+  label,
+  onMenu,
+}: {
+  role: FolderRole;
+  label: string;
+  onMenu: (e: React.MouseEvent, target: SidebarTarget) => void;
+}) {
   const scope = useStore((s) => s.query.scope);
   const setScope = useStore((s) => s.setScope);
   const folders = useStore((s) => s.folders);
@@ -180,6 +188,7 @@ function UnifiedRoleNav({ role, label }: { role: FolderRole; label: string }) {
       data-unread={unread > 0 || undefined}
       style={tint ? ({ '--nav-tint': tint } as React.CSSProperties) : undefined}
       onClick={() => setScope({ kind: 'unified', value: null, role })}
+      onContextMenu={(e) => onMenu(e, { kind: 'role', role, label })}
     >
       <span className="nav__icon">
         <Icon size={15} />

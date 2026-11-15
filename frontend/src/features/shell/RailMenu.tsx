@@ -1,5 +1,6 @@
 /**
- * The right-click menu for a rail target: pick the picture a domain wears.
+ * The right-click menu for a rail target: pick the picture a domain wears, or
+ * mark everything in the domain read.
  *
  * The rail draws two letters of the domain name, which is enough until it is
  * not — "chungus.holdings" and "chungus.group" are both CH, and the rail is
@@ -17,7 +18,8 @@ import { Check, Close, Search } from '@/components/icons';
 import { GLYPHS, GLYPH_CATEGORIES, Glyph, type GlyphCategory } from '@/components/glyphs';
 import { ContextMenu, MenuItem, type ContextMenuController } from '@/components/context-menu';
 import { PopLabel, PopSep } from '@/components/ui';
-import { useStore } from '@/lib/store';
+import { useDomains, useStore } from '@/lib/store';
+import { MarkRead } from './FolderMenu';
 
 /** What was right-clicked in the rail. Only domains carry a glyph today; the
  *  shape is a union so the unified and saved-view targets can join later
@@ -34,6 +36,7 @@ export function RailMenu({ controller }: { controller: ContextMenuController<Rai
 
 function IconPicker({ domain, close }: { domain: string; close: () => void }) {
   const prefs = useStore((s) => s.prefs);
+  const domains = useDomains();
   const saveTheme = useStore((s) => s.saveTheme);
   const [filter, setFilter] = useState('');
 
@@ -127,6 +130,14 @@ function IconPicker({ domain, close }: { domain: string; close: () => void }) {
       >
         Use letters
       </MenuItem>
+
+      <PopSep />
+
+      <MarkRead
+        accountIds={(domains.find((d) => d.domain === domain)?.accounts ?? []).map((a) => a.id)}
+        label={domain}
+        close={close}
+      />
     </>
   );
 }

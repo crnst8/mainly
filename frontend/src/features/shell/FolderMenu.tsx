@@ -23,14 +23,17 @@ import {
 import { PopLabel, PopSep } from '@/components/ui';
 import { useSidebarGroups, useStore } from '@/lib/store';
 import { groupTintsMembers } from '@/lib/types';
-import type { AccountGroup, Folder } from '@/lib/types';
+import type { AccountGroup, Folder, FolderRole } from '@/lib/types';
 
 /** What was right-clicked. A folder carries its account so "new folder here"
  *  knows where to put it without walking the tree again. */
 export type SidebarTarget =
   | { kind: 'folder'; folder: Folder }
   | { kind: 'account'; accountId: string; label: string }
-  | { kind: 'group'; group: AccountGroup };
+  | { kind: 'group'; group: AccountGroup }
+  /** A unified row (Inbox, Filtered…): that role's folder in every visible
+   *  mailbox. */
+  | { kind: 'role'; role: FolderRole; label: string };
 
 const FOLDER_COLORS = [
   'oklch(64% 0.16 258)',
@@ -60,6 +63,7 @@ function Body({ target, close }: { target: SidebarTarget; close: () => void }) {
   // mail — so it gets its own menu rather than a set of disabled items in this
   // one.
   if (target.kind === 'group') return <GroupBody group={target.group} close={close} />;
+  if (target.kind === 'role') return <RoleBody role={target.role} label={target.label} close={close} />;
 
   const accountId = target.kind === 'folder' ? target.folder.accountId : target.accountId;
   const folder = target.kind === 'folder' ? target.folder : null;
@@ -147,6 +151,48 @@ function Body({ target, close }: { target: SidebarTarget; close: () => void }) {
           sole way to reach a feature is a feature keyboard and screen-reader
           users do not have. */}
       {target.kind === 'account' && <MoveToGroup accountId={accountId} onDone={close} />}
+    </>
+  );
+}
+
+/* ── Unified role menu ────────────────────────────────────────────────────── */
+
+/**
+ * A unified row spans mailboxes, so folder actions (colour, subfolder, pin)
+ * have no single folder to act on. What is left is opening it and clearing it.
+ *
+ * The sweep covers the same folders the row counts — visible mailboxes only —
+ * so the number in the menu and the number the toast reports agree with the
+ * number beside the row.
+ */
+function RoleBody({ role, label, close }: { role: FolderRole; label: string; close: () => void }) {
+  const setScope = useStore((s) => s.setScope);
+  const folders = useStore((s) => s.folders);
+  const accounts = useStore((s) => s.accounts);
+
+  const visible = new Set(accounts.filter((a) => !a.hidden).map((a) => a.id));
+  const matching = folders.filter((f) => f.role === role && visible.has(f.accountId));
+  const accountIds = [...new Set(matching.map((f) => f.accountId))];
+
+  return (
+    <>
+      <PopLabel>{label}</PopLabel>
+      <MenuItem
+        icon={<Inbox size={13} />}
+        onClick={() => {
+          setScope({ kind: 'unified', value: null, role });
+          close();
+        }}
+      >
+        Open
+      </MenuItem>
+      <MarkRead
+        accountIds={accountIds}
+        folderIds={matching.map((f) => f.id)}
+        unread={matching.reduce((n, f) => n + f.unread, 0)}
+        label={label}
+        close={close}
+      />
     </>
   );
 }
@@ -268,7 +314,7 @@ function GroupBody({ group: opened, close }: { group: AccountGroup; close: () =>
  * disables itself at zero rather than offering an action that would do nothing.
  * The work itself is undoable — see `markAccountsRead`.
  */
-function MarkRead({
+export function MarkRead({
   accountIds,
   folderIds,
   unread,
