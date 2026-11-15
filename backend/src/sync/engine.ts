@@ -36,13 +36,10 @@ import { liveWatchers } from './idle.ts';
 import { HOOK_LIVE_MS } from '../modules/hooks/service.ts';
 import { publish } from '../modules/events/bus.ts';
 import type { Priority } from '../contract/types.ts';
-import { KeyedWorkQueue } from './work-queue.ts';
+import { accountQueue } from './account-queue.ts';
 
 let running = false;
 let timer: NodeJS.Timeout | null = null;
-const accountQueue = new KeyedWorkQueue(config.sync.maxConcurrentAccounts, (accountId, err) => {
-  console.error({ accountId, err: err.message }, 'queued account sync failed');
-});
 
 interface AccountRow {
   id: string;

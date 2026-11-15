@@ -21,6 +21,7 @@ import { syncEnvelopes } from './envelopes.ts';
 import { syncFolders, refreshCounts, publishCounts } from './folders.ts';
 import { refreshAccountThreads } from './threads.ts';
 import { publish } from '../modules/events/bus.ts';
+import { accountQueue } from './account-queue.ts';
 
 export interface PassAccount {
   creds: AccountCredentials;
@@ -31,6 +32,10 @@ export interface PassAccount {
 /** Collapse bursts: a delivery run can notify several times in a second, and
  *  a client moving fifty messages one at a time notifies fifty times. */
 const DEBOUNCE_MS = 1_500;
+/** A pass that failed for a reason other than credentials is tried once more
+ *  after this long. Without it a failed pass is lost until the next poll, which
+ *  for a pushed account is 15 minutes away. */
+const RETRY_MS = 30_000;
 
 /**
  * Coalesces requests for one account into passes.
@@ -45,6 +50,8 @@ export class FolderPassScheduler {
   private debounce: NodeJS.Timeout | null = null;
   private running = false;
   private stopped = false;
+  /** The pending request has already failed once. */
+  private retried = false;
   private account: PassAccount;
   /** Prefixes log lines, so IDLE and hook passes can be told apart. */
   private source: string;
@@ -76,24 +83,37 @@ export class FolderPassScheduler {
     this.debounce = null;
   }
 
-  private arm(): void {
+  private arm(delay = DEBOUNCE_MS): void {
     if (this.debounce) clearTimeout(this.debounce);
     this.debounce = setTimeout(() => {
       this.debounce = null;
       void this.run();
-    }, DEBOUNCE_MS);
+    }, delay);
+  }
+
+  /** Run one pass in the shared queue, so it counts against the process-wide
+   *  bound on account work. */
+  private queued(paths: string[], folders: boolean): Promise<boolean> {
+    return new Promise((resolve, reject) => {
+      accountQueue.enqueue(`pass:${this.account.creds.id}`, () =>
+        runPass(this.account, paths, folders, this.source).then(resolve, reject),
+      );
+    });
   }
 
   private async run(): Promise<void> {
     if (this.stopped || this.running) return;
     this.running = true;
+    let paths: string[] = [];
+    let folders = false;
     try {
       while (!this.stopped && (this.paths.size || this.folders)) {
-        const paths = [...this.paths];
-        const folders = this.folders;
+        paths = [...this.paths];
+        folders = this.folders;
         this.paths.clear();
         this.folders = false;
-        const done = await runPass(this.account, paths, folders, this.source);
+        const done = await this.queued(paths, folders);
+        if (done) this.retried = false;
         if (!done) {
           // Another pass holds the account. Put the request back and try after
           // the debounce, by which time the holder has usually finished — and
@@ -105,10 +125,22 @@ export class FolderPassScheduler {
         }
       }
     } catch (err) {
+      const message = (err as Error).message;
+      // Retry once, unless the server refused the login: retrying a refused
+      // password on every notice is how a mailbox gets locked out.
+      const retry = !this.retried && !/authenticat|credential|login/i.test(message);
       console.warn(
-        { account: this.account.creds.address, err: (err as Error).message },
+        { account: this.account.creds.address, err: message, retryInMs: retry ? RETRY_MS : null },
         `${this.source}-triggered sync failed`,
       );
+      if (retry && !this.stopped) {
+        this.retried = true;
+        for (const p of paths) this.paths.add(p);
+        if (folders) this.folders = true;
+        this.arm(RETRY_MS);
+      } else {
+        this.retried = false;
+      }
     } finally {
       this.running = false;
     }

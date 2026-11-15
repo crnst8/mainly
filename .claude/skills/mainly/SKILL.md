@@ -83,7 +83,8 @@ backend/    Fastify + pg + imapflow + nodemailer + mailparser + argon2
                     onboarding · events · push · filter · assist · hooks · misc
   src/sync/         pool · engine · folders · envelopes · threading · threads ·
                     bodies · body-index · replay · idle · folder-pass ·
-                    mail-hook · mailboxes · parse · arrivals · filing
+                    mail-hook · account-queue · mailboxes · parse · arrivals ·
+                    filing
   src/smtp/         outbound send
   src/push/         Web Push: encrypt (pure, RFC-tested) · webpush · notify
   src/filter/       Filtered folder: features · classifier (pure, tested) ·

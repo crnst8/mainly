@@ -115,6 +115,7 @@ backend/src/
     idle.ts            IDLE connections for push
     mail-hook.ts       mail hook notices → which accounts, which folders
     folder-pass.ts     the some-folders pass IDLE and the hook share
+    account-queue.ts   the one bound on concurrent account passes, all sources
   smtp/                outbound send
   push/                Web Push: VAPID, RFC 8291 encryption, notification rules
   filter/              the Filtered folder: features, classifier, rules, model client, training
