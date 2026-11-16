@@ -3,16 +3,15 @@ summary: Self-hosted webmail client (React + Fastify + Postgres + MCP) that mirr
 state: active
 priority: 1
 updated: 2026-11-16
-next: On the mainly server, run `./mainly.sh hook connect <mail-server-ssh-alias>` (in ~/app/mainly) and check `./mainly.sh hook list` shows a recent notice.
+next: On the mainly server, in ~/app/mainly, run `./mainly.sh hook connect <mail-server-ssh-alias>` (no --imap-host needed if the certificates name the hosts); then `./mainly.sh hook list` should show a recent notice.
 ---
 
 # mainly status
 
 ## Where it stands
-Released 1.5.0 (`5c322f8`). Today's work is committed and pushed to `main`
-(`319a365`, `fbdfead`, `d59baf0`, `bc5818c`) and deployed to the `mainly`
-server (image `:latest`, migration 019 applied, 24 accounts ok, 24 IDLE
-connections, no errors after restart). Backup taken before the deploy in
+Released 1.6.0 (`f4c8c32`, tag `v1.6.0`, image `ghcr.io/crnst8/mainly:1.6.0`)
+and deployed to the `mainly` server: migration 019 applied, 24 accounts ok,
+24 IDLE connections, no errors after restart. Demo site not republished. Backup taken before the deploy in
 `~/app/mainly/backups/`. `./dev.sh check` passes (50 consistency checks).
 
 ## Done today
@@ -34,16 +33,22 @@ connections, no errors after restart). Backup taken before the deploy in
   container: install, rerun, remove, rollback-free cleanup; delivery and a move
   into a new folder by another client indexed within 3s with no poll or IDLE.
   Unreachable mainly costs at most 1s per delivery (measured).
+- `hook connect` finds which IMAP hosts the server answers to from its TLS
+  certificates (SANs, CN, local_name), so five hostnames on one server need no
+  flags. Name matching tested in bash; the certificate read tested against
+  Dovecot 2.3.21. Not run end to end against a test server.
 - Deploy found a regression: IDLE on all accounts drained the DB pool on boot
   (13 catch-up passes failed). Fixed in `bc5818c`: folder passes share the
   poll queue (`sync/account-queue.ts`) and retry once; redeployed clean.
 
 ## Next
-1. On the mainly server, run `./mainly.sh hook connect <mail-server-ssh-alias>`
-   in ~/app/mainly; check `./mainly.sh hook list` shows a recent notice.
-2. Open a wide newsletter in the installed iPhone app (fit tested only in
+1. On the mainly server, in ~/app/mainly, run `./mainly.sh hook connect <mail-server-ssh-alias>`
+   (no --imap-host needed if the certificates name the hosts); then
+   `./mainly.sh hook list` should show a recent notice.
+2. Republish the demo for 1.6.0: `./publish.sh demo` (needs Cloudflare
+   credentials; none on the VPS).
+3. Open a wide newsletter in the installed iPhone app (fit tested only in
    headless Chromium).
-3. CHANGELOG entry and a tagged release (`./publish.sh release`).
 
 ## Waiting on you
 - Running the hook installer against your mail server (it edits Dovecot config
